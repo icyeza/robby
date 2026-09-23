@@ -1,5 +1,6 @@
 import dataclasses
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -32,7 +33,7 @@ fields:
     status: confirmed
     range: [20, 45]
   maternal_age: {raw: Age, kind: float, status: confirmed, range: [12, 55]}
-  delivery_date: {raw: When, kind: datetime, status: confirmed}
+  delivery_date: {raw: When, kind: datetime, status: confirmed, date_only: true}
   mode_of_delivery: {raw: Mode, kind: text, status: confirmed}
   cs:
     raw: Mode
@@ -187,12 +188,13 @@ def test_report_serialises_without_raw_values(mapping_path: Path) -> None:
 
 
 ROW_KEY = "  admission_id: {kind: row_key, status: confirmed}\n"
+SALT = bytes(range(32))
 
 
 def _run(tmp_path: Path, fields: str, raw: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
     path = tmp_path / "m.yaml"
     path.write_text("fields:\n" + ROW_KEY + fields, encoding="utf-8")
-    canonical, report = apply_mapping(raw, load_mapping(path))
+    canonical, report = apply_mapping(raw, load_mapping(path), salt=SALT)
     return canonical, {f.canonical: f for f in report.fields}
 
 
@@ -241,7 +243,7 @@ KIND_CASES = {
     ),
     "datetime": (
         "delivery_date",
-        "  delivery_date: {raw: W, kind: datetime}\n",
+        "  delivery_date: {raw: W, kind: datetime, date_only: true}\n",
         pd.DataFrame(
             {
                 "W": [
@@ -288,6 +290,22 @@ KIND_CASES = {
         "range: [20, 45]}\n",
         pd.DataFrame({"G": [36, "38", 38.5, "38.5", None, 10]}, dtype=object),
         (5, 2, 2, 1, 0),
+    ),
+    "ga_weeks_days_text": (
+        "gestational_age_weeks",
+        "  gestational_age_weeks: {raw: G, kind: gestational_age, format: weeks_days_text, "
+        "range: [20, 45]}\n",
+        pd.DataFrame(
+            {"G": ["38", "37 weeks, 4 days", "38.5", "50 weeks", None, "  ", "38+9", 39]},
+            dtype=object,
+        ),
+        (6, 3, 2, 1, 0),
+    ),
+    "hash_key": (
+        "mother_key",
+        "  mother_key: {raw: ID, kind: hash_key}\n",
+        pd.DataFrame({"ID": ["P-1", " P-1 ", None, "  ", "P-2", 7, pd.NA]}, dtype=object),
+        (4, 4, 0, 0, 0),
     ),
 }
 
@@ -346,48 +364,83 @@ def test_ga_completed_weeks_rejects_fractional_values(tmp_path: Path) -> None:
     assert by["gestational_age_weeks"].n_unparsed == 2
 
 
-DT_FIELD = "  delivery_date: {raw: W, kind: datetime}\n"
-LOCAL_0830 = pd.Timestamp("2023-11-02 08:30:00")
+DT_FIELD = "  delivery_date: {raw: W, kind: datetime, date_only: true}\n"
+# delivery_date is date-only, so timezone handling is checked where it moves the date:
+# 00:30 in Kigali (UTC+2) on 2 November is still 1 November in UTC.
+LOCAL_DAY = pd.Timestamp("2023-11-02")
 
 
 def test_naive_datetime_is_local_wall_time(tmp_path: Path) -> None:
-    raw = pd.DataFrame({"W": ["2023-11-02T08:30:00"]}, dtype=object)
+    # Taken as UTC, 23:30 would become 01:30 on 3 November in Kigali.
+    raw = pd.DataFrame({"W": ["2023-11-02T23:30:00"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["delivery_date"].tolist() == [LOCAL_0830]
+    assert canonical["delivery_date"].tolist() == [LOCAL_DAY]
     assert by["delivery_date"].n_tz_aware == 0
+    assert by["delivery_date"].n_time_dropped == 1
 
 
-def test_aware_datetime_is_converted_to_kigali(tmp_path: Path) -> None:
+def test_aware_datetime_is_converted_to_kigali_before_truncation(tmp_path: Path) -> None:
     raw = pd.DataFrame(
-        {"W": ["2023-11-02T06:30:00Z", "2023-11-02T08:30:00+02:00", "2023-11-02T05:30:00-01:00"]},
+        {"W": ["2023-11-01T22:30:00Z", "2023-11-02T00:30:00+02:00", "2023-11-01T21:30:00-01:00"]},
         dtype=object,
     )
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["delivery_date"].tolist() == [LOCAL_0830] * 3
+    assert canonical["delivery_date"].tolist() == [LOCAL_DAY] * 3
     assert canonical["delivery_date"].dtype == "datetime64[ns]"
     assert by["delivery_date"].n_tz_aware == 3
+    assert by["delivery_date"].n_time_dropped == 3
 
 
 def test_mixed_naive_and_aware_datetimes_are_both_parsed(tmp_path: Path) -> None:
-    raw = pd.DataFrame({"W": ["2023-11-02T08:30:00", "2023-11-02T06:30:00Z"]}, dtype=object)
+    raw = pd.DataFrame({"W": ["2023-11-02T08:30:00", "2023-11-01T22:30:00Z"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["delivery_date"].tolist() == [LOCAL_0830, LOCAL_0830]
+    assert canonical["delivery_date"].tolist() == [LOCAL_DAY, LOCAL_DAY]
     assert by["delivery_date"].n_tz_aware == 1
     assert by["delivery_date"].n_unparsed == 0
 
 
 def test_datetime_objects_with_and_without_tzinfo(tmp_path: Path) -> None:
-    aware = dt.datetime(2023, 11, 2, 6, 30, tzinfo=dt.UTC)
+    aware = dt.datetime(2023, 11, 1, 22, 30, tzinfo=dt.UTC)
     naive = dt.datetime(2023, 11, 2, 8, 30)
     raw = pd.DataFrame({"W": [aware, naive, "03/04/2024"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["delivery_date"].tolist()[:2] == [LOCAL_0830, LOCAL_0830]
+    assert canonical["delivery_date"].tolist()[:2] == [LOCAL_DAY, LOCAL_DAY]
     assert pd.isna(canonical["delivery_date"].iloc[2])
     assert (by["delivery_date"].n_tz_aware, by["delivery_date"].n_unparsed) == (1, 1)
 
 
+def test_date_only_counts_dropped_times(tmp_path: Path) -> None:
+    raw = pd.DataFrame(
+        {
+            "W": [
+                "2024-01-05",
+                "2024-01-05T10:00:00",
+                pd.Timestamp("2024-01-06 00:00"),
+                dt.datetime(2024, 1, 7, 23, 59, 59),
+                dt.date(2024, 1, 8),
+                "bad",
+                None,
+            ]
+        },
+        dtype=object,
+    )
+    canonical, by = _run(tmp_path, DT_FIELD, raw)
+    f = by["delivery_date"]
+    expected = pd.to_datetime(
+        ["2024-01-05", "2024-01-05", "2024-01-06", "2024-01-07", "2024-01-08"]
+    )
+    assert canonical["delivery_date"].tolist()[:5] == list(expected)
+    assert canonical["delivery_date"].isna().tolist()[5:] == [True, True]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_time_dropped) == (6, 5, 1, 2)
+
+
+def test_time_dropped_is_zero_for_other_kinds(tmp_path: Path) -> None:
+    _, by = _run(tmp_path, "  parity: {raw: P, kind: integer}\n", pd.DataFrame({"P": [1, 2]}))
+    assert by["parity"].n_time_dropped == 0
+
+
 def test_datetime_explicit_format_is_not_second_guessed(tmp_path: Path) -> None:
-    fields = '  delivery_date: {raw: W, kind: datetime, format: "%d/%m/%Y"}\n'
+    fields = '  delivery_date: {raw: W, kind: datetime, format: "%d/%m/%Y", date_only: true}\n'
     raw = pd.DataFrame({"W": ["03/04/2024", "2024-01-05"]}, dtype=object)
     canonical, by = _run(tmp_path, fields, raw)
     assert canonical["delivery_date"].iloc[0] == pd.Timestamp("2024-04-03")
@@ -402,19 +455,19 @@ def _load_fields(tmp_path: Path, fields: str) -> None:
 
 
 def test_datetime_format_mixed_is_rejected(tmp_path: Path) -> None:
-    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed}\n"
+    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed, date_only: true}\n"
     with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
 
 def test_datetime_format_infer_is_rejected(tmp_path: Path) -> None:
-    fields = "  delivery_date: {raw: W, kind: datetime, format: infer}\n"
+    fields = "  delivery_date: {raw: W, kind: datetime, format: infer, date_only: true}\n"
     with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
 
 def test_datetime_format_mixed_variant_is_rejected(tmp_path: Path) -> None:
-    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed-format}\n"
+    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed-format, date_only: true}\n"
     with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
@@ -544,6 +597,47 @@ INVALID_CONFIGS = {
         '  cs: {raw: X, kind: category, levels: {"a": 1, "a": 0}}\n',
         "duplicate",
     ),
+    "hash_key on other field": ("  facility_id: {raw: F, kind: hash_key}\n", "hash_key"),
+    "mother_key as text": ("  mother_key: {raw: ID, kind: text}\n", "mother_key"),
+    "mother_key as category": (
+        '  mother_key: {raw: ID, kind: category, levels: {"a": "b"}}\n',
+        "mother_key",
+    ),
+    "hash_key without raw": ("  mother_key: {kind: hash_key}\n", "mother_key"),
+    "hash_key two raw": ("  mother_key: {raw: [A, B], kind: hash_key}\n", "mother_key"),
+    "hash_key with range": ("  mother_key: {raw: ID, kind: hash_key, range: [0, 1]}\n", "range"),
+    "hash_key with levels": (
+        '  mother_key: {raw: ID, kind: hash_key, levels: {"a": "b"}}\n',
+        "levels",
+    ),
+    "hash_key with format": ("  mother_key: {raw: ID, kind: hash_key, format: x}\n", "format"),
+    "hash_key with date_only": (
+        "  mother_key: {raw: ID, kind: hash_key, date_only: true}\n",
+        "date_only",
+    ),
+    "weeks_days_text two raw": (
+        "  gestational_age_weeks: {raw: [W, D], kind: gestational_age, format: weeks_days_text}\n",
+        "gestational_age_weeks",
+    ),
+    "date_only on integer": ("  parity: {raw: P, kind: integer, date_only: true}\n", "date_only"),
+    "date_only on GA": (
+        "  gestational_age_weeks: {raw: G, kind: gestational_age, format: decimal_weeks, "
+        "date_only: true}\n",
+        "date_only",
+    ),
+    "date_only not a bool": (
+        '  delivery_date: {raw: W, kind: datetime, date_only: "yes"}\n',
+        "date_only",
+    ),
+    "date_only number": ("  delivery_date: {raw: W, kind: datetime, date_only: 1}\n", "date_only"),
+    "delivery_date without date_only": (
+        "  delivery_date: {raw: W, kind: datetime}\n",
+        "delivery_date.*date_only",
+    ),
+    "delivery_date date_only false": (
+        "  delivery_date: {raw: W, kind: datetime, date_only: false}\n",
+        "delivery_date.*date_only",
+    ),
 }
 
 
@@ -563,7 +657,14 @@ def test_valid_config_variants_load(tmp_path: Path) -> None:
         '  gdm_recorded: {raw: Z, kind: category, levels: {"Y": "yes", "N": "no", "?": ~}}\n'
         "  gestational_age_weeks: {raw: [W, D], kind: gestational_age, "
         "format: weeks_plus_days, range: [20, 45]}\n"
-        "  maternal_age: {raw: A, kind: float, dtype: float64, range: [12.5, 55]}\n",
+        "  maternal_age: {raw: A, kind: float, dtype: float64, range: [12.5, 55]}\n"
+        "  mother_key: {raw: ID, kind: hash_key, status: confirmed, dtype: object}\n"
+        "  delivery_date: {raw: DD, kind: datetime, date_only: true}\n",
+    )
+    _load_fields(
+        tmp_path,
+        "  gestational_age_weeks: {raw: G, kind: gestational_age, "
+        "format: weeks_days_text, range: [20, 45]}\n",
     )
 
 
@@ -583,3 +684,236 @@ def test_non_cephalic_presentation_level_allowed(tmp_path: Path) -> None:
     )
     canonical, _ = _run(tmp_path, fields, raw)
     assert canonical["fetal_presentation"].tolist() == ["non_cephalic", "cephalic", None]
+
+
+# --- mother_key: salted one-way hash ----------------------------------------------------------
+
+MK_FIELD = "  mother_key: {raw: ID, kind: hash_key, status: confirmed}\n"
+
+
+def _expected_key(salt: bytes, text: str) -> str:
+    return "MK_" + hashlib.sha256(salt + b"\x1f" + text.encode("utf-8")).hexdigest()[:32]
+
+
+def _keys(tmp_path: Path, ids: list[object], salt: bytes = SALT) -> list[object]:
+    path = tmp_path / "m.yaml"
+    path.write_text("fields:\n" + ROW_KEY + MK_FIELD, encoding="utf-8")
+    raw = pd.DataFrame({"ID": ids}, dtype=object)
+    canonical, _ = apply_mapping(raw, load_mapping(path), salt=salt)
+    return canonical["mother_key"].tolist()
+
+
+def test_hash_key_is_salted_sha256_with_prefix(tmp_path: Path) -> None:
+    keys = _keys(tmp_path, ["ID-001", "  ID-001\t", "id-001"])
+    assert keys[0] == _expected_key(SALT, "ID-001")
+    assert keys[1] == keys[0]  # surrounding whitespace is not part of the identifier
+    assert keys[2] == _expected_key(SALT, "id-001") != keys[0]  # case is kept
+    assert all(isinstance(k, str) and len(k) == 3 + 32 for k in keys)
+
+
+def test_hash_key_blank_is_missing_not_hashed(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"ID": ["A", None, "   ", np.nan, pd.NA, "B"]}, dtype=object)
+    canonical, by = _run(tmp_path, MK_FIELD, raw)
+    assert canonical["mother_key"].isna().tolist() == [False, True, True, True, True, False]
+    f = by["mother_key"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_explicit_missing) == (2, 2, 0, 0)
+    assert f.unmapped_levels == {}
+
+
+def test_hash_key_integral_numbers_match_their_text(tmp_path: Path) -> None:
+    keys = _keys(tmp_path, [12345, "12345", 12345.0, np.int64(12345)])
+    assert len(set(keys)) == 1
+    assert keys[0] == _expected_key(SALT, "12345")
+
+
+def test_hash_key_is_deterministic_and_salt_dependent(tmp_path: Path) -> None:
+    ids: list[object] = ["P1", "P2", "P1"]
+    first = _keys(tmp_path, ids)
+    assert first == _keys(tmp_path, ids)
+    assert first[0] == first[2] != first[1]
+    other = _keys(tmp_path, ids, salt=bytes(range(1, 33)))
+    assert not set(first) & set(other)
+
+
+def test_hash_key_has_no_collisions_on_distinct_ids(tmp_path: Path) -> None:
+    ids: list[object] = [f"PT{i:05d}" for i in range(6000)] + [f"pt{i:05d}" for i in range(500)]
+    keys = _keys(tmp_path, ids)
+    assert len(set(keys)) == len(ids)
+
+
+def test_hash_key_values_never_reach_frame_or_report(tmp_path: Path) -> None:
+    ids = ["SECRET-ID-111", "SECRET-ID-222", "SECRET-ID-111"]
+    raw = pd.DataFrame({"ID": ids, "P": [1, 2, 3]}, dtype=object)
+    fields = MK_FIELD + "  parity: {raw: P, kind: integer}\n"
+    canonical, by = _run(tmp_path, fields, raw)
+    frame_text = canonical.astype(str).to_csv()
+    report_text = json.dumps({k: dataclasses.asdict(v) for k, v in by.items()}, default=str)
+    assert "SECRET" not in frame_text
+    assert "SECRET" not in report_text
+    for key in canonical["mother_key"]:
+        assert key not in report_text
+
+
+@pytest.mark.parametrize(
+    "salt",
+    [None, b"", b"short", bytes(15), "a string salt of plenty length"],
+    ids=["none", "empty", "short", "fifteen", "str"],
+)
+def test_hash_key_requires_a_salt_of_16_bytes(tmp_path: Path, salt: Any) -> None:
+    path = tmp_path / "m.yaml"
+    path.write_text("fields:\n" + ROW_KEY + MK_FIELD, encoding="utf-8")
+    raw = pd.DataFrame({"ID": ["SECRET-ID-111"]}, dtype=object)
+    with pytest.raises(MappingError, match="hash_key needs a salt of at least 16 bytes") as exc:
+        apply_mapping(raw, load_mapping(path), salt=salt)
+    assert "SECRET" not in str(exc.value)
+
+
+def test_sixteen_byte_salt_is_enough(tmp_path: Path) -> None:
+    assert _keys(tmp_path, ["A"], salt=bytes(16))[0] == _expected_key(bytes(16), "A")
+
+
+def test_salt_not_needed_without_hash_key(mapping_path: Path) -> None:
+    canonical, _ = apply_mapping(_raw(), load_mapping(mapping_path))
+    assert canonical["mother_key"].isna().all()
+
+
+# --- free-text gestational age: weeks_days_text ----------------------------------------------
+
+GA_TEXT = "  gestational_age_weeks: {raw: G, kind: gestational_age, format: weeks_days_text}\n"
+
+# (raw value, expected decimal weeks); every shape seen in the export, with made-up numbers.
+GA_TEXT_ACCEPTED: list[tuple[object, float]] = [
+    # "N"
+    ("38", 38.0),
+    (" 38 ", 38.0),
+    ("9", 9.0),
+    (38, 38.0),
+    (38.0, 38.0),
+    (np.int64(36), 36.0),
+    # "Nweeks" and unit variants
+    ("37weeks", 37.0),
+    ("37 weeks", 37.0),
+    ("37Weeks", 37.0),
+    ("37 WEEKS", 37.0),
+    ("37week", 37.0),
+    ("37 Week", 37.0),
+    ("37wks", 37.0),
+    ("37 wk", 37.0),
+    ("37w", 37.0),
+    ("37 W", 37.0),
+    # "Nweekz" (typo seen in the export)
+    ("36weekz", 36.0),
+    ("36 WeekZ", 36.0),
+    # "Nweeks, Ndays" / "Nweeks,Ndays"
+    ("37weeks, 4days", 37 + 4 / 7),
+    ("37 weeks, 4 days", 37 + 4 / 7),
+    ("37weeks,4days", 37 + 4 / 7),
+    ("37Weeks,4Days", 37 + 4 / 7),
+    ("37 WEEKS , 6 DAYS", 37 + 6 / 7),
+    # "Nweeks, Nday" / "Nweeks,Nday"
+    ("37weeks, 1day", 37 + 1 / 7),
+    ("37weeks,1day", 37 + 1 / 7),
+    ("37 weeks, 0 day", 37.0),
+    # "N+N", "N+N days", "N+Ndays"
+    ("37+4", 37 + 4 / 7),
+    ("37 + 4", 37 + 4 / 7),
+    ("37+0", 37.0),
+    ("37+5 days", 37 + 5 / 7),
+    ("37+5days", 37 + 5 / 7),
+    ("37+5 Days", 37 + 5 / 7),
+    ("37+5d", 37 + 5 / 7),
+    ("37+2 day", 37 + 2 / 7),
+    # other separators and units
+    ("37 weeks and 2 days", 37 + 2 / 7),
+    ("37 Weeks AND 2 Days", 37 + 2 / 7),
+    ("37wks 2d", 37 + 2 / 7),
+    ("37 w 2 d", 37 + 2 / 7),
+    ("37w2d", 37 + 2 / 7),
+    ("37weeks+3days", 37 + 3 / 7),
+    ("37 weeks + 3 days", 37 + 3 / 7),
+    ("37 weeks 3 days", 37 + 3 / 7),
+    ("37 weeks, 3", 37 + 3 / 7),
+    ("37 weeks 3", 37 + 3 / 7),
+    ("37wk,6", 37 + 6 / 7),
+    ("\t37 weeks,\u00a02 days ", 37 + 2 / 7),
+]
+
+GA_TEXT_REJECTED: list[object] = [
+    # fractions
+    "38.5",
+    "38,5",
+    "38,5 weeks",
+    "38.5 weeks",
+    "38.0",
+    38.5,
+    # days of 7 or more
+    "38+7",
+    "38+10",
+    "38 weeks 7 days",
+    "38 weeks, 12 days",
+    "38weeks,9days",
+    # days only, or days unit on the weeks number
+    "38 days",
+    "38days",
+    "38 d",
+    "2 days",
+    "38+2 weeks",
+    # ranges
+    "38-39",
+    "38 - 39 weeks",
+    "38 to 39 weeks",
+    "38/39",
+    # extra numbers or text
+    "38 2",
+    "38 and 2",
+    "38 weeks 2 days 3",
+    "38 weeks 2 weeks",
+    "38 weeks 2 days 1 hour",
+    "about 38 weeks",
+    "38 weeks.",
+    "38 weeks,",
+    "38 weeks and",
+    "38 weeks,, 2 days",
+    "38 wkss",
+    "38 wks 2 dys",
+    "38weeks2days3",
+    "+2",
+    "weeks",
+    "w",
+    "unknown",
+    "123",
+    "038",
+    "38 weeks 02 days",
+    "\u0663\u0668",  # non-ASCII digits
+    "38+-2",
+    # non-text values that are not a whole number of weeks
+    True,
+    -3,
+    100,
+    float("inf"),
+]
+
+
+@pytest.mark.parametrize(("value", "expected"), GA_TEXT_ACCEPTED, ids=repr)
+def test_weeks_days_text_accepts(tmp_path: Path, value: object, expected: float) -> None:
+    canonical, by = _run(tmp_path, GA_TEXT, pd.DataFrame({"G": [value]}, dtype=object))
+    assert canonical["gestational_age_weeks"].iloc[0] == pytest.approx(expected)
+    assert (by["gestational_age_weeks"].n_mapped, by["gestational_age_weeks"].n_unparsed) == (1, 0)
+
+
+@pytest.mark.parametrize("value", GA_TEXT_REJECTED, ids=repr)
+def test_weeks_days_text_rejects(tmp_path: Path, value: object) -> None:
+    canonical, by = _run(tmp_path, GA_TEXT, pd.DataFrame({"G": [value]}, dtype=object))
+    assert pd.isna(canonical["gestational_age_weeks"].iloc[0])
+    f = by["gestational_age_weeks"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed) == (1, 0, 1)
+
+
+def test_weeks_days_text_applies_range_and_hides_values(tmp_path: Path) -> None:
+    fields = GA_TEXT.replace("}\n", ", range: [20, 45]}\n")
+    raw = pd.DataFrame({"G": ["19 weeks", "46+1", "45+0", "20", "zz-odd-zz"]}, dtype=object)
+    canonical, by = _run(tmp_path, fields, raw)
+    f = by["gestational_age_weeks"]
+    assert (f.n_mapped, f.n_out_of_range, f.n_unparsed) == (2, 2, 1)
+    assert canonical["gestational_age_weeks"].tolist()[2:4] == [45.0, 20.0]
+    assert "zz-odd-zz" not in json.dumps(dataclasses.asdict(f), default=str)

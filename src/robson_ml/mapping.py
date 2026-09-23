@@ -5,11 +5,15 @@ is counted in the report: mapped, explicitly recorded as missing (a level mapped
 unparsed (cannot be converted without guessing, including category labels absent from
 ``levels``) or out of range. Fields whose meaning is uncertain carry ``status: review`` and
 are listed for human decision. Reports and error messages never contain cell values.
+
+The raw patient identifier never enters canonical data: ``mother_key`` can only be produced
+by the ``hash_key`` kind, a salted one-way hash (spec v1.2 §5).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import math
 import re
 from collections.abc import Hashable
@@ -33,11 +37,13 @@ from robson_ml.schema import (
 )
 
 KINDS = frozenset(
-    {"row_key", "integer", "float", "category", "datetime", "gestational_age", "text"}
+    {"row_key", "hash_key", "integer", "float", "category", "datetime", "gestational_age", "text"}
 )
 STATUSES = frozenset({"confirmed", "review"})
-GA_FORMATS = frozenset({"decimal_weeks", "weeks_plus_days", "completed_weeks"})
-ALLOWED_KEYS = frozenset({"raw", "kind", "status", "note", "levels", "dtype", "range", "format"})
+GA_FORMATS = frozenset({"decimal_weeks", "weeks_plus_days", "completed_weeks", "weeks_days_text"})
+ALLOWED_KEYS = frozenset(
+    {"raw", "kind", "status", "note", "levels", "dtype", "range", "format", "date_only"}
+)
 RANGE_KINDS = frozenset({"integer", "float", "gestational_age"})
 FORMAT_KINDS = frozenset({"gestational_age", "datetime"})
 # Output dtype each non-category kind produces; it must equal the canonical dtype.
@@ -48,7 +54,14 @@ KIND_DTYPES: dict[str, str] = {
     "datetime": "datetime64[ns]",
     "text": "object",
     "row_key": "object",
+    "hash_key": "object",
 }
+# Kinds only allowed on one canonical field.
+KIND_FIELDS: dict[str, str] = {"admission_id": "row_key", "mother_key": "hash_key"}
+# Fields that only one kind may produce: mother_key must never carry the raw identifier.
+REQUIRED_KINDS: dict[str, str] = {"mother_key": "hash_key"}
+# Canonical datetime fields the schema holds as dates only: they must declare date_only: true.
+DATE_ONLY_FIELDS = frozenset({"delivery_date"})
 # Canonical fields whose values come from a fixed set (schema.py); level values must be in it.
 FIXED_LEVELS: dict[str, frozenset[object]] = {
     "fetal_presentation": frozenset(PRESENTATION_LEVELS),
@@ -60,9 +73,27 @@ FIXED_LEVELS: dict[str, frozenset[object]] = {
 }
 LOCAL_TIMEZONE = "Africa/Kigali"
 ROW_KEY_PREFIX = "ADM"
+HASH_KEY_PREFIX = "MK_"
+HASH_KEY_HEX_CHARS = 32  # 128 bits of the SHA-256 digest
+HASH_KEY_SEPARATOR = b"\x1f"  # ASCII unit separator between salt and identifier
+MIN_SALT_BYTES = 16
+SALT_ERROR = f"hash_key needs a salt of at least {MIN_SALT_BYTES} bytes"
 MAX_EXACT_INTEGER = 2**53  # beyond this float64 cannot hold every integer exactly
 MISSING_ROW_LABEL = "(missing)"
 _WEEKS_PLUS_DAYS = re.compile(r"^\s*(\d{1,2})\s*\+\s*([0-6])\s*$")
+# Free-text gestational age (format weeks_days_text), matched case-insensitively against the
+# whole stripped value. Accepted: "W", "W<unit>", "W<unit><sep>D<dunit>?", "W+D", "W+D<dunit>"
+# with W 1-2 ASCII digits and D a single digit 0-6. Anything else (fractions, days >= 7,
+# ranges, extra numbers or words) does not match and is counted as unparsed.
+_WEEK_UNIT = r"(?:weeks|weekz|week|wks|wk|w)"  # "weekz": a typo seen in the export
+_DAY_UNIT = r"(?:days|day|d)"
+_TEXT_SEP = r"(?:\s*[,+]\s*|\s+and\s+|\s*)"
+_WEEKS_DAYS_TEXT = re.compile(
+    rf"(?P<weeks>[0-9]{{1,2}})"
+    rf"(?:\s*{_WEEK_UNIT}(?:{_TEXT_SEP}(?P<days>[0-6])(?:\s*{_DAY_UNIT})?)?"
+    rf"|\s*\+\s*(?P<plus_days>[0-6])(?:\s*{_DAY_UNIT})?)?",
+    re.IGNORECASE,
+)
 # A clock time followed by "Z" or a numeric UTC offset: the string carries its own timezone.
 _TZ_SUFFIX = re.compile(r"\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:Z|[+-]\d{2}(?::?\d{2})?)\s*$")
 # Under the default ISO8601 format, only strings with a full YYYY-MM-DD date are trusted;
@@ -89,6 +120,7 @@ class FieldMapping:
     valid_range: tuple[float, float] | None = None
     ga_format: str | None = None
     datetime_format: str | None = None
+    date_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +153,7 @@ class FieldReport:
     n_explicit_missing: int = 0
     n_days_blank: int = 0  # two-column GA: weeks present, days blank, taken as weeks + 0
     n_tz_aware: int = 0  # datetime: mapped values that carried a UTC offset (converted)
+    n_time_dropped: int = 0  # date_only datetime: mapped values whose time of day was dropped
     unmapped_levels: dict[str, Any] = field(default_factory=dict)
 
 
@@ -275,11 +308,16 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
             f"{name}: kind {kind} produces {KIND_DTYPES[kind]} but the canonical dtype is {dtype}"
         )
 
+    for field_name, field_kind in KIND_FIELDS.items():
+        if kind == field_kind and name != field_name:
+            raise MappingError(f"{name}: kind {field_kind} is only allowed on {field_name}")
+    required_kind = REQUIRED_KINDS.get(name)
+    if required_kind is not None and kind != required_kind:
+        raise MappingError(f"{name}: this field can only be mapped with kind {required_kind}")
+
     fmt = spec.get("format")
     raw_cols = _raw_columns(name, spec.get("raw"))
     if kind == "row_key":
-        if name != "admission_id":
-            raise MappingError(f"{name}: kind row_key is only allowed on admission_id")
         if raw_cols:
             raise MappingError(f"{name}: kind row_key takes no raw column")
     elif not raw_cols:
@@ -325,6 +363,17 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
             )
         datetime_format = fmt
 
+    date_only = spec.get("date_only", False)
+    if "date_only" in spec:
+        if kind != "datetime":
+            raise MappingError(f"{name}: date_only is only allowed on datetime fields")
+        if not isinstance(date_only, bool):
+            raise MappingError(f"{name}: date_only must be true or false")
+    if name in DATE_ONLY_FIELDS and not date_only:
+        raise MappingError(
+            f"{name}: the schema holds this field as a date only; set date_only: true"
+        )
+
     note = spec.get("note")
     return FieldMapping(
         canonical=name,
@@ -337,6 +386,7 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
         valid_range=valid_range,
         ga_format=ga_format,
         datetime_format=datetime_format,
+        date_only=date_only,
     )
 
 
@@ -430,6 +480,37 @@ def _weeks_plus_days(value: object) -> float:
             return int(match.group(1)) + int(match.group(2)) / 7.0
     number = _number(value)
     return number if number is not None and number.is_integer() else math.nan
+
+
+def _weeks_days_text(value: object) -> float:
+    """Free-text gestational age (see ``_WEEKS_DAYS_TEXT``) -> W + D/7 decimal weeks.
+
+    A number that is not text is taken as whole weeks when it is an integer from 0 to 99
+    (a spreadsheet cell holding just "38"); anything else is NaN (unparsed).
+    """
+    if isinstance(value, str):
+        match = _WEEKS_DAYS_TEXT.fullmatch(value.strip())
+        if match is None:
+            return math.nan
+        days = match.group("days") or match.group("plus_days") or "0"
+        return int(match.group("weeks")) + int(days) / 7.0
+    number = _number(value)
+    if number is None or not number.is_integer() or not 0 <= number <= 99:
+        return math.nan
+    return number
+
+
+def _hash_key(value: object, salt: bytes) -> str | None:
+    """``MK_`` + the first 32 hex characters of SHA-256(salt || 0x1F || identifier).
+
+    The identifier is the value as trimmed text (case kept; an integral float such as 12345.0
+    reads as "12345", like the same number held as text). Blank or missing -> None.
+    """
+    text = _label(value)
+    if not text:
+        return None
+    digest = hashlib.sha256(salt + HASH_KEY_SEPARATOR + text.encode("utf-8")).hexdigest()
+    return HASH_KEY_PREFIX + digest[:HASH_KEY_HEX_CHARS]
 
 
 def _apply_range(values: pd.Series, bounds: tuple[float, float] | None) -> tuple[pd.Series, int]:
@@ -542,10 +623,23 @@ def _map_gestational_age(
         return (weeks + days.mask(days_blank, 0.0) / 7.0).where(usable)
     if spec.ga_format == "weeks_plus_days":
         return columns[0].map(_weeks_plus_days).astype("float64")
+    if spec.ga_format == "weeks_days_text":
+        return columns[0].map(_weeks_days_text).astype("float64")
     return _numbers(columns[0], whole=spec.ga_format == "completed_weeks")
 
 
-def _map_one(raw: pd.DataFrame, spec: FieldMapping, report: FieldReport) -> pd.Series:
+def _map_datetime(source: pd.Series, spec: FieldMapping, report: FieldReport) -> pd.Series:
+    result, report.n_tz_aware = _datetimes(source, spec.datetime_format or "ISO8601")
+    if spec.date_only:
+        dates = result.dt.normalize()
+        report.n_time_dropped = int((result.notna() & (result != dates)).sum())
+        result = dates
+    return result
+
+
+def _map_one(
+    raw: pd.DataFrame, spec: FieldMapping, report: FieldReport, salt: bytes | None
+) -> pd.Series:
     n = len(raw)
     result: pd.Series
     if spec.kind == "row_key":
@@ -560,10 +654,14 @@ def _map_one(raw: pd.DataFrame, spec: FieldMapping, report: FieldReport) -> pd.S
 
     if spec.kind == "text":
         result = source.map(_label).astype(object)
+    elif spec.kind == "hash_key":
+        if salt is None:  # apply_mapping checks the salt before any field is mapped
+            raise MappingError(SALT_ERROR)
+        result = source.map(lambda v: _hash_key(v, salt)).astype(object)
     elif spec.kind == "category":
         result = _map_category(source.map(_label), spec, report)
     elif spec.kind == "datetime":
-        result, report.n_tz_aware = _datetimes(source, spec.datetime_format or "ISO8601")
+        result = _map_datetime(source, spec, report)
         report.n_unparsed = int((present & result.isna()).sum())
     else:  # integer, float, gestational_age
         if spec.kind == "gestational_age":
@@ -585,8 +683,18 @@ def _map_one(raw: pd.DataFrame, spec: FieldMapping, report: FieldReport) -> pd.S
     return result.reset_index(drop=True)
 
 
-def apply_mapping(raw: pd.DataFrame, config: MappingConfig) -> tuple[pd.DataFrame, MappingReport]:
-    """Build the canonical frame from one raw sheet, with an aggregate mapping report."""
+def apply_mapping(
+    raw: pd.DataFrame, config: MappingConfig, *, salt: bytes | None = None
+) -> tuple[pd.DataFrame, MappingReport]:
+    """Build the canonical frame from one raw sheet, with an aggregate mapping report.
+
+    ``salt`` (at least 16 bytes, kept under data/) is required when the mapping has a
+    ``hash_key`` field; it is never written to the frame or the report.
+    """
+    if any(spec.kind == "hash_key" for spec in config.fields.values()) and not (
+        isinstance(salt, bytes) and len(salt) >= MIN_SALT_BYTES
+    ):
+        raise MappingError(SALT_ERROR)
     raw = raw.reset_index(drop=True)
     repeated = set(raw.columns[raw.columns.duplicated()])
     for spec in config.fields.values():
@@ -609,7 +717,7 @@ def apply_mapping(raw: pd.DataFrame, config: MappingConfig) -> tuple[pd.DataFram
             continue
         spec = config.fields[name]
         report = FieldReport(name, list(spec.raw), spec.kind, spec.status, spec.note)
-        columns[name] = _map_one(raw, spec, report)
+        columns[name] = _map_one(raw, spec, report, salt)
         reports.append(report)
     referenced = {c for spec in config.fields.values() for c in spec.raw}
     canonical = pd.DataFrame(columns)

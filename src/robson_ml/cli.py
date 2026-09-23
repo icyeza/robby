@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import secrets
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -30,6 +31,8 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
 )
 PROJECT_CONFIG = Path("configs/project.yaml")
+DEFAULT_SALT_PATH = Path("data/interim/mother_key.salt")
+SALT_BYTES = 32
 
 F = TypeVar("F", bound=Callable[..., None])
 
@@ -75,10 +78,11 @@ class ProjectConfig:
     processed_dir: Path
     reports_dir: Path
     seed: int
+    salt_path: Path = DEFAULT_SALT_PATH
 
 
 def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
-    """Read configs/project.yaml."""
+    """Read configs/project.yaml (``salt_path`` is optional, for older configs)."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return ProjectConfig(
         raw_path=Path(data["raw_path"]),
@@ -88,7 +92,24 @@ def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
         processed_dir=Path(data["processed_dir"]),
         reports_dir=Path(data["reports_dir"]),
         seed=int(data["seed"]),
+        salt_path=Path(data.get("salt_path") or DEFAULT_SALT_PATH),
     )
+
+
+def load_or_create_salt(path: Path) -> bytes:
+    """The mother_key salt from ``path``, created there (32 random bytes) if absent.
+
+    An existing file is never replaced, whatever it holds: a new salt would silently change
+    every mother_key. apply_mapping rejects a salt that is too short. The salt is never
+    printed.
+    """
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(secrets.token_bytes(SALT_BYTES))
+    return path.read_bytes()
 
 
 @app.command()
@@ -114,7 +135,10 @@ def ingest() -> None:
     if not mapping.fields:
         typer.echo("mapping has no fields yet: inventory only")
         return
-    canonical, report = apply_mapping(select_sheet(sheets, mapping.sheet), mapping)
+    salt = None
+    if any(spec.kind == "hash_key" for spec in mapping.fields.values()):
+        salt = load_or_create_salt(cfg.salt_path)
+    canonical, report = apply_mapping(select_sheet(sheets, mapping.sheet), mapping, salt=salt)
     validate_canonical(canonical)
     cfg.processed_dir.mkdir(parents=True, exist_ok=True)
     canonical.to_parquet(cfg.processed_dir / "canonical.parquet", index=False)
@@ -123,10 +147,12 @@ def ingest() -> None:
     )
     typer.echo(f"canonical rows: {fmt_count(len(canonical))}")
     for f in report.fields:
+        dropped = f" time_dropped={fmt_count(f.n_time_dropped)}" if f.kind == "datetime" else ""
         typer.echo(
             f"  {f.canonical:<24} {f.status:<9} mapped={fmt_count(f.n_mapped)} "
             f"explicit_missing={fmt_count(f.n_explicit_missing)} "
             f"unparsed={fmt_count(f.n_unparsed)} out_of_range={fmt_count(f.n_out_of_range)}"
+            f"{dropped}"
         )
     typer.echo(f"canonical fields with no mapping: {report.missing_canonical_fields}")
     typer.echo(f"raw columns not used by the mapping: {len(report.unreferenced_raw_columns)}")

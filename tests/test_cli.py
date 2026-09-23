@@ -1,3 +1,4 @@
+import hashlib
 import os
 import subprocess
 import sys
@@ -8,7 +9,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from robson_ml.cli import app
+from robson_ml.cli import app, load_project_config
 from robson_ml.schema import CANONICAL_DTYPES
 from tests.synthetic import make_admissions
 
@@ -33,9 +34,14 @@ def project(tmp_path: Path) -> Path:
         if name == "admission_id":
             continue
         kind = "gestational_age" if name == "gestational_age_weeks" else KIND_BY_DTYPE[dtype]
+        if name == "mother_key":
+            # The synthetic mother_key column stands in for the raw patient identifier.
+            kind = "hash_key"
         spec: dict[str, object] = {"raw": name, "kind": kind, "status": "confirmed"}
         if kind == "gestational_age":
             spec["format"] = "decimal_weeks"
+        if name == "delivery_date":
+            spec["date_only"] = True
         fields[name] = spec
     configs = tmp_path / "configs"
     configs.mkdir()
@@ -91,6 +97,117 @@ def test_pipeline_end_to_end(project: Path) -> None:
         p.read_text(encoding="utf-8") for p in (project / "reports/profile").iterdir()
     )
     assert "MK_" not in reports
+
+
+SALT_FILE = "data/interim/mother_key.salt"
+
+
+def _raw_ids() -> pd.Series:
+    return make_admissions(1200, seed=31)["mother_key"]
+
+
+def _all_text(root: Path) -> str:
+    """Every text file under ``root`` (reports, CSV, JSON), concatenated."""
+    texts = []
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix in {".csv", ".json", ".md", ".txt", ".yaml"}:
+            texts.append(path.read_text(encoding="utf-8"))
+    return "".join(texts)
+
+
+def test_ingest_hashes_mother_key_with_a_created_salt(project: Path) -> None:
+    salt_path = project / SALT_FILE
+    assert not salt_path.exists()
+    outputs = [_invoke(project, c) for c in ["ingest", "robson", "profile"]]
+    for result in outputs:
+        assert result.exit_code == 0, result.output
+    console = "".join(r.output for r in outputs)
+    salt = salt_path.read_bytes()
+    assert len(salt) == 32
+    assert salt.hex() not in console
+    assert "time_dropped=0" in console  # synthetic delivery dates carry no time of day
+
+    raw_ids = _raw_ids()
+    canonical = pd.read_parquet(project / "data/processed/canonical.parquet")
+    keys = canonical["mother_key"]
+    assert keys.str.fullmatch(r"MK_[0-9a-f]{32}").all()
+    # Rows share a key exactly when they share a raw identifier.
+    pairs = pd.DataFrame({"raw": raw_ids.to_numpy(), "key": keys.to_numpy()})
+    assert pairs.groupby("raw")["key"].nunique().eq(1).all()
+    assert pairs.groupby("key")["raw"].nunique().eq(1).all()
+    assert raw_ids.duplicated().any()
+
+    # The raw identifiers appear nowhere downstream: canonical data, reports, console.
+    raw_set = set(raw_ids.astype(str))
+    for parquet in ("canonical.parquet", "canonical_robson.parquet"):
+        frame = pd.read_parquet(project / "data/processed" / parquet)
+        for column in frame.columns:
+            assert not raw_set & set(frame[column].dropna().astype(str)), column
+    written = (
+        _all_text(project / "reports")
+        + (project / "data/interim/mapping_report.json").read_text(encoding="utf-8")
+        + (project / "data/interim/robson_handcheck.csv").read_text(encoding="utf-8")
+    )
+    for raw_id in raw_set:
+        assert raw_id not in written
+        assert raw_id not in console
+
+
+def test_ingest_reuses_the_salt(project: Path) -> None:
+    assert _invoke(project, "ingest").exit_code == 0
+    salt = (project / SALT_FILE).read_bytes()
+    first = pd.read_parquet(project / "data/processed/canonical.parquet")["mother_key"]
+    assert _invoke(project, "ingest").exit_code == 0
+    assert (project / SALT_FILE).read_bytes() == salt
+    second = pd.read_parquet(project / "data/processed/canonical.parquet")["mother_key"]
+    assert first.tolist() == second.tolist()
+
+
+def test_ingest_uses_configured_salt_path(project: Path) -> None:
+    config_path = project / "configs/project.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["salt_path"] = "data/keys/custom.salt"
+    config_path.write_text(yaml.safe_dump(config))
+    given = bytes(range(100, 132))
+    (project / "data/keys").mkdir(parents=True)
+    (project / "data/keys/custom.salt").write_bytes(given)
+    assert _invoke(project, "ingest").exit_code == 0
+    assert not (project / SALT_FILE).exists()
+    assert (project / "data/keys/custom.salt").read_bytes() == given
+    keys = pd.read_parquet(project / "data/processed/canonical.parquet")["mother_key"]
+    first_id = str(_raw_ids().iloc[0])
+    expected = "MK_" + hashlib.sha256(given + b"\x1f" + first_id.encode()).hexdigest()[:32]
+    assert keys.iloc[0] == expected
+
+
+def test_ingest_refuses_a_short_salt_file(project: Path) -> None:
+    (project / "data/interim").mkdir(parents=True)
+    (project / SALT_FILE).write_bytes(b"too short")
+    result = _run_cli(project, "ingest")
+    assert result.returncode == 1
+    assert "details suppressed" in result.stderr
+    assert (project / SALT_FILE).read_bytes() == b"too short"  # never silently replaced
+    assert not (project / "data/processed/canonical.parquet").exists()
+
+
+def test_ingest_without_hash_key_creates_no_salt(project: Path) -> None:
+    mapping_path = project / "configs/mapping_ur_cmhs.yaml"
+    mapping = yaml.safe_load(mapping_path.read_text())
+    del mapping["fields"]["mother_key"]
+    mapping_path.write_text(yaml.safe_dump(mapping))
+    assert _invoke(project, "ingest").exit_code == 0
+    assert not (project / SALT_FILE).exists()
+
+
+def test_project_config_salt_path_defaults_for_older_configs(project: Path) -> None:
+    config_path = project / "configs/project.yaml"
+    assert "salt_path" not in yaml.safe_load(config_path.read_text())
+    assert load_project_config(config_path).salt_path == Path(SALT_FILE)
+
+
+def test_repository_project_config_keeps_the_salt_under_data() -> None:
+    cfg = load_project_config(Path(__file__).parents[1] / "configs/project.yaml")
+    assert cfg.salt_path == Path(SALT_FILE)
 
 
 def test_ingest_without_mapping_fields_does_inventory_only(project: Path) -> None:
