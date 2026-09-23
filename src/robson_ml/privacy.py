@@ -12,6 +12,7 @@ from scipy.linalg import null_space
 
 SMALL_CELL_THRESHOLD = 5
 SUPPRESSED = "<5"
+SECONDARY = "*"
 MAX_LEVELS_SHOWN = 30
 _NULL_TOLERANCE = 1e-9
 
@@ -124,14 +125,18 @@ def _bounds_leak(
     determined: set,
     values: Mapping[Hashable, float],
     never_shown: set,
+    primary: set,
 ) -> bool:
     """Whether the hidden members of a relation with a known total are pinned by their sum.
 
     A reader sees ``k`` suppressed cells and (from the total) their sum. Taking every
     ``"<5"`` as 1-4, a sum of ``k`` means all ones and ``4k`` all fours; those sums are
-    refused. A never-published complement (``n - n_cs``) carries no ``"<5"`` of its own,
-    and a reader cannot tell a complement of 1-4 from one of 0 or a large one; there the
-    sum pins the cells only when their true values really are all ones or all fours.
+    refused. A secondary (``"*"``) cell may be anything from 0 up, so with secondaries in
+    the relation a primary is pinned only when the sum leaves it no room above 1 (the
+    secondaries being 0). A never-published complement (``n - n_cs``) carries no ``"<5"``
+    of its own, and a reader cannot tell a complement of 1-4 from one of 0 or a large one;
+    there the sum pins the cells only when their true values really are all ones or all
+    fours.
     """
     total = relation.total
     if total is not None and total in unknown and total not in determined:
@@ -143,7 +148,11 @@ def _bounds_leak(
     if any(c in never_shown for c in free):
         return all(values[c] == 1 for c in free) or all(values[c] == top for c in free)
     hidden_sum = sum(values[c] for c in free)
-    return hidden_sum in (len(free), top * len(free))
+    if hidden_sum in (len(free), top * len(free)):
+        return True
+    n_primary = sum(c in primary for c in free)
+    # Secondaries at 0 and the other primaries at 1 leave a primary at most this much.
+    return 0 < n_primary < len(free) and hidden_sum - (n_primary - 1) <= 1
 
 
 def protect_cells(
@@ -154,6 +163,7 @@ def protect_cells(
     hidden: Iterable[Hashable] = (),
     linked: Mapping[Hashable, Iterable[Hashable]] | None = None,
     proxies: Mapping[Hashable, Hashable] | None = None,
+    sizes: Mapping[Hashable, float] | None = None,
 ) -> set[Hashable]:
     """Secondary (complementary) suppression: the cells to hide so none of ``suppressed``
     can be recovered from published totals (DECISIONS.md 2026-09-23).
@@ -166,6 +176,9 @@ def protect_cells(
             them holding 1-4 must stay unknown too.
         linked: hiding a cell also hides these cells (e.g. ``n`` hides ``n_cs``).
         proxies: for a hidden cell, the published cell whose suppression hides it.
+        sizes: how much a published cell holds for choosing secondary cells (default: its
+            value). For a count drawn from a total, ``min(count, total - count)``, so a
+            table counting one side of a mask hides the same cells as one counting the other.
 
     Rule, repeated until stable: (a) no suppressed cell (primary or secondary), and no
     never-published cell holding 1-4, may be exactly determined by the relations (checked
@@ -174,8 +187,9 @@ def protect_cells(
     suppressed members must not be pinned by their sum (all ones, all fours). Each
     violation hides one more cell: for (a), the smallest non-zero published cell whose
     suppression alone frees the exposed cell, else the smallest non-zero published member
-    of the offending relation; for (b), the latter. Zeros, then totals, are used only as a
-    last resort. When nothing publishable is left to hide, the
+    of the offending relation; for (b), the latter. Size is ``sizes`` (ties broken by the
+    order of the relation's members); zeros, then totals, are used only as a last resort.
+    When nothing publishable is left to hide, the
     cell is fixed by published totals alone and suppression cannot help; it is left as is.
 
     Returns:
@@ -184,6 +198,8 @@ def protect_cells(
     links = dict(linked or {})
     prox = dict(proxies or {})
     never_shown = set(hidden)
+    size = dict(values) | dict(sizes or {})
+    primary = {c for c in suppressed if _small_value(values.get(c, 0.0))}
     # A single member with an external total is simply published elsewhere; nothing here
     # can protect it, and its own table must.
     rels = [r for r in relations if len(r.members) >= 2 or r.total is not None]
@@ -207,8 +223,8 @@ def protect_cells(
         options = []
         for position, cell in enumerate(relation.members):
             shown = publishable(cell)
-            if shown is not None and (values.get(shown, 0.0) == 0) == zeros:
-                options.append((values.get(shown, 0.0), position, shown))
+            if shown is not None and (size.get(shown, 0.0) == 0) == zeros:
+                options.append((size.get(shown, 0.0), position, shown))
         return [shown for *_, shown in sorted(options, key=lambda o: (o[0], o[1]))]
 
     def reachable(start: list[SumRelation], unknown: set) -> list[SumRelation]:
@@ -238,7 +254,7 @@ def protect_cells(
             if exposed is not None:
                 # Prefer the smallest cell whose suppression alone un-determines the target.
                 pool = [c for r in order for c in members_by_size(r, zeros)]
-                pool = sorted(dict.fromkeys(pool), key=lambda c: values.get(c, 0.0))
+                pool = sorted(dict.fromkeys(pool), key=lambda c: size.get(c, 0.0))
                 for cell in pool:
                     trial = supp | _closure([cell], links) | never_shown
                     if exposed not in _determined(trial, rels):
@@ -275,7 +291,7 @@ def protect_cells(
                 r
                 for r in rels
                 if r not in fixed_by_totals
-                and _bounds_leak(r, unknown, determined, values, never_shown)
+                and _bounds_leak(r, unknown, determined, values, never_shown, primary)
             ),
             None,
         )
@@ -283,6 +299,17 @@ def protect_cells(
             return supp - never_shown
         if not remedy([leaky], unknown, None):
             fixed_by_totals.add(leaky)
+
+
+@dataclass(frozen=True)
+class TableSpec:
+    """An aggregate table to suppress, with the arguments of :func:`suppress_table`."""
+
+    df: pd.DataFrame
+    count_columns: Sequence[str]
+    linked: Mapping[str, Sequence[str]] | None = None
+    complements: Mapping[str, str] | None = None
+    groups: Sequence[SumRelation] | None = None
 
 
 def suppress_table(
@@ -294,66 +321,99 @@ def suppress_table(
 ) -> pd.DataFrame:
     """Primary then secondary suppression of an aggregate table.
 
-    Primary is :func:`suppress_small_cells`. Secondary treats each ``group`` (row labels of
-    ``df``; default: the whole table, whose total is taken as known) as a sum a reader can
-    form in every count column, and in the complement ``total - count`` of every
-    ``complements`` column, then hides further cells (with their linked columns) until no
+    Primary is :func:`suppress_small_cells` (marked ``"<5"``). Secondary treats each
+    ``group`` (row labels of ``df``; default: the whole table, whose total is taken as
+    known; ``[]``: none) as a sum a reader can form in every count column, and in the
+    complement ``total - count`` of every ``complements`` column, then hides further cells
+    (with their linked columns; marked ``"*"``, since they may hold any value) until no
     suppressed cell or small complement is recoverable (:func:`protect_cells`).
     """
-    if not df.index.is_unique:
-        raise ValueError("suppress_table needs a unique row index")
-    primary = suppress_small_cells(df, count_columns, linked, complements)
-    links = {col: list(targets) for col, targets in (linked or {}).items()}
-    comps = dict(complements or {})
-    counts = set(count_columns)
-    rows = list(df.index)
-    row_groups = list(groups) if groups is not None else [SumRelation(tuple(rows))]
+    spec = TableSpec(df, count_columns, linked, complements, groups)
+    return suppress_tables({None: spec})[None]
 
-    def cell(row: Hashable, col: str) -> tuple[Hashable, str]:
-        return (row, col)
 
-    def complement(row: Hashable, col: str) -> tuple[str, Hashable, str]:
-        return ("~complement", row, col)
+def suppress_tables(
+    tables: Mapping[Hashable, TableSpec], cross: Sequence[SumRelation] = ()
+) -> dict[Hashable, pd.DataFrame]:
+    """:func:`suppress_table` over several tables at once, protected jointly.
 
-    numeric = {col: pd.to_numeric(df[col], errors="coerce").fillna(0.0) for col in counts}
+    ``cross`` are sums a reader can form across tables; their cells are
+    ``(table key, row label, count column)``. A secondary cell hidden to protect one table
+    may sit in another, so the tables are safe to publish only together, as returned.
+    """
     values: dict[Hashable, float] = {}
+    sizes: dict[Hashable, float] = {}
     suppressed: list[Hashable] = []
     cell_links: dict[Hashable, list[Hashable]] = {}
     relations: list[SumRelation] = []
-    for col in count_columns:
-        for row in rows:
-            values[cell(row, col)] = float(numeric[col][row])
-            if isinstance(primary.at[row, col], str) and primary.at[row, col] == SUPPRESSED:
-                suppressed.append(cell(row, col))
-            cell_links[cell(row, col)] = [cell(row, c) for c in links.get(col, ()) if c in counts]
-        for group in row_groups:
-            total = None if group.total is None else cell(group.total, col)
-            relations.append(SumRelation(tuple(cell(m, col) for m in group.members), total))
     hidden: list[Hashable] = []
     proxies: dict[Hashable, Hashable] = {}
-    for col, total_col in comps.items():
-        totals = pd.to_numeric(df[total_col], errors="coerce").fillna(0.0)
-        count = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-        for row in rows:
-            comp = complement(row, col)
-            values[comp] = float(totals[row] - count[row])
-            hidden.append(comp)
-            proxies[comp] = cell(row, col)
-            total_cell = cell(row, total_col) if total_col in counts else None
-            relations.append(SumRelation((cell(row, col), comp), total_cell))
-        for group in row_groups:
-            comp_total = None if group.total is None else complement(group.total, col)
-            relations.append(
-                SumRelation(tuple(complement(m, col) for m in group.members), comp_total)
-            )
+    primaries: dict[Hashable, pd.DataFrame] = {}
+    for key, spec in tables.items():
+        df = spec.df
+        if not df.index.is_unique:
+            raise ValueError("suppress_table needs a unique row index")
+        primary = suppress_small_cells(df, spec.count_columns, spec.linked, spec.complements)
+        primaries[key] = primary
+        links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
+        counts = set(spec.count_columns)
+        rows = list(df.index)
+        row_groups = list(spec.groups) if spec.groups is not None else [SumRelation(tuple(rows))]
+        numeric = {col: pd.to_numeric(df[col], errors="coerce").fillna(0.0) for col in counts}
+        for col in spec.count_columns:
+            for row in rows:
+                values[(key, row, col)] = float(numeric[col][row])
+                if isinstance(primary.at[row, col], str) and primary.at[row, col] == SUPPRESSED:
+                    suppressed.append((key, row, col))
+                cell_links[(key, row, col)] = [
+                    (key, row, c) for c in links.get(col, ()) if c in counts
+                ]
+            for group in row_groups:
+                total = None if group.total is None else (key, group.total, col)
+                members = tuple((key, m, col) for m in group.members)
+                relations.append(SumRelation(members, total))
+        for col, total_col in (spec.complements or {}).items():
+            totals = pd.to_numeric(df[total_col], errors="coerce").fillna(0.0)
+            count = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            for row in rows:
+                comp = ("~complement", key, row, col)
+                values[comp] = float(totals[row] - count[row])
+                sizes[(key, row, col)] = min(float(count[row]), values[comp])
+                hidden.append(comp)
+                proxies[comp] = (key, row, col)
+                total_cell = (key, row, total_col) if total_col in counts else None
+                relations.append(SumRelation(((key, row, col), comp), total_cell))
+            for group in row_groups:
+                comp_total = None if group.total is None else ("~complement", key, group.total, col)
+                comps = tuple(("~complement", key, m, col) for m in group.members)
+                relations.append(SumRelation(comps, comp_total))
+    relations.extend(cross)
     final = protect_cells(
-        values, suppressed, relations, hidden=hidden, linked=cell_links, proxies=proxies
+        values,
+        suppressed,
+        relations,
+        hidden=hidden,
+        linked=cell_links,
+        proxies=proxies,
+        sizes=sizes,
     )
-    out = primary.copy()
-    for row, col in sorted(final - set(suppressed), key=repr):  # type: ignore[misc]
-        for target in (col, *links.get(col, ())):
-            out[target] = out[target].astype(object)
-            out.at[row, target] = SUPPRESSED
+    secondary: list[tuple[Hashable, Hashable, str]] = sorted(
+        final - set(suppressed),  # type: ignore[arg-type]
+        key=repr,
+    )
+    out: dict[Hashable, pd.DataFrame] = {}
+    for key, spec in tables.items():
+        safe = primaries[key].copy()
+        links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
+        for table, row, col in secondary:
+            if table != key:
+                continue
+            for target in (col, *links.get(col, ())):
+                safe[target] = safe[target].astype(object)
+                # A cell already hidden as primary keeps its "<5".
+                if safe.at[row, target] != SUPPRESSED:
+                    safe.at[row, target] = SECONDARY
+        out[key] = safe
     return out
 
 

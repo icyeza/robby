@@ -18,9 +18,12 @@ from robson_ml.profile import (
 )
 from robson_ml.robson_run import classify_frame
 from tests.disclosure import (
+    HIDDEN,
+    assert_linked_status_system,
     assert_not_recoverable,
     markdown_tables,
     scan_profile_outputs,
+    scan_robson_inputs,
 )
 from tests.synthetic import make_admissions
 
@@ -150,7 +153,7 @@ def test_variable_profile_blocks_facility_differencing() -> None:
     profile = variable_profile(raw, canonical, MappingConfig("t", None, {})).iloc[0]
     facility_cells = [profile[f"pct_missing_{f}"] for f in ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]]
     assert profile["pct_missing_FAC_A"] == SUPPRESSED
-    assert profile["pct_missing"] != SUPPRESSED
+    assert profile["pct_missing"] not in HIDDEN
     assert_not_recoverable(facility_cells, None, "FacDiff")
     # FAC_D has no missing values: a published 0.0 hides nobody and is not a candidate.
     assert profile["pct_missing_FAC_D"] == 0.0
@@ -203,7 +206,7 @@ def test_robson_report_blocks_contribution_total_recovery() -> None:
         for column in ("n", "n_cs"):
             assert_not_recoverable(block[column].tolist(), None, f"{facility} {column}")
     for column in ("abs_contribution", "rel_contribution", "pct_of_deliveries"):
-        shown = report.loc[report[column] != SUPPRESSED, column]
+        shown = report.loc[~report[column].isin(HIDDEN), column]
         assert shown.str.fullmatch(r"\d\.\d\d").all(), column
 
 
@@ -280,4 +283,65 @@ def test_write_profile_default_frame_passes_disclosure_scan(tmp_path: Path) -> N
     raw, canonical, config = _raw_and_config()
     out_dir = tmp_path / "profile"
     write_profile(raw, canonical, config, {}, out_dir)
+    scan_profile_outputs(out_dir)
+
+
+def _reviewer_case_a() -> pd.DataFrame:
+    # b3_cross case A: 3 conflicts, partial records resolved by two large field combos.
+    classified = _classified()
+    conflicts = classified.index[classified["robson_status"] == "conflict"][3:]
+    classified.loc[conflicts, "robson_status"] = "partial"
+    partial = classified.index[classified["robson_status"] == "partial"]
+    classified.loc[partial, "robson_resolving_fields"] = np.where(
+        np.arange(len(partial)) % 2, "parity", "gestational_age_weeks"
+    )
+    return classified
+
+
+@pytest.mark.parametrize("excluded", [True, False])
+def test_status_resolving_fields_and_residual_are_protected_jointly(excluded: bool) -> None:
+    # Reviewer recovery R1: partial = sum of the (all shown) resolving-fields rows, then
+    # conflict = Records - resolved - partial, although both status cells were hidden.
+    classified = _reviewer_case_a()
+    if not excluded:
+        classified["cs"] = classified["cs"].fillna(0)
+    text = robson_inputs_markdown(classified)
+    _, status, resolving, report = markdown_tables(text)
+    status = status.set_index("status")
+    assert status.loc["conflict", "n"] == SUPPRESSED
+    partial_known = not resolving["n"].isin(HIDDEN).any()
+    resolved_known = status.loc["resolved", "n"] not in HIDDEN
+    assert not (partial_known and resolved_known), "conflict = Records - resolved - partial"
+    residual = report[(report["facility"] == "ALL") & (report["row"] == "residual")]
+    residual_known = residual["n"].iloc[0] not in HIDDEN
+    assert not (partial_known and residual_known), "conflict = residual - partial"
+    assert_linked_status_system(status.reset_index(), resolving, report)
+    scan_robson_inputs(text)
+
+
+def _reviewer_case_b() -> tuple[pd.DataFrame, pd.DataFrame, MappingConfig]:
+    # b3_cross case B': plurality missing in 2 FAC_A records and 10 of each other facility.
+    classified = _classified()
+    classified["plurality"] = classified["plurality"].fillna(1)
+    facility = classified["facility_id"].astype(str).to_numpy()
+    for fac, k in {"FAC_A": 2, "FAC_B": 10, "FAC_C": 10, "FAC_D": 10}.items():
+        classified.loc[classified.index[np.where(facility == fac)[0][:k]], "plurality"] = np.nan
+    raw = pd.DataFrame({"Plurality raw": classified["plurality"].astype(object)})
+    mapping = FieldMapping("plurality", "int", ("Plurality raw",), "confirmed")
+    return raw, classified, MappingConfig("t", None, {"plurality": mapping})
+
+
+def test_raw_and_canonical_missingness_hide_the_same_facilities(tmp_path: Path) -> None:
+    # Reviewer recovery R2: the profile hid FAC_A and FAC_B, completeness FAC_A and FAC_D;
+    # each filled in the other's second cell, and the Q9 (missing) total gave FAC_A.
+    raw, classified, config = _reviewer_case_b()
+    out_dir = tmp_path / "profile"
+    write_profile(raw, classified, config, {}, out_dir)
+    profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).iloc[0]
+    completeness = markdown_tables((out_dir / "robson_inputs.md").read_text(encoding="utf-8"))[0]
+    row = completeness.set_index("input").loc["plurality"]
+    facilities = ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]
+    unknown = [f for f in facilities if profile[f"pct_missing_{f}"] in HIDDEN and row[f] in HIDDEN]
+    assert len(unknown) != 1, f"{unknown[0]} = (missing) total - the other facilities"
+    assert row["FAC_A"] == SUPPRESSED
     scan_profile_outputs(out_dir)

@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from robson_ml.privacy import SumRelation, suppress_table
+from robson_ml.privacy import SumRelation, TableSpec, suppress_tables
 
 OVERALL = "ALL"
 RESIDUAL = "residual"
@@ -117,21 +117,34 @@ def _two_decimals(value: object) -> object:
     return f"{float(value):.{REPORT_DECIMALS}f}"  # type: ignore[arg-type]
 
 
+def report_table_spec(table: pd.DataFrame) -> TableSpec:
+    """The report table (with a fresh 0..n-1 index) and the sums a reader can form in it,
+    for :func:`privacy.suppress_tables` when it is published beside tables it is linked to.
+    Round the result with :func:`round_report_table`."""
+    table = table.reset_index(drop=True)
+    return TableSpec(table, **REPORT_SUPPRESSION, groups=report_groups(table))
+
+
+def round_report_table(safe: pd.DataFrame) -> pd.DataFrame:
+    """Publish ``REPORT_ROUNDED`` columns to 2 decimals (see :func:`suppress_report_table`)."""
+    safe = safe.copy()
+    for column in REPORT_ROUNDED:
+        safe[column] = safe[column].astype(object).map(_two_decimals)
+    return safe
+
+
 def suppress_report_table(table: pd.DataFrame) -> pd.DataFrame:
     """The report table as it may be exported: primary, then secondary, suppression.
 
     Primary: ``REPORT_SUPPRESSION`` (n or n_cs of 1-4, or n - n_cs of 1-4, with every value
-    derived from them). Secondary: within each facility block, and across the facilities of
-    each row label (whose sum is the ALL row), no hidden n, n_cs or n - n_cs is recoverable
-    by subtraction (``privacy.suppress_table``). Finally ``pct_of_deliveries``,
-    ``abs_contribution`` and ``rel_contribution`` are published to 2 decimals everywhere:
-    at 3 decimals, ``rel_contribution`` on the shown rows pins a facility's CS total
-    exactly. Secondary suppression already assumes every such total is known, so rounding
-    is defence in depth, applied uniformly so the precision itself says nothing about
-    which blocks hide cells.
+    derived from them), marked ``"<5"``. Secondary (marked ``"*"``): within each facility
+    block, and across the facilities of each row label (whose sum is the ALL row), no hidden
+    n, n_cs or n - n_cs is recoverable by subtraction (``privacy.suppress_table``). Finally
+    ``pct_of_deliveries``, ``abs_contribution`` and ``rel_contribution`` are published to 2
+    decimals everywhere: at 3 decimals, ``rel_contribution`` on the shown rows pins a
+    facility's CS total exactly. Secondary suppression already assumes every such total is
+    known, so rounding is defence in depth, applied uniformly so the precision itself says
+    nothing about which blocks hide cells.
     """
-    table = table.reset_index(drop=True)
-    safe = suppress_table(table, **REPORT_SUPPRESSION, groups=report_groups(table))
-    for column in REPORT_ROUNDED:
-        safe[column] = safe[column].astype(object).map(_two_decimals)
-    return safe
+    spec = report_table_spec(table)
+    return round_report_table(suppress_tables({OVERALL: spec})[OVERALL])

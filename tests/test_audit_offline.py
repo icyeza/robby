@@ -11,7 +11,9 @@ from robson_ml.audit_offline import (
     suppress_report_table,
 )
 from robson_ml.populations import audit_population
-from robson_ml.privacy import SUPPRESSED, suppress_small_cells
+from robson_ml.privacy import SECONDARY, SUPPRESSED, suppress_small_cells
+
+HIDDEN = [SUPPRESSED, SECONDARY]
 
 
 def _frame() -> pd.DataFrame:
@@ -142,11 +144,11 @@ def _crafted() -> pd.DataFrame:
 def _assert_no_lone_suppressed(safe: pd.DataFrame) -> None:
     for column in ("n", "n_cs"):
         for facility, block in safe.groupby("facility"):
-            assert (block[column] == SUPPRESSED).sum() != 1, (facility, column)
+            assert block[column].isin(HIDDEN).sum() != 1, (facility, column)
         overall = safe[safe["facility"] == OVERALL].set_index("row")
         for label, cells in safe[safe["facility"] != OVERALL].groupby("row"):
-            if overall.loc[label, column] != SUPPRESSED:
-                assert (cells[column] == SUPPRESSED).sum() != 1, (label, column)
+            if overall.loc[label, column] not in HIDDEN:
+                assert cells[column].isin(HIDDEN).sum() != 1, (label, column)
 
 
 def test_suppress_report_table_blocks_subtraction_within_and_across_facilities() -> None:
@@ -157,9 +159,9 @@ def test_suppress_report_table_blocks_subtraction_within_and_across_facilities()
     # Without secondary suppression A/3 = N_A - (other A rows) and B/3 = ALL/3 - A/3.
     _assert_no_lone_suppressed(safe)
     # Wherever n_cs is hidden, every value derived from it is hidden too.
-    hidden = safe["n_cs"] == SUPPRESSED
+    hidden = safe["n_cs"].isin(HIDDEN)
     for column in ("cs_rate", "abs_contribution", "rel_contribution"):
-        assert (safe.loc[hidden, column] == SUPPRESSED).all()
+        assert safe.loc[hidden, column].isin(HIDDEN).all()
 
 
 def test_suppress_report_table_defeats_contribution_total_recovery() -> None:
@@ -169,7 +171,7 @@ def test_suppress_report_table_defeats_contribution_total_recovery() -> None:
     table = robson_report_table(_crafted())
     safe = suppress_report_table(table)
     for facility, block in safe.groupby("facility"):
-        hidden = block[block["n_cs"] == SUPPRESSED]
+        hidden = block[block["n_cs"].isin(HIDDEN)]
         assert len(hidden) == 0 or len(hidden) >= 2, facility
 
 
@@ -177,5 +179,5 @@ def test_suppress_report_table_rounds_contributions_to_two_decimals() -> None:
     safe = suppress_report_table(robson_report_table(_frame()))
     for column in ("pct_of_deliveries", "abs_contribution", "rel_contribution"):
         for value in safe[column]:
-            if value != SUPPRESSED and not pd.isna(value):
+            if value not in HIDDEN and not pd.isna(value):
                 assert isinstance(value, str) and len(value.split(".")[1]) == 2, value

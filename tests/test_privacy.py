@@ -5,8 +5,10 @@ import pandas as pd
 import pytest
 
 from robson_ml.privacy import (
+    SECONDARY,
     SUPPRESSED,
     SumRelation,
+    TableSpec,
     fmt_count,
     level_counts,
     protect_cells,
@@ -14,6 +16,7 @@ from robson_ml.privacy import (
     safe_pct,
     suppress_small_cells,
     suppress_table,
+    suppress_tables,
 )
 from robson_ml.reporting import markdown_table, write_table
 
@@ -146,14 +149,14 @@ def test_suppress_table_lone_suppressed_cell_forces_a_second() -> None:
         }
     )
     out = suppress_table(df, ["n"], {"n": ["pct"]})
-    assert out["n"].tolist() == [2728, SUPPRESSED, SUPPRESSED]
-    assert out["pct"].tolist() == [90.9, SUPPRESSED, SUPPRESSED]
+    assert out["n"].tolist() == [2728, SECONDARY, SUPPRESSED]
+    assert out["pct"].tolist() == [90.9, SECONDARY, SUPPRESSED]
 
 
 def test_suppress_table_all_ones_forces_a_third() -> None:
     df = pd.DataFrame({"n": [1, 1, 20, 50]})
     out = suppress_table(df, ["n"])
-    assert out["n"].tolist() == [SUPPRESSED, SUPPRESSED, SUPPRESSED, 50]
+    assert out["n"].tolist() == [SUPPRESSED, SUPPRESSED, SECONDARY, 50]
 
 
 def test_suppress_table_leaves_undeterminable_pairs_alone() -> None:
@@ -176,7 +179,7 @@ def test_suppress_table_group_with_total_row() -> None:
         complements={"n_missing": "n_rows"},
         groups=[SumRelation((1, 2, 3), total=0)],
     )
-    assert out["n_missing"].tolist() == [12, SUPPRESSED, SUPPRESSED, 5]
+    assert out["n_missing"].tolist() == [12, SUPPRESSED, SECONDARY, 5]
 
 
 def test_suppress_table_protects_small_complements_in_a_group() -> None:
@@ -190,15 +193,15 @@ def test_suppress_table_protects_small_complements_in_a_group() -> None:
         complements={"n_cs": "n"},
     )
     assert out["n"].tolist() == [13, 40, 60]
-    assert out["n_cs"].tolist() == [SUPPRESSED, SUPPRESSED, 30]
-    assert out["rate"].tolist() == [SUPPRESSED, SUPPRESSED, 0.5]
+    assert out["n_cs"].tolist() == [SUPPRESSED, SECONDARY, 30]
+    assert out["rate"].tolist() == [SUPPRESSED, SECONDARY, 0.5]
 
 
 def test_suppress_table_two_small_complements_summing_to_minimum() -> None:
     # Two hidden vaginal counts of 1 each: their sum (2) is derivable, so both are 1.
     df = pd.DataFrame({"n": [13, 21, 60, 70], "n_cs": [12, 20, 30, 35]})
     out = suppress_table(df, ["n", "n_cs"], linked={"n": ["n_cs"]}, complements={"n_cs": "n"})
-    hidden = [i for i, v in enumerate(out["n_cs"]) if v == SUPPRESSED]
+    hidden = [i for i, v in enumerate(out["n_cs"]) if v in (SUPPRESSED, SECONDARY)]
     assert len(hidden) >= 3
 
 
@@ -214,3 +217,46 @@ def test_protect_cells_closes_chained_derivations() -> None:
 def test_protect_cells_ignores_single_member_external_relation() -> None:
     # A one-member group with an external total says the cell is published elsewhere.
     assert protect_cells({"a": 2}, {"a"}, [SumRelation(("a",))]) == {"a"}
+
+
+def _facility_table(n_true: list[int], n_rows: list[int]) -> pd.DataFrame:
+    return suppress_table(
+        pd.DataFrame({"n_true": n_true, "n_rows": n_rows}),
+        ["n_true"],
+        complements={"n_true": "n_rows"},
+        groups=[SumRelation((1, 2, 3, 4), total=0)],
+    )
+
+
+def test_secondary_choice_does_not_depend_on_which_side_is_counted() -> None:
+    # Reviewer recovery R2: counting missing hid FAC_B, counting recorded hid FAC_D (the
+    # smallest recorded count), and together the two files gave FAC_A back.
+    rows = [3000, 886, 751, 750, 613]
+    missing = [32, 2, 10, 10, 10]
+    recorded = [n - m for n, m in zip(rows, missing, strict=True)]
+    by_missing = _facility_table(missing, rows)["n_true"].isin([SUPPRESSED, SECONDARY])
+    by_recorded = _facility_table(recorded, rows)["n_true"].isin([SUPPRESSED, SECONDARY])
+    assert by_missing.tolist() == by_recorded.tolist()
+    assert by_missing.tolist() == [False, True, True, False, False]
+
+
+def test_secondary_cells_get_their_own_marker() -> None:
+    df = pd.DataFrame(
+        {"status": ["resolved", "partial", "conflict"], "n": [2728, 269, 3], "pct": [1, 2, 3]}
+    )
+    out = suppress_table(df, ["n"], {"n": ["pct"]})
+    assert out["n"].tolist() == [2728, SECONDARY, SUPPRESSED]
+    assert out["pct"].tolist() == [1, SECONDARY, SUPPRESSED]
+
+
+def test_suppress_tables_protects_cells_across_tables() -> None:
+    # The second table's rows sum to the first table's 40: hiding the 40 alone would not
+    # protect the 3 (40 = 20 + 20), so the joint protection hides the 100 instead.
+    first = TableSpec(pd.DataFrame({"n": [100, 40, 3]}), ["n"])
+    second = TableSpec(pd.DataFrame({"n": [20, 20]}), ["n"], groups=[])
+    cross = [SumRelation((("second", 0, "n"), ("second", 1, "n")), ("first", 1, "n"))]
+    out = suppress_tables({"first": first, "second": second}, cross)
+    assert out["first"]["n"].tolist() == [SECONDARY, 40, SUPPRESSED]
+    assert out["second"]["n"].tolist() == [20, 20]
+    alone = suppress_table(first.df, ["n"])
+    assert alone["n"].tolist() == [100, SECONDARY, SUPPRESSED]

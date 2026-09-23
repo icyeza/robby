@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import pandas as pd
@@ -12,18 +12,27 @@ from scipy.stats import chi2_contingency
 from sklearn.metrics import roc_auc_score
 
 from robson_engine import INPUT_FIELDS
-from robson_ml.audit_offline import robson_report_table, suppress_report_table
+from robson_ml.audit_offline import (
+    OVERALL,
+    RESIDUAL,
+    report_table_spec,
+    robson_report_table,
+    round_report_table,
+)
 from robson_ml.ingest import infer_kind
 from robson_ml.mapping import MappingConfig
 from robson_ml.populations import audit_population
 from robson_ml.privacy import (
+    SECONDARY,
     SMALL_CELL_THRESHOLD,
     SUPPRESSED,
     SumRelation,
+    TableSpec,
     fmt_count,
     safe_pct,
     suppress_small_cells,
     suppress_table,
+    suppress_tables,
 )
 from robson_ml.reporting import markdown_table, write_table
 
@@ -56,6 +65,13 @@ PROFILE_LINKED = {
     "n_nonnull": [*(f"p{int(q * 100)}" for q in QUANTILES), "association", "n_unique"],
 }
 PROFILE_COMPLEMENTS = {"n_nonnull": "n_rows"}
+HIDDEN = (SUPPRESSED, SECONDARY)
+SECONDARY_NOTE = "`*` = suppressed to protect another cell (value may be any size)."
+MARKERS_NOTE = (
+    "Suppression markers (here, in open_questions.md and in variable_profile.csv): `<5` = "
+    "a count of 1-4, or one whose complement is 1-4; `*` = suppressed to protect another "
+    "cell (value may be any size)."
+)
 
 
 def _blank_to_none(value: object) -> object:
@@ -101,9 +117,11 @@ def pct_by_facility(
     """% of ``True`` in ``mask`` overall (key ``"all"``) and per facility, suppressed.
 
     The per-facility counts sum to the overall count, which is published, so besides the
-    primary rule (count or complement of 1-4) a lone hidden facility cell would be
-    recoverable by subtraction; secondary suppression hides another one
-    (``privacy.suppress_table``).
+    primary rule (count or complement of 1-4, ``"<5"``) a lone hidden facility cell would be
+    recoverable by subtraction; secondary suppression hides another one (``"*"``,
+    ``privacy.suppress_table``). The facilities are in name order, and the choice of
+    secondary cells depends only on ``min(count, rows - count)``, so ``mask`` and ``~mask``
+    hide the same facilities.
     """
     scopes = [mask, *(mask[facility == fac] for fac in facilities)]
     n_trues = [int(s.sum()) for s in scopes]
@@ -118,8 +136,9 @@ def pct_by_facility(
     out: dict[str, float | str] = {}
     for position, key in enumerate([OVERALL_SCOPE, *facilities]):
         n_true, n_rows = n_trues[position], n_rows_list[position]
-        if safe.at[position, "n_true"] == SUPPRESSED:
-            out[key] = SUPPRESSED
+        marker = safe.at[position, "n_true"]
+        if isinstance(marker, str) and marker in HIDDEN:
+            out[key] = marker
         else:
             out[key] = round(100.0 * n_true / n_rows, 1) if n_rows else float("nan")
     return out
@@ -193,29 +212,132 @@ def variable_profile(
             row["association_metric"] = ""
             row["association"] = None
         row["proposed_status"] = "review"
-        if row["pct_missing"] == SUPPRESSED:
+        if row["pct_missing"] in HIDDEN:
             # n_nonnull reveals the same count as pct_missing: hide it along with what
             # PROFILE_LINKED derives from it (write_profile repeats this for n_nonnull 1-4).
             for name in ("n_nonnull", *PROFILE_LINKED["n_nonnull"]):
-                row[name] = SUPPRESSED
+                row[name] = row["pct_missing"]
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def input_completeness(classified: pd.DataFrame) -> pd.DataFrame:
+def _hide(cells: pd.DataFrame, row: int, columns: Iterable[str]) -> None:
+    """Mark ``columns`` of ``row`` secondary-suppressed, keeping any primary ``"<5"``."""
+    for column in columns:
+        cells[column] = cells[column].astype(object)
+        if cells.at[row, column] not in HIDDEN:
+            cells.at[row, column] = SECONDARY
+
+
+def input_completeness(
+    classified: pd.DataFrame, hide: Mapping[str, Iterable[str]] | None = None
+) -> pd.DataFrame:
     """% recorded for each of the six Robson inputs, overall (``all``) and per facility,
-    with primary and secondary suppression across the facility cells of each row."""
+    with primary and secondary suppression across the facility cells of each row.
+
+    ``hide``: for an input, further scopes (``all`` or facility) to mark ``"*"``: those
+    hidden for the raw column it is mapped from (see :func:`linked_hidden_scopes`).
+    """
     facility = classified["facility_id"].astype(str)
     facilities = sorted(facility.unique())
     rows = []
     for field_name in INPUT_FIELDS:
         pct = pct_by_facility(classified[field_name].notna(), facility, facilities)
         rows.append({"input": field_name, **pct})
-    return pd.DataFrame(rows, columns=["input", OVERALL_SCOPE, *facilities])
+    out = pd.DataFrame(rows, columns=["input", OVERALL_SCOPE, *facilities])
+    for position, field_name in enumerate(out["input"]):
+        scopes = (hide or {}).get(field_name, ())
+        _hide(out, position, [s for s in scopes if s in out.columns and s != "input"])
+    return out
 
 
-def robson_inputs_markdown(classified: pd.DataFrame) -> str:
-    """Completeness of the six inputs, engine status distribution, Robson report table."""
+def linked_hidden_scopes(
+    profile: pd.DataFrame, completeness: pd.DataFrame, config: MappingConfig
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Scopes (``all`` or facility) to hide alike for each input and its raw column(s).
+
+    A Robson input's missingness is published per facility twice: for the raw column in
+    the variable profile (counting missing) and for the canonical field in the completeness
+    table (counting recorded). Where the two agree, a cell hidden in one file but shown in
+    the other gives it back. Inputs and the raw columns they are mapped from are joined
+    into groups, and each group hides the union of what any member hides.
+
+    Returns:
+        (raw column name -> scopes, input -> scopes), for every linked column and input.
+    """
+    by_input = completeness.set_index("input")
+    scopes = [c for c in completeness.columns if c != "input"]
+    parent: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def find(node: tuple[str, str]) -> tuple[str, str]:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            node = parent[node]
+        return node
+
+    raw_names = set(profile["raw_name"].astype(str))
+    for spec in config.fields.values():
+        if spec.canonical not in by_input.index:
+            continue
+        for column in spec.raw:
+            if column in raw_names:
+                parent[find(("raw", column))] = find(("input", spec.canonical))
+    profile_column = {
+        scope: "pct_missing" if scope == OVERALL_SCOPE else f"pct_missing_{scope}"
+        for scope in scopes
+    }
+    groups: dict[tuple[str, str], set[str]] = {}
+    for node in list(parent):
+        kind, name = node
+        if kind == "input":
+            cells = [by_input.loc[name, scope] for scope in scopes]
+            found = {scope for scope, cell in zip(scopes, cells, strict=True) if cell in HIDDEN}
+        else:
+            rows = profile[profile["raw_name"].astype(str) == name]
+            found = {
+                scope
+                for scope, column in profile_column.items()
+                if column in rows.columns and rows[column].isin(HIDDEN).any()
+            }
+        groups.setdefault(find(node), set()).update(found)
+    raw_hide: dict[str, set[str]] = {}
+    input_hide: dict[str, set[str]] = {}
+    for node in parent:
+        target = input_hide if node[0] == "input" else raw_hide
+        target[node[1]] = groups[find(node)]
+    return raw_hide, input_hide
+
+
+def hide_profile_scopes(profile: pd.DataFrame, hide: Mapping[str, Iterable[str]]) -> pd.DataFrame:
+    """Mark the given scopes of each raw column's missingness ``"*"`` in the profile."""
+    out = profile.copy()
+    for position, name in enumerate(out["raw_name"].astype(str)):
+        scopes = set(hide.get(name, ()))
+        columns = [f"pct_missing_{s}" for s in scopes if f"pct_missing_{s}" in out.columns]
+        if OVERALL_SCOPE in scopes:
+            columns += ["pct_missing", "n_nonnull", *PROFILE_LINKED["n_nonnull"]]
+        _hide(out, out.index[position], columns)
+    return out
+
+
+def _table(df: pd.DataFrame) -> str:
+    """A suppressed table as markdown, with the ``"*"`` footnote when it has one."""
+    text = markdown_table(df)
+    if (df.astype(object) == SECONDARY).any().any():
+        text += "\n\n" + SECONDARY_NOTE
+    return text
+
+
+def _status_tables(classified: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Engine status, resolving fields and the Robson report table, protected jointly.
+
+    A reader can link them: the status rows sum to Records; the resolving-fields rows sum
+    to the status partial count; the report's ALL block sums to Records minus the (exactly
+    reported) excluded rows, and its residual row counts the partial and conflict records
+    kept in P_audit. That last sum is exact when nothing is excluded and otherwise known to
+    within the excluded count; it is treated as exact, which protects against the stronger
+    reader. All three tables are suppressed in one pass over these sums.
+    """
     status = (
         classified["robson_status"]
         .value_counts()
@@ -230,8 +352,37 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
     )
     partial = classified.loc[classified["robson_status"] == "partial", "robson_resolving_fields"]
     resolving = partial.value_counts().rename_axis("resolving_fields").reset_index(name="n")
-    audit, log = audit_population(classified)
-    report = suppress_report_table(robson_report_table(audit))
+    audit, _ = audit_population(classified)
+    report = report_table_spec(robson_report_table(audit))
+    keys = zip(report.df["facility"], report.df["row"], strict=True)
+    residual = next(
+        i for i, key in zip(report.df.index, keys, strict=True) if key == (OVERALL, RESIDUAL)
+    )
+    cross = [
+        SumRelation(tuple(("resolving", i, "n") for i in resolving.index), ("status", 1, "n")),
+        SumRelation((("status", 1, "n"), ("status", 2, "n")), ("report", residual, "n")),
+    ]
+    safe = suppress_tables(
+        {
+            "status": TableSpec(status_table, ["n"], {"n": ["pct"]}),
+            # Its only sum is the partial cell, in the cross relations.
+            "resolving": TableSpec(resolving, ["n"], groups=[]),
+            "report": report,
+        },
+        cross,
+    )
+    return safe["status"], safe["resolving"], round_report_table(safe["report"])
+
+
+def robson_inputs_markdown(
+    classified: pd.DataFrame, hide: Mapping[str, Iterable[str]] | None = None
+) -> str:
+    """Completeness of the six inputs, engine status distribution, Robson report table.
+
+    ``hide`` is passed to :func:`input_completeness`.
+    """
+    status, resolving, report = _status_tables(classified)
+    _, log = audit_population(classified)
     version = ", ".join(sorted(classified["rule_set_version"].astype(str).unique()))
     return "\n".join(
         [
@@ -239,18 +390,19 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
             "",
             f"Rule set: {version}. Records: {len(classified)}.",
             "",
+            MARKERS_NOTE,
+            "",
             "## Completeness of the six inputs (% recorded)",
             "",
-            markdown_table(input_completeness(classified)),
+            _table(input_completeness(classified, hide)),
             "",
             "## Engine status",
             "",
-            markdown_table(suppress_table(status_table, ["n"], {"n": ["pct"]})),
+            _table(status),
             "",
             "### Partial records: fields that would resolve them",
             "",
-            # Its rows sum to the partial count of the status table.
-            markdown_table(suppress_table(resolving, ["n"])),
+            _table(resolving),
             "",
             "## Robson report table (P_audit)",
             "",
@@ -259,7 +411,7 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
             "",
             "pct_of_deliveries, abs_contribution and rel_contribution are given to 2 decimals.",
             "",
-            markdown_table(report),
+            _table(report),
             "",
         ]
     )
@@ -275,15 +427,20 @@ def _counts_table(series: pd.Series) -> str:
     recorded = tuple(table.index[table["value"] != MISSING_LABEL])
     if 2 <= len(recorded) < len(table):
         groups.append(SumRelation(recorded))
-    return markdown_table(suppress_table(table, ["n"], groups=groups))
+    return _table(suppress_table(table, ["n"], groups=groups))
 
 
-def _evidence(number: int, canonical: pd.DataFrame, raw: pd.DataFrame) -> str:
+def _evidence(
+    number: int,
+    canonical: pd.DataFrame,
+    raw: pd.DataFrame,
+    hide: Mapping[str, Iterable[str]] | None = None,
+) -> str:
     if number == 1:
         # The "all" column of robson_inputs.md, with the same (secondary) suppression.
-        overall = input_completeness(canonical)[["input", OVERALL_SCOPE]]
+        overall = input_completeness(canonical, hide)[["input", OVERALL_SCOPE]]
         return (
-            markdown_table(overall.rename(columns={OVERALL_SCOPE: "pct_recorded"}))
+            _table(overall.rename(columns={OVERALL_SCOPE: "pct_recorded"}))
             + "\n\nPer-facility completeness: robson_inputs.md."
         )
     if number == 2:
@@ -340,16 +497,22 @@ def _evidence(number: int, canonical: pd.DataFrame, raw: pd.DataFrame) -> str:
 
 
 def open_questions_markdown(
-    canonical: pd.DataFrame, raw: pd.DataFrame, manual: Mapping[str, str]
+    canonical: pd.DataFrame,
+    raw: pd.DataFrame,
+    manual: Mapping[str, str],
+    hide: Mapping[str, Iterable[str]] | None = None,
 ) -> str:
-    """Answers to spec §25: automatic evidence plus the human answer (or a flag if none)."""
+    """Answers to spec §25: automatic evidence plus the human answer (or a flag if none).
+
+    ``hide`` is passed to :func:`input_completeness` (Q1).
+    """
     parts = ["# Open questions (spec §25)", ""]
     for number, question in enumerate(QUESTIONS, start=1):
         answer = manual.get(f"q{number}", NOT_ANSWERED)
         parts += [
             f"## Q{number}. {question}",
             "",
-            _evidence(number, canonical, raw),
+            _evidence(number, canonical, raw, hide),
             "",
             f"**Answer:** {answer}",
             "",
@@ -367,6 +530,10 @@ def write_profile(
     """Write the three §7 outputs under ``out_dir`` (reports/profile)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     profile = variable_profile(raw, classified, config)
+    # An input's missingness per facility appears for its raw column here and for the
+    # canonical field in robson_inputs.md; both files hide the union of the two patterns.
+    raw_hide, input_hide = linked_hidden_scopes(profile, input_completeness(classified), config)
+    profile = hide_profile_scopes(profile, raw_hide)
     # write_table's own suppression only checks n_nonnull's raw value; a small complement
     # (n_rows - n_nonnull) would also reveal a near-complete column, so that guard is
     # applied here first and write_table's pass over the already-suppressed values is a
@@ -380,7 +547,9 @@ def write_profile(
         ["n_nonnull"],
         PROFILE_LINKED,
     )
-    (out_dir / "robson_inputs.md").write_text(robson_inputs_markdown(classified), encoding="utf-8")
+    (out_dir / "robson_inputs.md").write_text(
+        robson_inputs_markdown(classified, input_hide), encoding="utf-8"
+    )
     (out_dir / "open_questions.md").write_text(
-        open_questions_markdown(classified, raw, manual), encoding="utf-8"
+        open_questions_markdown(classified, raw, manual, input_hide), encoding="utf-8"
     )
