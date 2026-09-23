@@ -3,7 +3,13 @@ import math
 import pandas as pd
 import pytest
 
-from robson_ml.audit_offline import OVERALL, REPORT_SUPPRESSION, RESIDUAL, robson_report_table
+from robson_ml.audit_offline import (
+    OVERALL,
+    REPORT_SUPPRESSION,
+    RESIDUAL,
+    robson_report_table,
+    suppress_report_table,
+)
 from robson_ml.populations import audit_population
 from robson_ml.privacy import SUPPRESSED, suppress_small_cells
 
@@ -110,3 +116,66 @@ def test_empty_frame_returns_overall_rows_only() -> None:
     assert len(table) == 11
     assert (table["facility"] == OVERALL).all()
     assert (table["n"] == 0).all()
+
+
+def _crafted() -> pd.DataFrame:
+    """Two facilities; A's group 3 has 3 deliveries and B's group 4 has 1 vaginal birth."""
+    rows: list[tuple[str, str, int | None, int]] = []
+
+    def add(facility: str, group: int, n: int, n_cs: int) -> None:
+        rows.extend((facility, "resolved", group, int(i < n_cs)) for i in range(n))
+
+    add("A", 1, 20, 10)
+    add("A", 2, 30, 15)
+    add("A", 3, 3, 1)
+    add("A", 4, 25, 10)
+    add("B", 1, 25, 12)
+    add("B", 2, 28, 14)
+    add("B", 3, 10, 5)
+    add("B", 4, 13, 12)
+    df = pd.DataFrame(rows, columns=["facility_id", "robson_status", "robson_group", "cs"])
+    df["robson_group"] = df["robson_group"].astype("Int64")
+    df["cs"] = df["cs"].astype("Int64")
+    return df
+
+
+def _assert_no_lone_suppressed(safe: pd.DataFrame) -> None:
+    for column in ("n", "n_cs"):
+        for facility, block in safe.groupby("facility"):
+            assert (block[column] == SUPPRESSED).sum() != 1, (facility, column)
+        overall = safe[safe["facility"] == OVERALL].set_index("row")
+        for label, cells in safe[safe["facility"] != OVERALL].groupby("row"):
+            if overall.loc[label, column] != SUPPRESSED:
+                assert (cells[column] == SUPPRESSED).sum() != 1, (label, column)
+
+
+def test_suppress_report_table_blocks_subtraction_within_and_across_facilities() -> None:
+    table = robson_report_table(_crafted())
+    safe = suppress_report_table(table)
+    assert _row(safe, "A", "3")["n"] == SUPPRESSED
+    assert _row(safe, "B", "4")["n_cs"] == SUPPRESSED
+    # Without secondary suppression A/3 = N_A - (other A rows) and B/3 = ALL/3 - A/3.
+    _assert_no_lone_suppressed(safe)
+    # Wherever n_cs is hidden, every value derived from it is hidden too.
+    hidden = safe["n_cs"] == SUPPRESSED
+    for column in ("cs_rate", "abs_contribution", "rel_contribution"):
+        assert (safe.loc[hidden, column] == SUPPRESSED).all()
+
+
+def test_suppress_report_table_defeats_contribution_total_recovery() -> None:
+    # Reviewer recovery: rel_contribution pins the facility CS total, then the lone hidden
+    # n_cs is total - shown. Every block now hides at least two n_cs, so the remainder is a
+    # sum of hidden cells, never one cell.
+    table = robson_report_table(_crafted())
+    safe = suppress_report_table(table)
+    for facility, block in safe.groupby("facility"):
+        hidden = block[block["n_cs"] == SUPPRESSED]
+        assert len(hidden) == 0 or len(hidden) >= 2, facility
+
+
+def test_suppress_report_table_rounds_contributions_to_two_decimals() -> None:
+    safe = suppress_report_table(robson_report_table(_frame()))
+    for column in ("pct_of_deliveries", "abs_contribution", "rel_contribution"):
+        for value in safe[column]:
+            if value != SUPPRESSED and not pd.isna(value):
+                assert isinstance(value, str) and len(value.split(".")[1]) == 2, value

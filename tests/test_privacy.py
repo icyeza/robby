@@ -6,11 +6,14 @@ import pytest
 
 from robson_ml.privacy import (
     SUPPRESSED,
+    SumRelation,
     fmt_count,
     level_counts,
+    protect_cells,
     safe_describe,
     safe_pct,
     suppress_small_cells,
+    suppress_table,
 )
 from robson_ml.reporting import markdown_table, write_table
 
@@ -131,3 +134,83 @@ def test_markdown_table_formats_nat_and_np_float() -> None:
     text = markdown_table(pd.DataFrame({"a": [pd.NaT], "b": [np.float32(0.5)]}))
     row = text.splitlines()[2]
     assert row == "|  | 0.500 |"
+
+
+def test_suppress_table_lone_suppressed_cell_forces_a_second() -> None:
+    # Reviewer recovery: with N published, conflict = N - resolved - partial.
+    df = pd.DataFrame(
+        {
+            "status": ["resolved", "partial", "conflict"],
+            "n": [2728, 269, 3],
+            "pct": [90.9, 9.0, 0.1],
+        }
+    )
+    out = suppress_table(df, ["n"], {"n": ["pct"]})
+    assert out["n"].tolist() == [2728, SUPPRESSED, SUPPRESSED]
+    assert out["pct"].tolist() == [90.9, SUPPRESSED, SUPPRESSED]
+
+
+def test_suppress_table_all_ones_forces_a_third() -> None:
+    df = pd.DataFrame({"n": [1, 1, 20, 50]})
+    out = suppress_table(df, ["n"])
+    assert out["n"].tolist() == [SUPPRESSED, SUPPRESSED, SUPPRESSED, 50]
+
+
+def test_suppress_table_leaves_undeterminable_pairs_alone() -> None:
+    df = pd.DataFrame({"n": [3, 2, 20, 50, 0]})
+    out = suppress_table(df, ["n"])
+    assert out["n"].tolist() == [SUPPRESSED, SUPPRESSED, 20, 50, 0]
+
+
+def test_suppress_table_untouched_without_small_cells() -> None:
+    df = pd.DataFrame({"n": [30, 20, 0]})
+    assert suppress_table(df, ["n"])["n"].tolist() == [30, 20, 0]
+
+
+def test_suppress_table_group_with_total_row() -> None:
+    # Row 0 is the published total of rows 1-3 (e.g. overall vs per facility).
+    df = pd.DataFrame({"n_missing": [12, 2, 5, 5], "n_rows": [100, 30, 30, 40]})
+    out = suppress_table(
+        df,
+        ["n_missing"],
+        complements={"n_missing": "n_rows"},
+        groups=[SumRelation((1, 2, 3), total=0)],
+    )
+    assert out["n_missing"].tolist() == [12, SUPPRESSED, SUPPRESSED, 5]
+
+
+def test_suppress_table_protects_small_complements_in_a_group() -> None:
+    # n_cs = 12 of n = 13 is hidden because 1 vaginal birth is small; the block's CS total
+    # is derivable, so another n_cs must go too.
+    df = pd.DataFrame({"n": [13, 40, 60], "n_cs": [12, 20, 30], "rate": [0.9, 0.5, 0.5]})
+    out = suppress_table(
+        df,
+        ["n", "n_cs"],
+        linked={"n": ["n_cs", "rate"], "n_cs": ["rate"]},
+        complements={"n_cs": "n"},
+    )
+    assert out["n"].tolist() == [13, 40, 60]
+    assert out["n_cs"].tolist() == [SUPPRESSED, SUPPRESSED, 30]
+    assert out["rate"].tolist() == [SUPPRESSED, SUPPRESSED, 0.5]
+
+
+def test_suppress_table_two_small_complements_summing_to_minimum() -> None:
+    # Two hidden vaginal counts of 1 each: their sum (2) is derivable, so both are 1.
+    df = pd.DataFrame({"n": [13, 21, 60, 70], "n_cs": [12, 20, 30, 35]})
+    out = suppress_table(df, ["n", "n_cs"], linked={"n": ["n_cs"]}, complements={"n_cs": "n"})
+    hidden = [i for i, v in enumerate(out["n_cs"]) if v == SUPPRESSED]
+    assert len(hidden) >= 3
+
+
+def test_protect_cells_closes_chained_derivations() -> None:
+    # a + x and x + y both have derivable totals; with y published, x and then a follow.
+    values = {"a": 2, "x": 10, "y": 20, "z": 30}
+    relations = [SumRelation(("a", "x")), SumRelation(("x", "y", "z"))]
+    hidden = protect_cells(values, {"a", "x"}, relations)
+    assert {"a", "x", "y"} <= hidden
+    assert "z" not in hidden
+
+
+def test_protect_cells_ignores_single_member_external_relation() -> None:
+    # A one-member group with an external total says the cell is published elsewhere.
+    assert protect_cells({"a": 2}, {"a"}, [SumRelation(("a",))]) == {"a"}

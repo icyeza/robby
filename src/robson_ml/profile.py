@@ -12,15 +12,28 @@ from scipy.stats import chi2_contingency
 from sklearn.metrics import roc_auc_score
 
 from robson_engine import INPUT_FIELDS
-from robson_ml.audit_offline import REPORT_SUPPRESSION, robson_report_table
+from robson_ml.audit_offline import robson_report_table, suppress_report_table
 from robson_ml.ingest import infer_kind
 from robson_ml.mapping import MappingConfig
 from robson_ml.populations import audit_population
-from robson_ml.privacy import fmt_count, safe_pct, suppress_small_cells
+from robson_ml.privacy import (
+    SMALL_CELL_THRESHOLD,
+    SUPPRESSED,
+    SumRelation,
+    fmt_count,
+    safe_pct,
+    suppress_small_cells,
+    suppress_table,
+)
 from robson_ml.reporting import markdown_table, write_table
 
 MIN_CLASS_COUNT = 10
-MIN_N_FOR_QUANTILES = 20
+# A quantile is released only with at least this many values at or below it and at or
+# above it (DECISIONS.md 2026-09-23), so it never pins a few extreme values.
+QUANTILE_MIN_SIDE = 5
+RARE_LEVEL = "(rare)"
+MISSING_LABEL = "(missing)"
+OVERALL_SCOPE = "all"
 QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 CLINICIAN_PATTERN = re.compile(r"clinician|doctor|midwife|nurse|cadre|staff|provider|attend", re.I)
 ANTENATAL_PATTERN = re.compile(r"\banc\b|antenatal|ante-natal|prenatal", re.I)
@@ -59,9 +72,22 @@ def single_feature_auc(values: pd.Series, cs: pd.Series) -> float | None:
 
 
 def cramers_v(values: pd.Series, cs: pd.Series) -> float | None:
-    """Cramér's V between a categorical variable and ``cs`` (no continuity correction)."""
+    """Cramér's V between a categorical variable and ``cs`` (no continuity correction).
+
+    Like the AUC, needs ``MIN_CLASS_COUNT`` rows in each ``cs`` class. Levels with fewer
+    than 5 rows are pooled into one ``"(rare)"`` level; if that pool itself has fewer than
+    5 rows it is left out. ``None`` if fewer than 2 levels remain.
+    """
     both = values.notna() & cs.notna()
-    table = pd.crosstab(values[both].astype(str), cs[both].astype(int))
+    labels = values[both].astype(str)
+    sizes = labels.value_counts()
+    labels = labels.where(~labels.isin(sizes.index[sizes < SMALL_CELL_THRESHOLD]), RARE_LEVEL)
+    if (labels == RARE_LEVEL).sum() < SMALL_CELL_THRESHOLD:
+        labels = labels[labels != RARE_LEVEL]
+    y = cs[labels.index].astype(int)
+    if (y == 1).sum() < MIN_CLASS_COUNT or (y == 0).sum() < MIN_CLASS_COUNT:
+        return None
+    table = pd.crosstab(labels, y)
     if table.shape[0] < 2 or table.shape[1] < 2:
         return None
     chi2 = chi2_contingency(table, correction=False)[0]
@@ -69,11 +95,65 @@ def cramers_v(values: pd.Series, cs: pd.Series) -> float | None:
     return float(math.sqrt(chi2 / (n * (min(table.shape) - 1))))
 
 
+def pct_by_facility(
+    mask: pd.Series, facility: pd.Series, facilities: list[str]
+) -> dict[str, float | str]:
+    """% of ``True`` in ``mask`` overall (key ``"all"``) and per facility, suppressed.
+
+    The per-facility counts sum to the overall count, which is published, so besides the
+    primary rule (count or complement of 1-4) a lone hidden facility cell would be
+    recoverable by subtraction; secondary suppression hides another one
+    (``privacy.suppress_table``).
+    """
+    scopes = [mask, *(mask[facility == fac] for fac in facilities)]
+    n_trues = [int(s.sum()) for s in scopes]
+    n_rows_list = [len(s) for s in scopes]
+    counts = pd.DataFrame({"n_true": n_trues, "n_rows": n_rows_list})
+    safe = suppress_table(
+        counts,
+        ["n_true"],
+        complements={"n_true": "n_rows"},
+        groups=[SumRelation(tuple(range(1, len(scopes))), total=0)],
+    )
+    out: dict[str, float | str] = {}
+    for position, key in enumerate([OVERALL_SCOPE, *facilities]):
+        n_true, n_rows = n_trues[position], n_rows_list[position]
+        if safe.at[position, "n_true"] == SUPPRESSED:
+            out[key] = SUPPRESSED
+        else:
+            out[key] = round(100.0 * n_true / n_rows, 1) if n_rows else float("nan")
+    return out
+
+
+def _released_quantiles(numeric: pd.Series | None) -> dict[str, float | None]:
+    """Quantiles with at least ``QUANTILE_MIN_SIDE`` values on each side; else ``None``."""
+    out: dict[str, float | None] = {}
+    for q in QUANTILES:
+        key = f"p{int(q * 100)}"
+        out[key] = None
+        if numeric is None or not numeric.notna().any():
+            continue
+        value = float(numeric.quantile(q))
+        below, above = int((numeric <= value).sum()), int((numeric >= value).sum())
+        if below >= QUANTILE_MIN_SIDE and above >= QUANTILE_MIN_SIDE:
+            out[key] = value
+    return out
+
+
 def variable_profile(
     raw: pd.DataFrame, canonical: pd.DataFrame, config: MappingConfig
 ) -> pd.DataFrame:
-    """One row per raw variable (spec §7): names, kind, missingness overall and per facility,
-    distinct values, quantiles, univariate association with ``cs``, proposed status."""
+    """One row per raw variable (spec §7): position, names, kind, missingness overall and per
+    facility, distinct values, quantiles, univariate association with ``cs``, proposed
+    status.
+
+    ``raw`` and ``canonical`` must be row-aligned (same records, same order).
+    """
+    if len(raw) != len(canonical):
+        raise ValueError(
+            f"variable_profile needs row-aligned frames: raw has {len(raw)} rows, "
+            f"canonical has {len(canonical)}"
+        )
     raw = raw.reset_index(drop=True)
     canonical = canonical.reset_index(drop=True)
     facility = canonical["facility_id"].astype(str)
@@ -88,23 +168,21 @@ def variable_profile(
         column = raw.columns[position]
         values = raw.iloc[:, position].map(_blank_to_none)
         kind = infer_kind(values)
+        missing = pct_by_facility(values.isna(), facility, facilities)
         row: dict[str, object] = {
+            "raw_position": position,
             "raw_name": str(column),
             "canonical_name": ";".join(to_canonical.get(str(column), [])),
             "kind": kind,
             "n_rows": len(values),
             "n_nonnull": int(values.notna().sum()),
-            "pct_missing": safe_pct(values.isna()),
+            "pct_missing": missing[OVERALL_SCOPE],
         }
         for fac in facilities:
-            row[f"pct_missing_{fac}"] = safe_pct(values[facility == fac].isna())
+            row[f"pct_missing_{fac}"] = missing[fac]
         row["n_unique"] = int(values.dropna().astype(str).nunique())
         numeric = pd.to_numeric(values, errors="coerce") if kind == "numeric" else None
-        enough = numeric is not None and int(numeric.notna().sum()) >= MIN_N_FOR_QUANTILES
-        for q in QUANTILES:
-            row[f"p{int(q * 100)}"] = (
-                float(numeric.quantile(q)) if enough and numeric is not None else None
-            )
+        row.update(_released_quantiles(numeric))
         if numeric is not None:
             row["association_metric"] = "auc"
             row["association"] = single_feature_auc(numeric, cs)
@@ -115,23 +193,29 @@ def variable_profile(
             row["association_metric"] = ""
             row["association"] = None
         row["proposed_status"] = "review"
+        if row["pct_missing"] == SUPPRESSED:
+            # n_nonnull reveals the same count as pct_missing: hide it along with what
+            # PROFILE_LINKED derives from it (write_profile repeats this for n_nonnull 1-4).
+            for name in ("n_nonnull", *PROFILE_LINKED["n_nonnull"]):
+                row[name] = SUPPRESSED
         rows.append(row)
     return pd.DataFrame(rows)
 
 
+def input_completeness(classified: pd.DataFrame) -> pd.DataFrame:
+    """% recorded for each of the six Robson inputs, overall (``all``) and per facility,
+    with primary and secondary suppression across the facility cells of each row."""
+    facility = classified["facility_id"].astype(str)
+    facilities = sorted(facility.unique())
+    rows = []
+    for field_name in INPUT_FIELDS:
+        pct = pct_by_facility(classified[field_name].notna(), facility, facilities)
+        rows.append({"input": field_name, **pct})
+    return pd.DataFrame(rows, columns=["input", OVERALL_SCOPE, *facilities])
+
+
 def robson_inputs_markdown(classified: pd.DataFrame) -> str:
     """Completeness of the six inputs, engine status distribution, Robson report table."""
-    facilities = sorted(classified["facility_id"].astype(str).unique())
-    completeness = []
-    for field_name in INPUT_FIELDS:
-        row: dict[str, object] = {
-            "input": field_name,
-            "all": safe_pct(classified[field_name].notna()),
-        }
-        for fac in facilities:
-            in_fac = classified["facility_id"].astype(str) == fac
-            row[fac] = safe_pct(classified.loc[in_fac, field_name].notna())
-        completeness.append(row)
     status = (
         classified["robson_status"]
         .value_counts()
@@ -147,7 +231,7 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
     partial = classified.loc[classified["robson_status"] == "partial", "robson_resolving_fields"]
     resolving = partial.value_counts().rename_axis("resolving_fields").reset_index(name="n")
     audit, log = audit_population(classified)
-    report = suppress_small_cells(robson_report_table(audit), **REPORT_SUPPRESSION)
+    report = suppress_report_table(robson_report_table(audit))
     version = ", ".join(sorted(classified["rule_set_version"].astype(str).unique()))
     return "\n".join(
         [
@@ -157,18 +241,23 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
             "",
             "## Completeness of the six inputs (% recorded)",
             "",
-            markdown_table(pd.DataFrame(completeness)),
+            markdown_table(input_completeness(classified)),
             "",
             "## Engine status",
             "",
-            markdown_table(suppress_small_cells(status_table, ["n"], {"n": ["pct"]})),
+            markdown_table(suppress_table(status_table, ["n"], {"n": ["pct"]})),
             "",
             "### Partial records: fields that would resolve them",
             "",
-            markdown_table(suppress_small_cells(resolving, ["n"])),
+            # Its rows sum to the partial count of the status table.
+            markdown_table(suppress_table(resolving, ["n"])),
             "",
-            f"## Robson report table (P_audit; {fmt_count(log.n_excluded)} rows excluded"
-            " for missing outcome)",
+            "## Robson report table (P_audit)",
+            "",
+            f"{log.n_excluded} rows excluded for missing outcome (reported exactly; "
+            "data-quality count, spec §4.2).",
+            "",
+            "pct_of_deliveries, abs_contribution and rel_contribution are given to 2 decimals.",
             "",
             markdown_table(report),
             "",
@@ -177,16 +266,25 @@ def robson_inputs_markdown(classified: pd.DataFrame) -> str:
 
 
 def _counts_table(series: pd.Series) -> str:
-    labelled = series.astype(object).where(series.notna(), "(missing)").astype(str)
+    """Level counts, suppressed. The levels sum to the published number of rows, and the
+    recorded levels to the non-missing count (published for the raw column by the variable
+    profile), so both groups are protected from subtraction."""
+    labelled = series.astype(object).where(series.notna(), MISSING_LABEL).astype(str)
     table = labelled.value_counts().rename_axis("value").reset_index(name="n")
-    return markdown_table(suppress_small_cells(table, ["n"]))
+    groups = [SumRelation(tuple(table.index))]
+    recorded = tuple(table.index[table["value"] != MISSING_LABEL])
+    if 2 <= len(recorded) < len(table):
+        groups.append(SumRelation(recorded))
+    return markdown_table(suppress_table(table, ["n"], groups=groups))
 
 
 def _evidence(number: int, canonical: pd.DataFrame, raw: pd.DataFrame) -> str:
     if number == 1:
-        rows = [{"input": f, "pct_recorded": safe_pct(canonical[f].notna())} for f in INPUT_FIELDS]
+        # The "all" column of robson_inputs.md, with the same (secondary) suppression.
+        overall = input_completeness(canonical)[["input", OVERALL_SCOPE]]
         return (
-            markdown_table(pd.DataFrame(rows)) + "\n\nPer-facility completeness: robson_inputs.md."
+            markdown_table(overall.rename(columns={OVERALL_SCOPE: "pct_recorded"}))
+            + "\n\nPer-facility completeness: robson_inputs.md."
         )
     if number == 2:
         prelabour = canonical[canonical["onset_of_labour"] == "prelabour_cs"]
@@ -209,7 +307,10 @@ def _evidence(number: int, canonical: pd.DataFrame, raw: pd.DataFrame) -> str:
         if not hits:
             return "No raw column names match the search pattern."
         rows = [
-            {"raw_column": str(raw.columns[i]), "pct_recorded": safe_pct(raw.iloc[:, i].notna())}
+            {
+                "raw_column": str(raw.columns[i]),
+                "pct_recorded": safe_pct(raw.iloc[:, i].map(_blank_to_none).notna()),
+            }
             for i in hits
         ]
         return "Raw columns whose names match:\n\n" + markdown_table(pd.DataFrame(rows))
