@@ -1,0 +1,17 @@
+# data (only reference tables may be committed)
+data/*
+!data/reference/
+# experiment tracking and build outputs
+mlruns/
+artefacts/
+reports/
+# python tooling
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
