@@ -1,3 +1,143 @@
 source: "UR-CMHS delivery records export (labels), 2026-08-31"
+# Single-sheet export. Raw column names are copied exactly, including trailing spaces.
+# status: review = meaning or coding needs human confirmation (see Checkpoint 1 review list).
 sheet: ~
-fields: {}
+fields:
+  admission_id:
+    kind: row_key
+    status: confirmed
+    note: "Synthetic key; the export has no admission identifier."
+
+  mother_key:
+    raw: "Patient UPI"
+    kind: hash_key
+    status: confirmed
+    note: "Salted one-way hash; the raw identifier never enters canonical data (spec v1.2)."
+
+  facility_id:
+    raw: "Hospital Name"
+    kind: text
+    status: confirmed
+
+  delivery_date:
+    raw: "Date of Delivery"
+    kind: datetime
+    date_only: true
+    status: confirmed
+    note: "Proxy time axis; the export has no admission timestamp (spec v1.2)."
+
+  parity:
+    raw: ["Number of previous Vaginal delivery", "Number of Previous C-Sections "]
+    kind: integer_sum
+    levels: {"4 and above": 4, "4 or more": 4}
+    range: [0, 25]
+    status: review
+    note: "Previous births = previous vaginal + previous CS; register Parity includes the current birth (user decision 2026-09-23). Top-codes counted as 4."
+
+  previous_cs_count:
+    raw: "Number of Previous C-Sections "
+    kind: category
+    levels: {"0": 0, "1": 1, "2": 2, "3": 3, "4 or more": 4}
+    status: confirmed
+    note: "'4 or more' top-coded as 4 (sufficient for Robson 5a/5b). Disagrees with 'Previous Scar' in some records; count is the source."
+
+  fetal_presentation:
+    raw: "Fetal Malpresentation "
+    kind: category
+    levels: {"No": "cephalic", "Yes": "non_cephalic"}
+    status: review
+    note: "Only malpresentation yes/no exists; sits among CS-indication columns but is filled for all deliveries. Yes = non_cephalic (type unknown)."
+
+  plurality:
+    raw: "Multiple Pregnancy "
+    kind: category
+    levels: {"No": 1, "Yes": 2}
+    status: review
+    note: "Likely under-recorded (28 yes vs ~80-110 expected); 'Multiple Fetus' (indication block) has 52 yes. 'Yes' = 2 or more."
+
+  gestational_age_weeks:
+    raw: "Actual Gestational week at delivery"
+    kind: gestational_age
+    format: weeks_days_text
+    range: [20, 45]
+    status: confirmed
+    note: "Free text; ~66% filled. Unparseable shapes are counted, not guessed."
+
+  ga_band_lower:
+    raw: "Gestational Age at Time of Labor"
+    kind: category
+    levels: {"Less than 34 weeks": 20.0, "35 - 37 Weeks": 35.0, "38 - 40 Weeks": 38.0, "Over 40 Weeks": 40.142857142857146}
+    status: review
+    note: "Band lower bound. 34+x weeks falls in no band on the form. 'Over 40' taken as from 40+1."
+
+  ga_band_upper:
+    raw: "Gestational Age at Time of Labor"
+    kind: category
+    levels: {"Less than 34 weeks": 33.857142857142854, "35 - 37 Weeks": 37.857142857142854, "38 - 40 Weeks": 40.857142857142854, "Over 40 Weeks": 45.0}
+    status: review
+    note: "Band upper bound (completed weeks + 6 days). The 35-37 band straddles the 37-week Robson cut."
+
+  onset_of_labour:
+    raw: "Labor Onset"
+    kind: category
+    levels: {"Spontaneous": "spontaneous", "Induced": "induced", "Planned C-section": "prelabour_cs"}
+    status: review
+    note: "'Planned C-section' onset includes emergency CS types and a few vaginal births; flagged, not excluded (spec v1.2)."
+
+  prelabour_cs_type:
+    raw: "If C-Section"
+    kind: category
+    levels: {"Elective/Planned": "planned", "Emergency": "emergency"}
+    status: review
+    note: "Filled for all CS, not only pre-labour CS. Use ONLY where onset_of_labour == prelabour_cs (P_pred_sens). Outcome-side: never a feature."
+
+  maternal_age:
+    raw: "Maternal Age "
+    kind: float
+    range: [12, 55]
+    status: confirmed
+
+  height_cm:
+    raw: "Maternal Height"
+    kind: float
+    range: [120, 200]
+    status: confirmed
+
+  weight_kg:
+    raw: "Maternal Weight"
+    kind: float
+    range: [30, 200]
+    status: confirmed
+    note: "Timing of measurement (booking vs admission) unknown."
+
+  anc_contacts:
+    raw: "Number of ANC Visits"
+    kind: category
+    levels: {"0": 0, "1": 1, "2": 2, "3": 3, "4 or more": 4, "N/A": ~}
+    status: review
+    note: "'4 or more' top-coded as 4; 'N/A' treated as explicitly not recorded."
+
+  preeclampsia_recorded:
+    raw: "Pre-eclampsia "
+    kind: category
+    levels: {"No": "no", "Yes": "yes"}
+    status: confirmed
+    note: "Recorded 'no' may be a true 'yes' (under-recording, RQ2)."
+
+  gdm_recorded:
+    raw: "Gestational Diabetes "
+    kind: category
+    levels: {"No": "no", "Yes": "yes"}
+    status: confirmed
+    note: "Recorded 'no' may be a true 'yes' (under-recording, RQ2)."
+
+  mode_of_delivery:
+    raw: "Mode of Delivery"
+    kind: text
+    status: confirmed
+
+  cs:
+    raw: "Mode of Delivery"
+    kind: category
+    levels: {"C-Section": 1, "Vaginal": 0}
+    status: confirmed
