@@ -82,3 +82,12 @@ def test_inventory_handles_duplicate_column_names() -> None:
     inv = inventory({"s": df})
     names = [c["name"] for c in inv["sheets"][0]["columns"]]
     assert names == ["Dup", "Dup"]
+
+
+def test_literal_na_strings_survive_and_only_empty_cells_are_missing(tmp_path: Path) -> None:
+    path = tmp_path / "raw.xlsx"
+    frame = pd.DataFrame({"Previous CS": ["None", "NA", "null", None], "X": [1, 2, 3, 4]})
+    frame.to_excel(path, sheet_name="main", index=False)
+    column = read_workbook(path)["main"]["Previous CS"]
+    assert column.iloc[:3].tolist() == ["None", "NA", "null"]
+    assert column.isna().tolist() == [False, False, False, True]

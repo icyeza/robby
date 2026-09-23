@@ -24,11 +24,20 @@ def file_sha256(path: Path) -> str:
 
 
 def read_workbook(path: Path) -> dict[str, pd.DataFrame]:
-    """Read every sheet of the raw export as object columns (no type coercion)."""
+    """Read every sheet of the raw export as object columns (no type coercion).
+
+    Only truly empty cells become missing: recorded answers such as a literal "None", "NA"
+    or "null" are kept as strings rather than pandas' default NA markers.
+    """
     if not path.exists():
         raise FileNotFoundError(f"raw export not found at {path}; expected under data/raw/")
     sheets: dict[str, pd.DataFrame] = pd.read_excel(
-        path, sheet_name=None, dtype=object, engine="openpyxl"
+        path,
+        sheet_name=None,
+        dtype=object,
+        engine="openpyxl",
+        keep_default_na=False,
+        na_values=[""],
     )
     return sheets
 
