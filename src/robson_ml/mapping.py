@@ -68,6 +68,10 @@ MISSING_ROW_LABEL = "(missing)"
 _WEEKS_PLUS_DAYS = re.compile(r"^\s*(\d{1,2})\s*\+\s*([0-6])\s*$")
 # A clock time followed by "Z" or a numeric UTC offset: the string carries its own timezone.
 _TZ_SUFFIX = re.compile(r"\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:Z|[+-]\d{2}(?::?\d{2})?)\s*$")
+# Under the default ISO8601 format, only strings with a full YYYY-MM-DD date are trusted;
+# reduced-precision ISO strings like "2024" or "2024-03" would otherwise have pandas fabricate
+# a day (and month) value.
+_ISO_FULL_DATE = re.compile(r"^\s*\d{4}-\d{2}-\d{2}")
 
 
 class MappingError(ValueError):
@@ -317,6 +321,11 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
             fmt = "ISO8601"
         if not isinstance(fmt, str) or not fmt.strip():
             raise MappingError(f"{name}: datetime format must be a non-empty string")
+        if fmt.strip().lower().startswith("mixed") or fmt.strip().lower() == "infer":
+            raise MappingError(
+                f"{name}: datetime format must not guess (e.g. 'mixed' or 'infer'); "
+                "use an explicit strptime format or the ISO8601 default"
+            )
         datetime_format = fmt
 
     note = spec.get("note")
@@ -479,6 +488,12 @@ def _datetimes(values: pd.Series, fmt: str) -> tuple[pd.Series, int]:
     result = pd.Series(pd.NaT, index=values.index, dtype="datetime64[ns]")
     aware_flags = pd.Series(False, index=values.index)
     is_string = values.map(lambda v: isinstance(v, str))
+    if fmt == "ISO8601":
+        # Reduced-precision ISO strings ("2024", "2024-03") would have pandas fabricate a
+        # day (and month) value; only strings with a full YYYY-MM-DD date are trusted here.
+        is_string = is_string & values.map(
+            lambda v: isinstance(v, str) and bool(_ISO_FULL_DATE.match(v))
+        )
     has_offset = values.map(lambda v: isinstance(v, str) and bool(_TZ_SUFFIX.search(v)))
     for mask, aware in ((is_string & ~has_offset, False), (is_string & has_offset, True)):
         if mask.any():

@@ -395,6 +395,40 @@ def test_datetime_explicit_format_is_not_second_guessed(tmp_path: Path) -> None:
     assert by["admitted_at"].n_unparsed == 1
 
 
+def _load_fields(tmp_path: Path, fields: str) -> None:
+    path = tmp_path / "m.yaml"
+    path.write_text(f"fields:\n{fields}", encoding="utf-8")
+    load_mapping(path)
+
+
+def test_datetime_format_mixed_is_rejected(tmp_path: Path) -> None:
+    fields = "  admitted_at: {raw: W, kind: datetime, format: mixed}\n"
+    with pytest.raises(MappingError, match="admitted_at"):
+        _load_fields(tmp_path, fields)
+
+
+def test_datetime_format_infer_is_rejected(tmp_path: Path) -> None:
+    fields = "  admitted_at: {raw: W, kind: datetime, format: infer}\n"
+    with pytest.raises(MappingError, match="admitted_at"):
+        _load_fields(tmp_path, fields)
+
+
+def test_datetime_format_mixed_variant_is_rejected(tmp_path: Path) -> None:
+    fields = "  admitted_at: {raw: W, kind: datetime, format: mixed-format}\n"
+    with pytest.raises(MappingError, match="admitted_at"):
+        _load_fields(tmp_path, fields)
+
+
+def test_iso_default_rejects_reduced_precision_dates(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"W": ["2024", "2024-03", "2024-03-05"]}, dtype=object)
+    canonical, by = _run(tmp_path, DT_FIELD, raw)
+    assert by["admitted_at"].n_mapped == 1
+    assert by["admitted_at"].n_unparsed == 2
+    assert canonical["admitted_at"].tolist()[2] == pd.Timestamp("2024-03-05")
+    assert pd.isna(canonical["admitted_at"].iloc[0])
+    assert pd.isna(canonical["admitted_at"].iloc[1])
+
+
 def test_non_finite_bool_and_huge_numbers_are_unparsed(tmp_path: Path) -> None:
     fields = (
         "  parity: {raw: P, kind: integer}\n"
