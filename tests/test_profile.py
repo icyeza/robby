@@ -7,25 +7,26 @@ import pytest
 
 from robson_engine import load_rule_set
 from robson_ml.mapping import FieldMapping, MappingConfig
-from robson_ml.privacy import SUPPRESSED
+from robson_ml.privacy import SECONDARY, SUPPRESSED
 from robson_ml.profile import (
-    GA_EXACT_OR_BAND,
-    PRESENTATION_PRECISE,
+    GA_BAND_RECORDED,
     QUESTIONS,
     cramers_v,
     input_completeness,
     open_questions_markdown,
+    pct_by_facility,
     robson_inputs_markdown,
     single_feature_auc,
     variable_profile,
     write_profile,
 )
 from robson_ml.robson_run import classify_frame
+from robson_ml.schema import GA_BAND_FIELDS
 from tests.disclosure import (
     HIDDEN,
+    CountReader,
     assert_linked_status_system,
     assert_not_recoverable,
-    determined_cells,
     markdown_tables,
     scan_open_questions,
     scan_profile_outputs,
@@ -358,63 +359,162 @@ def test_raw_and_canonical_missingness_hide_the_same_facilities(tmp_path: Path) 
 FACILITIES = ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]
 
 
-def test_completeness_adds_coarse_aware_rows() -> None:
+def test_completeness_adds_ga_band_row() -> None:
     classified = _classified()
     table = input_completeness(classified).set_index("input")
-    assert list(table.index[-2:]) == [GA_EXACT_OR_BAND, PRESENTATION_PRECISE]
-    exact, any_ga = table.loc["gestational_age_weeks", "all"], table.loc[GA_EXACT_OR_BAND, "all"]
-    recorded = table.loc["fetal_presentation", "all"]
-    precise = table.loc[PRESENTATION_PRECISE, "all"]
-    band = classified[["ga_band_lower", "ga_band_upper"]].notna().all(axis=1)
-    expected_any = (classified["gestational_age_weeks"].notna() | band).mean()
-    assert float(any_ga) == pytest.approx(round(100 * expected_any, 1))
-    assert float(any_ga) > float(exact)
-    assert float(precise) < float(recorded)
+    assert table.index[-1] == GA_BAND_RECORDED
+    band = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
+    assert float(table.loc[GA_BAND_RECORDED, "all"]) == pytest.approx(round(100 * band.mean(), 1))
     text = robson_inputs_markdown(classified)
-    assert GA_EXACT_OR_BAND in text and PRESENTATION_PRECISE in text
+    # No row nested in another: their difference would be a count published by subtraction.
+    assert "exact or band" not in text and "precise type" not in text
     scan_robson_inputs(text)
 
 
-def _small_coarse_counts_at_fac_a() -> pd.DataFrame:
-    """FAC_A: exactly 2 records with GA only as a band, exactly 3 coarse presentations."""
-    admissions = make_admissions(3000, seed=21)
-    at_a = admissions["facility_id"] == "FAC_A"
-    band_only = at_a & admissions["gestational_age_weeks"].isna()
-    drop = admissions.index[band_only][2:]
-    admissions.loc[drop, ["ga_band_lower", "ga_band_upper"]] = np.nan
-    coarse = admissions.index[at_a & (admissions["fetal_presentation"] == "non_cephalic")]
-    admissions.loc[coarse[3:], "fetal_presentation"] = "cephalic"
+def _band_scenario(facility_b: str, band_only_at_a: int) -> pd.DataFrame:
+    """Reviewer case (c2_scen): FAC_A has exactly ``band_only_at_a`` records with GA only as
+    a band; FAC_B has no band at all (``"noband"``) or no exact GA (``"noexact"``)."""
+    admissions = make_admissions(800, seed=5)
+    facility = admissions["facility_id"].astype(str)
+    band = admissions["ga_band_lower"].notna()
+    exact = admissions["gestational_age_weeks"]
+    band_only = admissions.index[(facility == "FAC_A") & exact.isna() & band]
+    assert len(band_only) > band_only_at_a
+    fill = band_only[band_only_at_a:]
+    middle = (admissions.loc[fill, "ga_band_lower"] + admissions.loc[fill, "ga_band_upper"]) / 2
+    admissions.loc[fill, "gestational_age_weeks"] = middle.round(3)
+    if facility_b == "noband":
+        admissions.loc[facility == "FAC_B", list(GA_BAND_FIELDS)] = np.nan
+    else:
+        admissions.loc[facility == "FAC_B", "gestational_age_weeks"] = np.nan
     return classify_frame(admissions, load_rule_set())
 
 
-def _difference_exposed(table: pd.DataFrame, larger: str, smaller: str) -> set[str]:
-    """Scopes whose (larger - smaller) count a reader can pin, from the published cells.
+def _band_raw_and_config(classified: pd.DataFrame) -> tuple[pd.DataFrame, MappingConfig]:
+    exact = classified["gestational_age_weeks"]
+    lower, upper = classified["ga_band_lower"], classified["ga_band_upper"]
+    band = [
+        None if pd.isna(lo) else f"{lo:.2f}-{hi:.2f}" for lo, hi in zip(lower, upper, strict=True)
+    ]
+    raw = pd.DataFrame(
+        {
+            "GA text": exact.map(lambda x: None if pd.isna(x) else f"{x:.3f}").astype(object),
+            "GA band": pd.Series(band, dtype=object),
+        }
+    )
+    fields = {
+        "gestational_age_weeks": FieldMapping(
+            "gestational_age_weeks", "gestational_age", ("GA text",), "confirmed"
+        ),
+        **{f: FieldMapping(f, "category", ("GA band",), "confirmed") for f in GA_BAND_FIELDS},
+    }
+    return raw, MappingConfig("t", None, fields)
 
-    Unknowns: every hidden cell of the two rows and every difference cell. Equations: each
-    row's facilities sum to its "all" cell, and larger = smaller + difference per scope.
-    """
-    rows = table.set_index("input")
-    scopes = ["all", *FACILITIES]
-    unknown = {("diff", s) for s in scopes}
-    for label in (larger, smaller):
-        unknown |= {(label, s) for s in scopes if rows.loc[label, s] in HIDDEN}
-    equations: list[list[object]] = []
-    signs: list[list[int]] = []
-    for label in (larger, smaller):
-        equations.append([(label, "all"), *((label, f) for f in FACILITIES)])
-        signs.append([-1, *([1] * len(FACILITIES))])
-    for scope in scopes:
-        equations.append([(larger, scope), (smaller, scope), ("diff", scope)])
-        signs.append([1, -1, -1])
-    return {s for kind, s in determined_cells(equations, signs, unknown) if kind == "diff"}
+
+def _ga_reader(out_dir: Path, sizes: dict[str, int]) -> tuple[CountReader, pd.DataFrame]:
+    """An integer-programming reader of every published GA cell: the exact and band rows,
+    their raw columns' missingness (the same records), facility sums, and per scope the
+    unknown count with both (Frechet bounds)."""
+    text = (out_dir / "robson_inputs.md").read_text(encoding="utf-8")
+    completeness = markdown_tables(text)[0].set_index("input")
+    profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).set_index("raw_name")
+    reader = CountReader()
+    for label, raw_name in (("gestational_age_weeks", "GA text"), (GA_BAND_RECORDED, "GA band")):
+        for scope, n in sizes.items():
+            column = "pct_missing" if scope == "all" else f"pct_missing_{scope}"
+            count = reader.pct((label, scope), completeness.loc[label, scope], n)
+            raw_count = reader.pct((raw_name, scope), profile.loc[raw_name, column], n, False)
+            reader.constrain({count: 1, raw_count: -1}, 0, 0)
+        for key in (label, raw_name):
+            reader.constrain({(key, "all"): -1, **{(key, f): 1 for f in FACILITIES}}, 0, 0)
+    for scope, n in sizes.items():
+        e, b = ("gestational_age_weeks", scope), (GA_BAND_RECORDED, scope)
+        both = reader.var(("both", scope), 0, n)
+        reader.constrain({both: 1, e: -1}, -np.inf, 0)
+        reader.constrain({both: 1, b: -1}, -np.inf, 0)
+        reader.constrain({both: 1, e: -1, b: -1}, -n, np.inf)
+    reader.constrain({("both", "all"): -1, **{("both", f): 1 for f in FACILITIES}}, 0, 0)
+    return reader, completeness
 
 
-def test_small_band_only_and_coarse_counts_are_not_recoverable() -> None:
-    classified = _small_coarse_counts_at_fac_a()
-    table = input_completeness(classified)
-    assert "FAC_A" not in _difference_exposed(table, GA_EXACT_OR_BAND, "gestational_age_weeks")
-    assert "FAC_A" not in _difference_exposed(table, "fetal_presentation", PRESENTATION_PRECISE)
-    scan_robson_inputs(robson_inputs_markdown(classified))
+@pytest.mark.parametrize(("facility_b", "band_only_at_a"), [("noband", 3), ("noexact", 1)])
+def test_band_only_and_neither_counts_are_not_recoverable(
+    tmp_path: Path, facility_b: str, band_only_at_a: int
+) -> None:
+    # Reviewer recovery (c2_attack): the "exact or band" row, the exact row and the raw band
+    # column's missingness pinned the band-only and "neither" counts. Now the band row
+    # counts only the band, hides alike with its raw column, and an integer-programming
+    # reader over every published GA cell can pin neither count nor a hidden cell.
+    classified = _band_scenario(facility_b, band_only_at_a)
+    raw, config = _band_raw_and_config(classified)
+    out_dir = tmp_path / "profile"
+    write_profile(raw, classified, config, {}, out_dir)
+    scan_profile_outputs(out_dir)
+    facility = classified["facility_id"].astype(str)
+    sizes = {"all": len(classified), **{f: int((facility == f).sum()) for f in FACILITIES}}
+    reader, completeness = _ga_reader(out_dir, sizes)
+    exact = classified["gestational_age_weeks"].notna()
+    band = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
+    for scope in sizes:
+        rows = facility == scope if scope != "all" else pd.Series(True, index=classified.index)
+        e, b, both = ("gestational_age_weeks", scope), (GA_BAND_RECORDED, scope), ("both", scope)
+        for name, truth, coefs in (
+            ("band only", int((rows & band & ~exact).sum()), {b: 1, both: -1}),
+            ("neither", int((rows & ~band & ~exact).sum()), {e: -1, b: -1, both: 1}),
+        ):
+            if 1 <= truth <= 4:
+                low, high = reader.range(coefs)
+                assert low < high, f"{name} at {scope} pinned to {truth}"
+        for key in (e, b):
+            if completeness.loc[key[0], scope] in HIDDEN:
+                low, high = reader.range({key: 1})
+                assert low < high, f"{key} pinned"
+
+
+def _one_per_facility() -> tuple[pd.Series, pd.Series]:
+    facility = pd.Series(np.repeat(FACILITIES, 200))
+    mask = pd.Series(False, index=facility.index)
+    mask.iloc[[0, 200, 400, 600]] = True
+    return mask, facility
+
+
+@pytest.mark.parametrize("negate", [False, True])
+def test_one_missing_per_facility_is_not_pinned(negate: bool) -> None:
+    # Reviewer recovery: every facility "<5" (each >= 1) and the overall "<5" (<= 4) gave 1
+    # in each facility.
+    mask, facility = _one_per_facility()
+    out = pct_by_facility(~mask if negate else mask, facility, FACILITIES)
+    cells = [out[f] for f in FACILITIES]
+    assert out["all"] == SECONDARY
+    assert cells == [SUPPRESSED] * 4
+    assert_not_recoverable(cells, out["all"], "one missing per facility")
+    reader = CountReader()
+    reader.pct("all", out["all"], len(mask), not negate)
+    for fac in FACILITIES:
+        reader.pct(fac, out[fac], 200, not negate)
+    reader.constrain({"all": -1, **{f: 1 for f in FACILITIES}}, 0, 0)
+    for fac in FACILITIES:
+        low, high = reader.range({fac: 1})
+        assert low < high, f"{fac} pinned"
+
+
+def test_one_shared_mother_key_pair_is_not_pinned(tmp_path: Path) -> None:
+    # Reviewer recovery (c2_q9): Q9 showed "<5" rows sharing a key, but the profile's
+    # n_nonnull - n_unique = 1 for the key column gave exactly one pair (2 rows).
+    classified = _classified()
+    keys = [f"K{i}" for i in range(len(classified))]
+    keys[1] = keys[0]
+    classified["mother_key"] = keys
+    raw = pd.DataFrame({"Patient ID": pd.Series(keys, dtype=object)})
+    mapping = FieldMapping("mother_key", "hash_key", ("Patient ID",), "confirmed")
+    out_dir = tmp_path / "profile"
+    write_profile(raw, classified, MappingConfig("t", None, {"mother_key": mapping}), {}, out_dir)
+    profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).set_index("raw_name")
+    assert profile.loc["Patient ID", "n_unique"] == SECONDARY
+    assert profile.loc["Patient ID", "n_nonnull"] not in HIDDEN
+    q9 = (out_dir / "open_questions.md").read_text(encoding="utf-8").split("## Q9.", 1)[1]
+    assert f"Rows sharing a mother_key with another row: {SUPPRESSED}." in q9
+    scan_profile_outputs(out_dir)
 
 
 def test_q6_uses_delivery_date_as_proxy() -> None:

@@ -19,6 +19,7 @@ from robson_ml.privacy import (
     suppress_tables,
 )
 from robson_ml.reporting import markdown_table, write_table
+from tests.disclosure import assert_not_recoverable
 
 
 def test_suppress_counts_one_to_four_and_linked_rates() -> None:
@@ -209,14 +210,14 @@ def test_protect_cells_closes_chained_derivations() -> None:
     # a + x and x + y both have derivable totals; with y published, x and then a follow.
     values = {"a": 2, "x": 10, "y": 20, "z": 30}
     relations = [SumRelation(("a", "x")), SumRelation(("x", "y", "z"))]
-    hidden = protect_cells(values, {"a", "x"}, relations)
+    hidden = protect_cells(values, {"a", "x"}, relations).hidden
     assert {"a", "x", "y"} <= hidden
     assert "z" not in hidden
 
 
 def test_protect_cells_ignores_single_member_external_relation() -> None:
     # A one-member group with an external total says the cell is published elsewhere.
-    assert protect_cells({"a": 2}, {"a"}, [SumRelation(("a",))]) == {"a"}
+    assert protect_cells({"a": 2}, {"a"}, [SumRelation(("a",))]).hidden == {"a"}
 
 
 def _facility_table(n_true: list[int], n_rows: list[int]) -> pd.DataFrame:
@@ -260,3 +261,35 @@ def test_suppress_tables_protects_cells_across_tables() -> None:
     assert out["second"]["n"].tolist() == [20, 20]
     alone = suppress_table(first.df, ["n"])
     assert alone["n"].tolist() == [100, SECONDARY, SUPPRESSED]
+
+
+def test_protect_cells_small_total_does_not_pin_its_members() -> None:
+    # Reviewer recovery: four cells "<5" (each >= 1) summing to a total shown "<5" (<= 4)
+    # are all 1. Nothing is left to hide, so the total is marked "*" (it may be any size).
+    values = {"all": 4, "a": 1, "b": 1, "c": 1, "d": 1}
+    result = protect_cells(values, list(values), [SumRelation(("a", "b", "c", "d"), "all")])
+    assert result.hidden == set(values)
+    assert result.demoted == {"all"}
+    shown = [SECONDARY if c in result.demoted else SUPPRESSED for c in ("a", "b", "c", "d")]
+    assert_not_recoverable(shown, SECONDARY, "members of a relabelled total")
+
+
+@pytest.mark.parametrize("counted", ["missing", "recorded"])
+def test_small_total_over_small_facility_cells_is_relabelled(counted: str) -> None:
+    # One missing record in each of four facilities: every cell, the total too, is "<5".
+    rows = [800, 200, 200, 200, 200]
+    missing = [4, 1, 1, 1, 1]
+    counts = (
+        missing if counted == "missing" else [n - m for n, m in zip(rows, missing, strict=True)]
+    )
+    out = _facility_table(counts, rows)["n_true"].tolist()
+    assert out == [SECONDARY, SUPPRESSED, SUPPRESSED, SUPPRESSED, SUPPRESSED]
+    assert_not_recoverable(out[1:], out[0], "facilities")
+
+
+def test_protect_cells_known_total_all_ones_still_hides_a_published_cell() -> None:
+    # With a published cell to hide, rule (b) hides it rather than relabelling.
+    values = {"a": 1, "b": 1, "c": 20, "d": 50}
+    result = protect_cells(values, {"a", "b"}, [SumRelation(("a", "b", "c", "d"))])
+    assert result.hidden == {"a", "b", "c"}
+    assert result.demoted == set()

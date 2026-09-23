@@ -6,8 +6,9 @@ reader would, and asserts:
 (i) no count column holds an unsuppressed count of 1-4;
 (ii) in every group of cells whose total is published or derivable, the suppressed cells
      cannot be recovered by subtraction: the group hides no cell or at least two, and when
-     the total is known the hidden remainder does not pin a primary (``"<5"``, 1-4) cell.
-     A secondary cell (``"*"``) may hold any value from 0 up;
+     the total is known, or itself shown as ``"<5"`` (so 1-4), the bounds do not pin a
+     primary (``"<5"``, 1-4) cell or the total. A secondary cell (``"*"``) may hold any
+     value from 0 up;
 (iii) across tables: the engine status table, the resolving-fields table and the Robson
      report's n cells form one linear system (status sums to Records, resolving fields to
      the partial count, each report block to its derivable total, each report row label
@@ -15,20 +16,30 @@ reader would, and asserts:
      hidden cell of it is determined;
 (iv) for every Robson input published from exactly one raw column, the per-facility cells
      hidden in the variable profile and in the completeness table are the same, so one
-     file cannot fill in what the other hides.
+     file cannot fill in what the other hides (with the same markers); likewise for the
+     ``ga_band (recorded)`` row and the raw column the band is mapped from;
+(v) every raw column mapped to ``mother_key`` (the only field a ``hash_key`` may produce)
+     publishes ``n_unique`` as ``"*"``: ``n_nonnull - n_unique`` would count the rows that
+     repeat a key, which Q9 publishes only suppressed.
+
+:class:`CountReader` is a stronger reader for tests: an integer programme over published
+percentages and markers, used to check that given never-published counts cannot be pinned.
 """
 
 from __future__ import annotations
 
+import math
 import re
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import Bounds, LinearConstraint, milp
 
 from robson_engine import INPUT_FIELDS
 from robson_ml.privacy import SECONDARY, SUPPRESSED
+from robson_ml.profile import GA_BAND_RECORDED
 
 COUNT_COLUMNS = frozenset({"n", "n_cs", "n_nonnull"})
 MISSING_LABEL = "(missing)"
@@ -77,32 +88,53 @@ def assert_no_small_counts(table: pd.DataFrame, where: str) -> None:
             assert value is None or not 1 <= value <= 4, f"{where}: {column}={cell}"
 
 
-def assert_not_recoverable(cells: Sequence[object], total: float | None, where: str) -> None:
+def _bounds(cell: object) -> tuple[float, float]:
+    """What a reader knows of one cell: ``"<5"`` is 1-4, ``"*"`` anything from 0 up."""
+    if cell == SUPPRESSED:
+        return 1.0, 4.0
+    value = _number(cell)
+    return (value, value) if value is not None else (0.0, math.inf)
+
+
+def _pinned(cells: Sequence[object], total: object) -> list[str]:
+    """Primary cells (and a ``"<5"`` total) the sum leaves a single value, as messages."""
+    bounds = [_bounds(cell) for cell in cells]
+    t_lo, t_hi = _bounds(total)
+    lo_sum = sum(lo for lo, _ in bounds)
+    hi_sum = sum(hi for _, hi in bounds)
+    if lo_sum > t_hi or hi_sum < t_lo:
+        return []  # this reading of the markers is infeasible
+    out = []
+    for i, cell in enumerate(cells):
+        if cell != SUPPRESSED:
+            continue
+        others_hi = sum(hi for j, (_, hi) in enumerate(bounds) if j != i)
+        others_lo = lo_sum - bounds[i][0]
+        if max(1.0, t_lo - others_hi) >= min(4.0, t_hi - others_lo):
+            out.append(f"cell {i} pinned")
+    if total == SUPPRESSED and max(1.0, lo_sum) >= min(4.0, hi_sum):
+        out.append("the '<5' total pinned")
+    return out
+
+
+def assert_not_recoverable(cells: Sequence[object], total: object, where: str) -> None:
     """(ii): the suppressed cells of a group summing to ``total`` cannot be recovered.
 
-    A reader takes each ``"<5"`` as 1-4 and each ``"*"`` as 0 or more. With a known total
-    the hidden cells sum to a known remainder; a primary cell is pinned when that remainder
-    leaves it a single value.
+    ``total`` is the published total (a number or a marker), or ``None`` when it is
+    derivable but not given here. A reader takes each ``"<5"`` as 1-4 and each ``"*"`` as 0
+    or more; with a known total, or one shown ``"<5"``, a primary cell (or that total) is
+    pinned when the bounds leave it a single value.
     """
     hidden = [cell for cell in cells if is_hidden(cell)]
-    assert len(hidden) != 1, f"{where}: a lone suppressed cell is recoverable by subtraction"
-    if total is None or not hidden:
+    if total is None or not is_hidden(total):
+        assert len(hidden) != 1, f"{where}: a lone suppressed cell is recoverable by subtraction"
+    if total is None or total == SECONDARY or not hidden:
         return
-    shown = sum(_number(cell) or 0.0 for cell in cells if not is_hidden(cell))
-    remainder = total - shown
-    primary = sum(cell == SUPPRESSED for cell in hidden)
-    if not primary:
-        return
-    if primary == len(hidden):
-        assert remainder not in (primary, 4 * primary), (
-            f"{where}: {primary} hidden cells summing to {remainder}"
-        )
-    else:
-        # Secondaries may be 0, so each primary is at most remainder - (primary - 1).
-        assert remainder > primary, f"{where}: primaries pinned to 1 by remainder {remainder}"
+    pinned = _pinned(cells, total)
+    assert not pinned, f"{where}: {pinned} (cells {list(cells)}, total {total})"
 
 
-def _counts_table_checks(table: pd.DataFrame, total: float | None, where: str) -> None:
+def _counts_table_checks(table: pd.DataFrame, total: object, where: str) -> None:
     assert_no_small_counts(table, where)
     assert_not_recoverable(table["n"].tolist(), total, where)
     recorded = table[table.iloc[:, 0] != MISSING_LABEL]
@@ -126,10 +158,27 @@ def _report_checks(report: pd.DataFrame) -> None:
 
 
 def _wide_checks(table: pd.DataFrame, total_column: str, facility_columns: Sequence[str]) -> None:
+    """Percentage rows: the facilities sum to the total column.
+
+    A shown total only forbids a lone hidden facility (counts are not published). A total
+    shown ``"<5"`` means its count or its complement is 1-4. On the side that is 1-4 every
+    shown facility must be 0 (0.0% or 100.0%) and each ``"<5"`` facility is 1-4, so the
+    bounds must not pin them.
+    """
     for _, row in table.iterrows():
-        if not is_hidden(row[total_column]):
-            where = f"{row.iloc[0]}: {total_column} vs {list(facility_columns)}"
-            assert_not_recoverable([row[c] for c in facility_columns], None, where)
+        total = row[total_column]
+        cells = [row[c] for c in facility_columns]
+        where = f"{row.iloc[0]}: {total_column} vs {list(facility_columns)}"
+        if not is_hidden(total):
+            assert_not_recoverable(cells, None, where)
+            continue
+        if total != SUPPRESSED:
+            continue
+        shown = [_number(c) for c in cells if not is_hidden(c)]
+        for side in (0.0, 100.0):
+            if all(value == side for value in shown):
+                small_side = [c if is_hidden(c) else 0 for c in cells]
+                assert_not_recoverable(small_side, SUPPRESSED, f"{where} ({side:g}% side)")
 
 
 def determined_cells(
@@ -210,8 +259,8 @@ def scan_robson_inputs(text: str) -> None:
         completeness, "all", [c for c in completeness.columns if c not in ("input", "all")]
     )
     _counts_table_checks(status, records, "engine status")
-    partial = _number(status.set_index("status").loc["partial", "n"])
-    if partial is not None:
+    partial = status.set_index("status").loc["partial", "n"]
+    if partial != SECONDARY:
         _counts_table_checks(resolving, partial, "resolving fields")
     else:
         # The partial total is hidden; (iii) checks whether it can be derived.
@@ -240,20 +289,34 @@ def scan_variable_profile(profile: pd.DataFrame) -> None:
 
 
 def assert_linked_inputs_hide_alike(profile: pd.DataFrame, completeness: pd.DataFrame) -> None:
-    """(iv): same hidden facility cells for an input and its single raw column."""
+    """(iv): same hidden cells, with the same markers, for an input and its single raw
+    column, and for the ``ga_band (recorded)`` row and the one raw column both band bounds
+    are mapped from."""
     names = profile["canonical_name"].fillna("")
     by_input = completeness.set_index("input")
     facilities = [c for c in completeness.columns if c not in ("input", "all")]
-    for field in INPUT_FIELDS:
-        rows = profile[names == field]
-        if len(rows) != 1 or field not in by_input.index:
+    columns = {"all": "pct_missing", **{f: f"pct_missing_{f}" for f in facilities}}
+    pairs = [(field, names == field) for field in INPUT_FIELDS]
+    pairs.append((GA_BAND_RECORDED, names == "ga_band_lower;ga_band_upper"))
+    for label, matches in pairs:
+        rows = profile[matches]
+        if len(rows) != 1 or label not in by_input.index:
             continue
         raw = rows.iloc[0]
-        in_profile = {f for f in facilities if is_hidden(raw[f"pct_missing_{f}"])}
-        in_completeness = {f for f in facilities if is_hidden(by_input.loc[field, f])}
+        in_profile = {s: raw[c] for s, c in columns.items() if is_hidden(raw[c])}
+        in_completeness = {
+            s: by_input.loc[label, s] for s in columns if is_hidden(by_input.loc[label, s])
+        }
         assert in_profile == in_completeness, (
-            f"{field}: profile hides {sorted(in_profile)}, completeness {sorted(in_completeness)}"
+            f"{label}: profile hides {in_profile}, completeness {in_completeness}"
         )
+
+
+def assert_hash_key_uniques_hidden(profile: pd.DataFrame) -> None:
+    """(v): a raw column mapped to mother_key never shows its number of distinct values."""
+    names = profile["canonical_name"].fillna("").str.split(";")
+    for _, row in profile[names.map(lambda parts: "mother_key" in parts)].iterrows():
+        assert row["n_unique"] == SECONDARY, f"{row['raw_name']}: n_unique {row['n_unique']}"
 
 
 def scan_profile_outputs(out_dir: Path) -> None:
@@ -264,4 +327,71 @@ def scan_profile_outputs(out_dir: Path) -> None:
     scan_open_questions((out_dir / "open_questions.md").read_text(encoding="utf-8"), records)
     profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str)
     scan_variable_profile(profile)
+    assert_hash_key_uniques_hidden(profile)
     assert_linked_inputs_hide_alike(profile, markdown_tables(inputs)[0])
+
+
+class CountReader:
+    """A reader's integer programme over published percentages (for tests).
+
+    Each published percentage becomes an integer count within its rounding interval;
+    ``"<5"`` means the count or its complement is 1-4, ``"*"`` anything. :meth:`range` is
+    the smallest and largest value a linear expression of counts can take.
+    """
+
+    def __init__(self) -> None:
+        self._index: dict[Hashable, int] = {}
+        self._lower: list[float] = []
+        self._upper: list[float] = []
+        self._rows: list[tuple[dict[Hashable, float], float, float]] = []
+
+    def var(self, key: Hashable, lower: float = 0.0, upper: float = math.inf) -> Hashable:
+        if key not in self._index:
+            self._index[key] = len(self._index)
+            self._lower.append(lower)
+            self._upper.append(upper)
+        return key
+
+    def constrain(self, coefs: Mapping[Hashable, float], lower: float, upper: float) -> None:
+        self._rows.append((dict(coefs), lower, upper))
+
+    def pct(self, key: Hashable, cell: object, n: int, counted: bool = True) -> Hashable:
+        """A count out of ``n`` rows published as the percentage ``cell`` (of the count if
+        ``counted``, else of its complement)."""
+        x = self.var(key, 0, n)
+        if cell == SECONDARY:
+            return x
+        if cell == SUPPRESSED:
+            small = self.var((key, "small side"), 0, 1)
+            big = n + 10
+            # small = 1: 1 <= x <= 4; small = 0: n - 4 <= x <= n - 1.
+            self.constrain({x: 1, small: -big}, 1 - big, math.inf)
+            self.constrain({x: 1, small: big}, -math.inf, 4 + big)
+            self.constrain({x: 1, small: big}, n - 4, math.inf)
+            self.constrain({x: 1, small: -big}, -math.inf, n - 1)
+            return x
+        pct = float(str(cell))
+        if not counted:
+            pct = 100.0 - pct
+        self.constrain({x: 1}, (pct - 0.05) * n / 100 - 1e-9, (pct + 0.05) * n / 100 + 1e-9)
+        return x
+
+    def range(self, coefs: Mapping[Hashable, float]) -> tuple[int, int]:
+        n = len(self._index)
+        matrix = np.zeros((len(self._rows), n))
+        lower, upper = np.zeros(len(self._rows)), np.zeros(len(self._rows))
+        for i, (row, lo, hi) in enumerate(self._rows):
+            for key, c in row.items():
+                matrix[i, self._index[key]] += c
+            lower[i], upper[i] = lo, hi
+        constraints = LinearConstraint(matrix, lower, upper)
+        bounds = Bounds(np.array(self._lower), np.array(self._upper))
+        out = []
+        for sign in (1.0, -1.0):
+            c = np.zeros(n)
+            for key, w in coefs.items():
+                c[self._index[key]] += sign * w
+            result = milp(c, constraints=constraints, integrality=np.ones(n), bounds=bounds)
+            assert result.success, "the published cells admit no counts"
+            out.append(round(sign * result.fun))
+        return out[0], out[1]

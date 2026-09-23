@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections import deque
+import math
+from collections import Counter, deque
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -15,6 +17,8 @@ SUPPRESSED = "<5"
 SECONDARY = "*"
 MAX_LEVELS_SHOWN = 30
 _NULL_TOLERANCE = 1e-9
+# Rounds of interval tightening over the relations; a cap, as a chain can shrink slowly.
+_MAX_SWEEPS = 100
 
 
 def _is_small(values: pd.Series) -> pd.Series:
@@ -119,40 +123,91 @@ def _determined(unknown: set, relations: Sequence[SumRelation]) -> set:
     return {cell for cell, j in index.items() if np.all(np.abs(basis[j]) < _NULL_TOLERANCE)}
 
 
-def _bounds_leak(
-    relation: SumRelation,
-    unknown: set,
-    determined: set,
+def _reader_bounds(
+    relations: Sequence[SumRelation],
     values: Mapping[Hashable, float],
-    never_shown: set,
-    primary: set,
-) -> bool:
-    """Whether the hidden members of a relation with a known total are pinned by their sum.
+    unknown: set,
+    small: set,
+) -> dict[Hashable, tuple[float, float]]:
+    """The interval a reader can derive for each cell of ``relations``.
 
-    A reader sees ``k`` suppressed cells and (from the total) their sum. Taking every
-    ``"<5"`` as 1-4, a sum of ``k`` means all ones and ``4k`` all fours; those sums are
-    refused. A secondary (``"*"``) cell may be anything from 0 up, so with secondaries in
-    the relation a primary is pinned only when the sum leaves it no room above 1 (the
-    secondaries being 0). A never-published complement (``n - n_cs``) carries no ``"<5"``
-    of its own, and a reader cannot tell a complement of 1-4 from one of 0 or a large one;
-    there the sum pins the cells only when their true values really are all ones or all
-    fours.
+    A cell not in ``unknown`` is its value. An unknown cell in ``small`` (shown ``"<5"``,
+    or a never-published complement whose count is shown ``"<5"``) starts at 1-4, any other
+    unknown cell (``"*"``, a never-published count) at 0 and up. Each relation
+    ``sum(members) == total`` then bounds every term by the others' bounds, repeated until
+    stable (bounds propagation). A relation without a total cell has a known sum.
     """
-    total = relation.total
-    if total is not None and total in unknown and total not in determined:
+    lower: dict[Hashable, float] = {}
+    upper: dict[Hashable, float] = {}
+    equations: list[tuple[Counter, Hashable | None, float]] = []
+    for relation in relations:
+        coeffs = Counter(relation.members)
+        cells = [*coeffs, *([] if relation.total is None else [relation.total])]
+        if not any(c in unknown for c in cells) or relation.total in coeffs:
+            continue
+        for cell in cells:
+            if cell in lower:
+                continue
+            if cell not in unknown:
+                lower[cell] = upper[cell] = float(values.get(cell, 0.0))
+            elif cell in small:
+                lower[cell], upper[cell] = 1.0, float(SMALL_CELL_THRESHOLD - 1)
+            else:
+                lower[cell], upper[cell] = 0.0, math.inf
+        known = sum(k * float(values.get(c, 0.0)) for c, k in coeffs.items())
+        equations.append((coeffs, relation.total, known))
+
+    def tighten(cell: Hashable, low: float, high: float) -> bool:
+        low, high = max(lower[cell], low), min(upper[cell], high)
+        if low > lower[cell] + _NULL_TOLERANCE or high < upper[cell] - _NULL_TOLERANCE:
+            lower[cell], upper[cell] = low, high
+            return True
         return False
-    free = [c for c in dict.fromkeys(relation.members) if c in unknown and c not in determined]
-    if len(free) < 2:
-        return False
-    top = SMALL_CELL_THRESHOLD - 1
-    if any(c in never_shown for c in free):
-        return all(values[c] == 1 for c in free) or all(values[c] == top for c in free)
-    hidden_sum = sum(values[c] for c in free)
-    if hidden_sum in (len(free), top * len(free)):
-        return True
-    n_primary = sum(c in primary for c in free)
-    # Secondaries at 0 and the other primaries at 1 leave a primary at most this much.
-    return 0 < n_primary < len(free) and hidden_sum - (n_primary - 1) <= 1
+
+    for _ in range(_MAX_SWEEPS):
+        changed = False
+        for coeffs, total, known in equations:
+            finite_upper = sum(k * upper[c] for c, k in coeffs.items() if upper[c] < math.inf)
+            n_infinite = sum(upper[c] == math.inf for c in coeffs)
+            sum_lower = sum(k * lower[c] for c, k in coeffs.items())
+            if total is None:
+                t_low, t_high = known, known
+            else:
+                if total in unknown:
+                    sum_upper = math.inf if n_infinite else finite_upper
+                    changed |= tighten(total, sum_lower, sum_upper)
+                t_low, t_high = lower[total], upper[total]
+            for cell, k in coeffs.items():
+                if cell not in unknown:
+                    continue
+                others_lower = sum_lower - k * lower[cell]
+                if upper[cell] == math.inf:
+                    others_upper = math.inf if n_infinite > 1 else finite_upper
+                else:
+                    others_upper = math.inf if n_infinite else finite_upper - k * upper[cell]
+                low = (
+                    -math.inf
+                    if others_upper == math.inf
+                    else math.ceil((t_low - others_upper) / k - _NULL_TOLERANCE)
+                )
+                high = (
+                    math.inf
+                    if t_high == math.inf
+                    else math.floor((t_high - others_lower) / k + _NULL_TOLERANCE)
+                )
+                changed |= tighten(cell, low, high)
+        if not changed:
+            break
+    return {cell: (lower[cell], upper[cell]) for cell in lower}
+
+
+class Protection(NamedTuple):
+    """The result of :func:`protect_cells`."""
+
+    hidden: set[Hashable]
+    """Published cells to suppress: the primary ones and every secondary one."""
+    demoted: set[Hashable]
+    """Of ``hidden``, primary cells to mark ``"*"`` rather than ``"<5"`` (rule (b))."""
 
 
 def protect_cells(
@@ -164,7 +219,8 @@ def protect_cells(
     linked: Mapping[Hashable, Iterable[Hashable]] | None = None,
     proxies: Mapping[Hashable, Hashable] | None = None,
     sizes: Mapping[Hashable, float] | None = None,
-) -> set[Hashable]:
+    marked: Iterable[Hashable] = (),
+) -> Protection:
     """Secondary (complementary) suppression: the cells to hide so none of ``suppressed``
     can be recovered from published totals (DECISIONS.md 2026-09-23).
 
@@ -179,27 +235,45 @@ def protect_cells(
         sizes: how much a published cell holds for choosing secondary cells (default: its
             value). For a count drawn from a total, ``min(count, total - count)``, so a
             table counting one side of a mask hides the same cells as one counting the other.
+        marked: never-published cells a reader knows hold 1-4 because their proxy is shown
+            ``"<5"`` (a complement of 1-4: ``"<5"`` marks a count or its complement).
 
-    Rule, repeated until stable: (a) no suppressed cell (primary or secondary), and no
-    never-published cell holding 1-4, may be exactly determined by the relations (checked
-    by linear algebra, so chains of subtractions across overlapping groups are caught, not
-    only a lone suppressed cell in one group); (b) in a relation with a known total, the
-    suppressed members must not be pinned by their sum (all ones, all fours). Each
-    violation hides one more cell: for (a), the smallest non-zero published cell whose
-    suppression alone frees the exposed cell, else the smallest non-zero published member
-    of the offending relation; for (b), the latter. Size is ``sizes`` (ties broken by the
-    order of the relation's members); zeros, then totals, are used only as a last resort.
-    When nothing publishable is left to hide, the
-    cell is fixed by published totals alone and suppression cannot help; it is left as is.
+    Rule, repeated until stable:
+
+    (a) no suppressed cell (primary or secondary), and no never-published cell holding 1-4,
+    may be exactly determined by the relations (checked by linear algebra, so chains of
+    subtractions across overlapping groups are caught, not only a lone suppressed cell in
+    one group). A violation hides the smallest non-zero published cell whose suppression
+    alone frees the exposed cell, else the smallest non-zero published member of an
+    offending relation.
+
+    (b) no hidden cell holding 1-4 may be pinned by bounds. A reader takes every ``"<5"``
+    (and every ``marked`` cell) as 1-4, every ``"*"`` as 0 or more, and tightens these
+    intervals through the relations (:func:`_reader_bounds`). This covers a known total
+    whose hidden members sum to their minimum or maximum (all ones, all fours), and a total
+    that is itself ``"<5"``: four members each at least 1 under a total of at most 4 are
+    all 1, and the total 4. A violation hides the smallest non-zero published cell of the
+    connected relations whose suppression alone unpins the cell; failing that, relabels one
+    primary cell ``"*"`` (``demoted``; its "at least 1" no longer holds, since ``"*"`` may be
+    0), trying the totals of the relations through the pinned cell first, then their
+    members. A relabelled cell stays hidden and its complement loses its mark.
+
+    Size is ``sizes`` (ties broken by the order of the relation's members); zeros, then
+    totals, are hidden only as a last resort. When nothing publishable is left to hide or
+    relabel, the cell is fixed by published totals alone and suppression cannot help; it
+    is left as is.
 
     Returns:
-        The published cells to suppress (``suppressed`` and everything added).
+        The published cells to suppress (``suppressed`` and everything added), and those of
+        them to mark ``"*"`` instead of ``"<5"``.
     """
     links = dict(linked or {})
     prox = dict(proxies or {})
     never_shown = set(hidden)
     size = dict(values) | dict(sizes or {})
     primary = {c for c in suppressed if _small_value(values.get(c, 0.0))}
+    marks = {c for c in marked if c in never_shown}
+    demoted: set[Hashable] = set()
     # A single member with an external total is simply published elsewhere; nothing here
     # can protect it, and its own table must.
     rels = [r for r in relations if len(r.members) >= 2 or r.total is not None]
@@ -275,6 +349,60 @@ def protect_cells(
     def unknown_count(relation: SumRelation, unknown: set) -> int:
         return len({*relation.members, relation.total} & unknown)
 
+    def small_hints(relabelled: set) -> set:
+        # Hidden cells a reader knows hold 1-4: "<5" primaries and marked complements.
+        return {c for c in primary if c not in relabelled} | {
+            c for c in marks if prox.get(c) not in relabelled
+        }
+
+    def pinned(unknown: set, determined: set, relabelled: set, relations: Sequence) -> set:
+        free = unknown - determined
+        bounds = _reader_bounds(relations, values, free, small_hints(relabelled) & free)
+        return {
+            c
+            for c, (low, high) in bounds.items()
+            if c in free and low == high and _small_value(values.get(c, 0.0))
+        }
+
+    def relabel_options(order: list[SumRelation], touching: list[SumRelation]) -> list:
+        # Totals of the relations through the pinned cell first, then their members, then
+        # the rest of the connected relations; each as the published cell to relabel.
+        cells: list[Hashable] = [r.total for r in touching if r.total is not None]
+        for relation in [*touching, *order]:
+            cells += [*relation.members, *([] if relation.total is None else [relation.total])]
+        hinted = small_hints(demoted)
+        options = []
+        for cell in dict.fromkeys(cells):
+            shown = prox.get(cell) if cell in never_shown else cell
+            if shown is None or shown not in supp or shown in demoted or cell not in hinted:
+                continue
+            options.append(shown)
+        return list(dict.fromkeys(options))
+
+    def unpin(cell: Hashable, unknown: set) -> bool:
+        touching = [by_id[k] for k in dict.fromkeys(by_cell.get(cell, ()))]
+        order = reachable(touching, unknown)
+
+        def still_pinned(trial_supp: set, relabelled: set) -> bool:
+            # Cells determined before may not be after hiding more; propagation finds the
+            # simple ones again, and the main loop rechecks every choice in full.
+            return cell in pinned(trial_supp | never_shown, set(), relabelled, order)
+
+        pool = [c for r in order for c in members_by_size(r, False)]
+        for option in sorted(dict.fromkeys(pool), key=lambda c: size.get(c, 0.0)):
+            if not still_pinned(supp | _closure([option], links), demoted):
+                hide(option)
+                return True
+        options = relabel_options(order, touching)
+        for option in options:
+            if not still_pinned(supp, demoted | (_closure([option], links) & supp)):
+                demoted.update(_closure([option], links) & supp)
+                return True
+        if options:
+            demoted.update(_closure([options[0]], links) & supp)
+            return True
+        return remedy(touching, unknown, None)
+
     fixed_by_totals: set[Hashable] = set()
     while True:
         unknown = supp | never_shown
@@ -286,19 +414,12 @@ def protect_cells(
             if not remedy(touching, unknown, exposed):
                 fixed_by_totals.add(exposed)
             continue
-        leaky = next(
-            (
-                r
-                for r in rels
-                if r not in fixed_by_totals
-                and _bounds_leak(r, unknown, determined, values, never_shown, primary)
-            ),
-            None,
-        )
-        if leaky is None:
-            return supp - never_shown
-        if not remedy([leaky], unknown, None):
-            fixed_by_totals.add(leaky)
+        pins = pinned(unknown, determined, demoted, rels)
+        cell = next((t for t in targets if t in pins and t not in fixed_by_totals), None)
+        if cell is None:
+            return Protection(supp - never_shown, demoted)
+        if not unpin(cell, unknown):
+            fixed_by_totals.add(cell)
 
 
 @dataclass(frozen=True)
@@ -326,7 +447,8 @@ def suppress_table(
     known; ``[]``: none) as a sum a reader can form in every count column, and in the
     complement ``total - count`` of every ``complements`` column, then hides further cells
     (with their linked columns; marked ``"*"``, since they may hold any value) until no
-    suppressed cell or small complement is recoverable (:func:`protect_cells`).
+    suppressed cell or small complement is recoverable (:func:`protect_cells`). A primary
+    cell whose ``"<5"`` would itself pin a cell (rule (b)) is marked ``"*"`` too.
     """
     spec = TableSpec(df, count_columns, linked, complements, groups)
     return suppress_tables({None: spec})[None]
@@ -367,6 +489,7 @@ def suppress_tables(
     cell_links: dict[Hashable, list[Hashable]] = {}
     relations: list[SumRelation] = []
     hidden: list[Hashable] = []
+    marked: list[Hashable] = []
     proxies: dict[Hashable, Hashable] = {}
     primaries: dict[Hashable, pd.DataFrame] = {}
     for key, spec in tables.items():
@@ -401,6 +524,8 @@ def suppress_tables(
                 sizes[(key, row, col)] = min(float(count[row]), values[comp])
                 hidden.append(comp)
                 proxies[comp] = (key, row, col)
+                if _small_value(values[comp]):
+                    marked.append(comp)  # its count is shown "<5"
                 total_cell = (key, row, total_col) if total_col in counts else None
                 relations.append(SumRelation(((key, row, col), comp), total_cell))
             for group in row_groups:
@@ -420,9 +545,14 @@ def suppress_tables(
         linked=cell_links,
         proxies=proxies,
         sizes=sizes,
+        marked=marked,
     )
     secondary: list[tuple[Hashable, Hashable, str]] = sorted(
-        final - set(suppressed),  # type: ignore[arg-type]
+        final.hidden - set(suppressed),  # type: ignore[arg-type]
+        key=repr,
+    )
+    relabelled: list[tuple[Hashable, Hashable, str]] = sorted(
+        final.demoted,  # type: ignore[arg-type]
         key=repr,
     )
     out: dict[Hashable, pd.DataFrame] = {}
@@ -437,6 +567,13 @@ def suppress_tables(
                 # A cell already hidden as primary keeps its "<5".
                 if safe.at[row, target] != SUPPRESSED:
                     safe.at[row, target] = SECONDARY
+        for table, row, col in relabelled:
+            if table != key:
+                continue
+            # Rule (b) of protect_cells: "<5" would pin it or another cell.
+            for target in (col, *links.get(col, ())):
+                safe[target] = safe[target].astype(object)
+                safe.at[row, target] = SECONDARY
         out[key] = safe
     return out
 

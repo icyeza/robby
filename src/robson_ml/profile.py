@@ -11,7 +11,7 @@ import pandas as pd
 from scipy.stats import chi2_contingency
 from sklearn.metrics import roc_auc_score
 
-from robson_engine import COARSE_PRESENTATIONS, INPUT_FIELDS
+from robson_engine import INPUT_FIELDS
 from robson_ml.audit_offline import (
     OVERALL,
     RESIDUAL,
@@ -62,16 +62,21 @@ QUESTIONS = (
     "plurality represented?",
 )
 NOT_ANSWERED = "Not yet answered: needs human review at Checkpoint 1."
-# Completeness rows beyond the six plain "recorded" rows (spec v1.2 coarse inputs).
-GA_EXACT_OR_BAND = "gestational_age (exact or band)"
-PRESENTATION_PRECISE = "fetal_presentation (precise type)"
-# (larger, smaller) completeness rows with nested masks: their difference (GA known only as
-# a band; a coarse presentation) is never published and must not be recoverable by
-# subtracting one published row from the other.
-NESTED_COMPLETENESS_ROWS = (
-    (GA_EXACT_OR_BAND, "gestational_age_weeks"),
-    ("fetal_presentation", PRESENTATION_PRECISE),
-)
+# The completeness row after the six inputs (spec v1.2): GA recorded as a band. It counts
+# the band alone, not "exact or band": a row nested in another publishes their difference
+# (records with GA only as a band) by subtraction, and the raw columns' missingness in the
+# variable profile bounds both rows, so the difference could be pinned.
+GA_BAND_RECORDED = "ga_band (recorded)"
+# Canonical field -> the completeness row counting it; a raw column mapped to the field
+# hides the same scopes as that row (linked_hidden_scopes).
+COMPLETENESS_ROWS: dict[str, str] = {
+    **{name: name for name in INPUT_FIELDS},
+    **{name: GA_BAND_RECORDED for name in GA_BAND_FIELDS},
+}
+# Canonical fields whose raw column(s) never show n_unique: n_nonnull - n_unique counts the
+# rows repeating a key, which Q9 publishes only small-cell suppressed.
+KEY_FIELDS = ("mother_key",)
+KEY_KINDS = ("hash_key",)
 PROFILE_LINKED = {
     "n_nonnull": [*(f"p{int(q * 100)}" for q in QUANTILES), "association", "n_unique"],
 }
@@ -201,7 +206,10 @@ def variable_profile(
     facility, distinct values, quantiles, univariate association with ``cs``, proposed
     status.
 
-    ``raw`` and ``canonical`` must be row-aligned (same records, same order).
+    ``raw`` and ``canonical`` must be row-aligned (same records, same order). A raw column
+    mapped to ``mother_key`` (or with kind ``hash_key``) shows ``n_unique`` as ``"*"``:
+    ``n_nonnull - n_unique`` is the number of rows repeating a key, and would pin the
+    suppressed Q9 count of rows sharing one (a single shared pair shows 1).
     """
     if len(raw) != len(canonical):
         raise ValueError(
@@ -214,9 +222,12 @@ def variable_profile(
     facilities = sorted(facility.unique())
     cs = canonical["cs"]
     to_canonical: dict[str, list[str]] = {}
+    key_columns: set[str] = set()
     for spec in config.fields.values():
         for column in spec.raw:
             to_canonical.setdefault(column, []).append(spec.canonical)
+            if spec.canonical in KEY_FIELDS or spec.kind in KEY_KINDS:
+                key_columns.add(column)
     rows = []
     for position in range(raw.shape[1]):
         column = raw.columns[position]
@@ -252,49 +263,49 @@ def variable_profile(
             # PROFILE_LINKED derives from it (write_profile repeats this for n_nonnull 1-4).
             for name in ("n_nonnull", *PROFILE_LINKED["n_nonnull"]):
                 row[name] = row["pct_missing"]
+        if str(column) in key_columns:
+            row["n_unique"] = SECONDARY
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _hide(cells: pd.DataFrame, row: int, columns: Iterable[str]) -> None:
-    """Mark ``columns`` of ``row`` secondary-suppressed, keeping any primary ``"<5"``."""
+def _hide(cells: pd.DataFrame, row: int, columns: Iterable[str], force: bool = False) -> None:
+    """Mark ``columns`` of ``row`` secondary-suppressed, keeping any primary ``"<5"`` unless
+    ``force``."""
     for column in columns:
         cells[column] = cells[column].astype(object)
-        if cells.at[row, column] not in HIDDEN:
+        if force or cells.at[row, column] not in HIDDEN:
             cells.at[row, column] = SECONDARY
 
 
 def _completeness_masks(classified: pd.DataFrame) -> dict[str, pd.Series]:
-    """Row label -> recorded mask: the six inputs (not missing), then GA recorded exactly or
-    as a band, and presentation recorded with its precise type (not a coarse code)."""
+    """Row label -> recorded mask: the six inputs (not missing), then the GA band (both
+    bounds recorded)."""
     masks = {name: classified[name].notna() for name in INPUT_FIELDS}
     if set(GA_BAND_FIELDS) <= set(classified.columns):
-        band = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
+        masks[GA_BAND_RECORDED] = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
     else:
-        band = pd.Series(False, index=classified.index)
-    masks[GA_EXACT_OR_BAND] = masks["gestational_age_weeks"] | band
-    coarse = classified["fetal_presentation"].isin(list(COARSE_PRESENTATIONS))
-    masks[PRESENTATION_PRECISE] = masks["fetal_presentation"] & ~coarse
+        masks[GA_BAND_RECORDED] = pd.Series(False, index=classified.index)
     return masks
 
 
 def input_completeness(
-    classified: pd.DataFrame, hide: Mapping[str, Iterable[str]] | None = None
+    classified: pd.DataFrame, hide: Mapping[str, Mapping[str, str]] | None = None
 ) -> pd.DataFrame:
     """% recorded for each of the six Robson inputs, overall (``all``) and per facility,
-    then two coarse-aware rows (:data:`GA_EXACT_OR_BAND`, :data:`PRESENTATION_PRECISE`).
+    then :data:`GA_BAND_RECORDED`.
 
-    Each row gets primary and secondary suppression across its facility cells, and the rows
-    are suppressed jointly: each new row is nested with an input row
-    (:data:`NESTED_COMPLETENESS_ROWS`), so their per-scope difference (records with GA only
-    as a band; with a coarse presentation) is modelled as a never-published count that must
-    stay unknown when it holds 1-4, like a complement.
+    Each row gets primary and secondary suppression across its facility cells. No row is
+    nested in another (spec v1.2 coarse inputs are not published as "exact or band" or
+    "precise type" rows): the difference of nested rows is a count published by
+    subtraction, which the raw columns' missingness in the variable profile can bound until
+    it is pinned. The GA band row instead counts the band alone and, like the inputs, is
+    linked to the raw column(s) it is mapped from. Presentation gets no second row: no raw
+    column counts the coarse (type unknown) records, so a "precise type" row could not be
+    linked that way, and its effect on classification shows in the engine status tables.
 
-    ``hide``: for an input, further scopes (``all`` or facility) to mark ``"*"``: those
-    hidden for the raw column it is mapped from (see :func:`linked_hidden_scopes`). The two
-    derived rows take no part in that linkage: they are computed from the same canonical
-    columns as the input rows, no raw column's missingness counts the same records, and
-    hiding further cells of the input rows afterwards can only remove information.
+    ``hide``: for a row, further scopes (``all`` or facility) to hide, with the marker to
+    show (see :func:`linked_hidden_scopes`). ``"*"`` replaces a ``"<5"`` too.
     """
     facility = classified["facility_id"].astype(str)
     facilities = sorted(facility.unique())
@@ -302,46 +313,46 @@ def input_completeness(
     specs: dict[Hashable, TableSpec] = {
         label: _scope_spec(mask, facility, facilities) for label, mask in masks.items()
     }
-    counts = {label: _scope_counts(spec)[0] for label, spec in specs.items()}
-    n_rows = _scope_counts(specs[INPUT_FIELDS[0]])[1]
-    cross: list[SumRelation] = []
-    derived: dict[Hashable, DerivedCell] = {}
-    for larger, smaller in NESTED_COMPLETENESS_ROWS:
-        new_row = smaller if larger in INPUT_FIELDS else larger
-        for position in range(len(facilities) + 1):
-            proxy = (new_row, position, "n_true")
-            difference = ("~difference", larger, position)
-            complement = ("~difference complement", larger, position)
-            value = counts[larger][position] - counts[smaller][position]
-            derived[difference] = DerivedCell(value, proxy)
-            derived[complement] = DerivedCell(n_rows[position] - value, proxy)
-            smaller_cell, larger_cell = (smaller, position, "n_true"), (larger, position, "n_true")
-            cross.append(SumRelation((smaller_cell, difference), larger_cell))
-            cross.append(SumRelation((difference, complement)))  # = the scope's size, known
-    safe = suppress_tables(specs, cross, derived)
+    safe = suppress_tables(specs)
     rows = [
         {"input": label, **_scope_pcts(specs[label], safe[label], facilities)} for label in masks
     ]
     out = pd.DataFrame(rows, columns=["input", OVERALL_SCOPE, *facilities])
-    for position, field_name in enumerate(out["input"]):
-        scopes = (hide or {}).get(field_name, ())
-        _hide(out, position, [s for s in scopes if s in out.columns and s != "input"])
+    for position, label in enumerate(out["input"]):
+        scopes = (hide or {}).get(label, {})
+        for marker in (SUPPRESSED, SECONDARY):
+            columns = [s for s, m in scopes.items() if m == marker and s in out.columns]
+            _hide(out, position, [c for c in columns if c != "input"], marker == SECONDARY)
     return out
+
+
+def _marker(cells: Iterable[object]) -> str | None:
+    """The suppression marker of one published count shown in ``cells`` (a raw column can
+    repeat in the frame): ``"*"`` if any shows it, else ``"<5"`` if any does, else None."""
+    shown = list(cells)
+    if SECONDARY in shown:
+        return SECONDARY
+    return SUPPRESSED if SUPPRESSED in shown else None
 
 
 def linked_hidden_scopes(
     profile: pd.DataFrame, completeness: pd.DataFrame, config: MappingConfig
-) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    """Scopes (``all`` or facility) to hide alike for each input and its raw column(s).
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    """Scopes (``all`` or facility) to hide alike for each completeness row and its raw
+    column(s), with the marker to show.
 
     A Robson input's missingness is published per facility twice: for the raw column in
     the variable profile (counting missing) and for the canonical field in the completeness
-    table (counting recorded). Where the two agree, a cell hidden in one file but shown in
-    the other gives it back. Inputs and the raw columns they are mapped from are joined
-    into groups, and each group hides the union of what any member hides.
+    table (counting recorded); likewise the GA band (:data:`COMPLETENESS_ROWS`). Where the
+    two agree, a cell hidden in one file but shown in the other gives it back. Rows and the
+    raw columns they are mapped from are joined into groups, and each group hides the union
+    of what any member hides. The marker is ``"<5"`` only where every member shows ``"<5"``,
+    else ``"*"`` for all: a ``"<5"`` in one file would restore the "1-4" that a ``"*"`` in
+    the other was chosen to withhold (``privacy.protect_cells`` rule (b)).
 
     Returns:
-        (raw column name -> scopes, input -> scopes), for every linked column and input.
+        (raw column name -> {scope: marker}, row label -> {scope: marker}), for every
+        linked column and row.
     """
     by_input = completeness.set_index("input")
     scopes = [c for c in completeness.columns if c != "input"]
@@ -355,46 +366,57 @@ def linked_hidden_scopes(
 
     raw_names = set(profile["raw_name"].astype(str))
     for spec in config.fields.values():
-        if spec.canonical not in by_input.index:
+        label = COMPLETENESS_ROWS.get(spec.canonical)
+        if label is None or label not in by_input.index:
             continue
         for column in spec.raw:
             if column in raw_names:
-                parent[find(("raw", column))] = find(("input", spec.canonical))
+                parent[find(("raw", column))] = find(("input", label))
     profile_column = {
         scope: "pct_missing" if scope == OVERALL_SCOPE else f"pct_missing_{scope}"
         for scope in scopes
     }
-    groups: dict[tuple[str, str], set[str]] = {}
+    hidden: dict[tuple[str, str], set[str]] = {}
+    primary: dict[tuple[str, str], set[str]] = {}
     for node in list(parent):
         kind, name = node
-        if kind == "input":
-            cells = [by_input.loc[name, scope] for scope in scopes]
-            found = {scope for scope, cell in zip(scopes, cells, strict=True) if cell in HIDDEN}
-        else:
-            rows = profile[profile["raw_name"].astype(str) == name]
-            found = {
-                scope
-                for scope, column in profile_column.items()
-                if column in rows.columns and rows[column].isin(HIDDEN).any()
-            }
-        groups.setdefault(find(node), set()).update(found)
-    raw_hide: dict[str, set[str]] = {}
-    input_hide: dict[str, set[str]] = {}
+        cells: dict[str, str | None] = {}
+        for scope in scopes:
+            if kind == "input":
+                cells[scope] = _marker([by_input.loc[name, scope]])
+            elif profile_column[scope] in profile.columns:
+                rows = profile.loc[profile["raw_name"].astype(str) == name, profile_column[scope]]
+                cells[scope] = _marker(rows.tolist())
+        group = find(node)
+        found = {scope for scope, cell in cells.items() if cell in HIDDEN}
+        hidden.setdefault(group, set()).update(found)
+        small = {scope for scope in scopes if cells.get(scope) == SUPPRESSED}
+        primary[group] = primary[group] & small if group in primary else small
+    raw_hide: dict[str, dict[str, str]] = {}
+    input_hide: dict[str, dict[str, str]] = {}
     for node in parent:
+        group = find(node)
         target = input_hide if node[0] == "input" else raw_hide
-        target[node[1]] = groups[find(node)]
+        target[node[1]] = {
+            scope: SUPPRESSED if scope in primary[group] else SECONDARY
+            for scope in sorted(hidden[group])
+        }
     return raw_hide, input_hide
 
 
-def hide_profile_scopes(profile: pd.DataFrame, hide: Mapping[str, Iterable[str]]) -> pd.DataFrame:
-    """Mark the given scopes of each raw column's missingness ``"*"`` in the profile."""
+def hide_profile_scopes(
+    profile: pd.DataFrame, hide: Mapping[str, Mapping[str, str]]
+) -> pd.DataFrame:
+    """Mark the given scopes of each raw column's missingness hidden in the profile, with
+    the given marker (``"*"`` replaces a ``"<5"`` too)."""
     out = profile.copy()
     for position, name in enumerate(out["raw_name"].astype(str)):
-        scopes = set(hide.get(name, ()))
-        columns = [f"pct_missing_{s}" for s in scopes if f"pct_missing_{s}" in out.columns]
-        if OVERALL_SCOPE in scopes:
-            columns += ["pct_missing", "n_nonnull", *PROFILE_LINKED["n_nonnull"]]
-        _hide(out, out.index[position], columns)
+        for marker in (SUPPRESSED, SECONDARY):
+            scopes = {s for s, m in hide.get(name, {}).items() if m == marker}
+            columns = [f"pct_missing_{s}" for s in scopes if f"pct_missing_{s}" in out.columns]
+            if OVERALL_SCOPE in scopes:
+                columns += ["pct_missing", "n_nonnull", *PROFILE_LINKED["n_nonnull"]]
+            _hide(out, out.index[position], columns, marker == SECONDARY)
     return out
 
 
@@ -453,7 +475,7 @@ def _status_tables(classified: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def robson_inputs_markdown(
-    classified: pd.DataFrame, hide: Mapping[str, Iterable[str]] | None = None
+    classified: pd.DataFrame, hide: Mapping[str, Mapping[str, str]] | None = None
 ) -> str:
     """Completeness of the six inputs, engine status distribution, Robson report table.
 
@@ -574,7 +596,7 @@ def _evidence(
     number: int,
     canonical: pd.DataFrame,
     raw: pd.DataFrame,
-    hide: Mapping[str, Iterable[str]] | None = None,
+    hide: Mapping[str, Mapping[str, str]] | None = None,
 ) -> str:
     if number == 1:
         # The "all" column of robson_inputs.md, with the same (secondary) suppression.
@@ -634,7 +656,7 @@ def open_questions_markdown(
     canonical: pd.DataFrame,
     raw: pd.DataFrame,
     manual: Mapping[str, str],
-    hide: Mapping[str, Iterable[str]] | None = None,
+    hide: Mapping[str, Mapping[str, str]] | None = None,
 ) -> str:
     """Answers to spec §25: automatic evidence plus the human answer (or a flag if none).
 
