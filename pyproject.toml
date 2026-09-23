@@ -1,0 +1,68 @@
+[project]
+name = "robson-ml"
+version = "0.1.0"
+description = "ML workstream: Robson classification, readiness model and audit analytics"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "numpy>=2.4.6",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2,<3",
+    "pandera>=0.24",
+    "pyarrow>=25.0.1",
+    "pyyaml>=6.0.3",
+    "robson-engine",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.17.1",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+robson-ml = "robson_ml.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robson_ml"]
+
+[tool.uv.workspace]
+members = ["packages/robson_engine"]
+
+[tool.uv.sources]
+robson-engine = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "packages/robson_engine/src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+mypy_path = "src:packages/robson_engine/src"
+
+[[tool.mypy.overrides]]
+module = ["pandera.*", "openpyxl.*", "sklearn.*", "scipy.*", "pyarrow.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "packages/robson_engine/tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers --import-mode=importlib"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pandas-stubs>=3.0.5.260914",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+    "types-pyyaml>=6.0.12.20260906",
+]
