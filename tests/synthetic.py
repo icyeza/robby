@@ -80,7 +80,7 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
         np.where(rng.random(n) < planned_share, "planned", "emergency"),
         None,
     )
-    systolic = np.round(rng.normal(118.0, 15.0, size=n))
+    systolic = np.round(np.clip(rng.normal(118.0, 15.0, size=n), 80, 200))
     proteinuria = rng.choice(PROTEINURIA, size=n, p=[0.80, 0.10, 0.05, 0.03, 0.02])
     screening_rate = pd.Series(facility).map(SCREENING_MISSING_RATE).to_numpy()
     bp_missing = rng.random(n) < screening_rate
@@ -109,7 +109,7 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
             "weight_kg": np.round(np.clip(rng.normal(68.0, 12.0, size=n), 40, 150), 1),
             "anc_contacts": pd.array(rng.poisson(4.0, size=n), dtype="Int64"),
             "systolic_bp": systolic,
-            "diastolic_bp": np.round(rng.normal(75.0, 10.0, size=n)),
+            "diastolic_bp": np.round(np.clip(rng.normal(75.0, 10.0, size=n), 40, 120)),
             "proteinuria": pd.Series(proteinuria, dtype=object),
             "glucose_mmol_l": np.round(np.clip(rng.normal(5.2, 1.2, size=n), 2.0, 20.0), 1),
             "preeclampsia_recorded": pd.Series(pe_recorded, dtype=object).mask(pe_recorded == ""),
