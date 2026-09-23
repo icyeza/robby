@@ -208,14 +208,15 @@ GA_WPD = "  gestational_age_weeks: {raw: G, kind: gestational_age, format: weeks
 GA_TWO = "  gestational_age_weeks: {raw: [W, D], kind: gestational_age, format: weeks_plus_days, "
 
 # (canonical field, fields yaml, raw frame,
-#  expected (n_raw_nonnull, n_mapped, n_unparsed, n_out_of_range, n_explicit_missing))
+#  expected (n_raw_nonnull, n_mapped, n_unparsed, n_out_of_range, n_explicit_missing,
+#            n_incomplete))
 KIND_CASES = {
-    "row_key": ("admission_id", "", pd.DataFrame({"X": [1, 2, 3]}), (3, 3, 0, 0, 0)),
+    "row_key": ("admission_id", "", pd.DataFrame({"X": [1, 2, 3]}), (3, 3, 0, 0, 0, 0)),
     "text": (
         "facility_id",
         "  facility_id: {raw: F, kind: text}\n",
         pd.DataFrame({"F": ["A", "  ", None, "B", 5, pd.NA]}, dtype=object),
-        (3, 3, 0, 0, 0),
+        (3, 3, 0, 0, 0, 0),
     ),
     "integer": (
         "parity",
@@ -224,7 +225,20 @@ KIND_CASES = {
             {"P": [0, "2", 1.0, None, "x", 3, 25, 1.5, True, np.inf, 10**20, "inf"]},
             dtype=object,
         ),
-        (11, 4, 6, 1, 0),
+        (11, 4, 6, 1, 0, 0),
+    ),
+    "integer_sum": (
+        "parity",
+        "  parity: {raw: [V, C], kind: integer_sum, range: [0, 20], "
+        'levels: {"4 and above": 4, "4 or more": 4}}\n',
+        pd.DataFrame(
+            {
+                "V": [1, "4 and above", None, 2, "x", 1.5, 100, "4 or more"],
+                "C": [2, 1, None, None, 2, 0, 1, "4 and above"],
+            },
+            dtype=object,
+        ),
+        (7, 3, 2, 1, 0, 1),
     ),
     "float": (
         "maternal_age",
@@ -232,14 +246,14 @@ KIND_CASES = {
         pd.DataFrame(
             {"A": [25, "30.5", 60, None, "abc", -np.inf, False, np.float64(40)]}, dtype=object
         ),
-        (7, 3, 3, 1, 0),
+        (7, 3, 3, 1, 0, 0),
     ),
     "category": (
         "previous_cs_count",
         '  previous_cs_count: {raw: X, kind: category, levels: {"None": 0, "One": 1, '
         '"Unknown": ~}}\n',
         pd.DataFrame({"X": ["None", "One", "Unknown", "Unknown", None, "Blah"]}, dtype=object),
-        (5, 2, 1, 0, 2),
+        (5, 2, 1, 0, 2, 0),
     ),
     "datetime": (
         "delivery_date",
@@ -257,20 +271,20 @@ KIND_CASES = {
             },
             dtype=object,
         ),
-        (5, 3, 2, 0, 0),
+        (5, 3, 2, 0, 0, 0),
     ),
     "ga_decimal_weeks": (
         "gestational_age_weeks",
         "  gestational_age_weeks: {raw: G, kind: gestational_age, format: decimal_weeks, "
         "range: [20, 45]}\n",
         pd.DataFrame({"G": [38.5, "39", "x", 50, None]}, dtype=object),
-        (4, 2, 1, 1, 0),
+        (4, 2, 1, 1, 0, 0),
     ),
     "ga_weeks_plus_days": (
         "gestational_age_weeks",
         GA_WPD + "range: [20, 45]}\n",
         pd.DataFrame({"G": ["38+2", 39, "38.2", 38.2, "38+7", 50, None, "40"]}, dtype=object),
-        (7, 3, 3, 1, 0),
+        (7, 3, 3, 1, 0, 0),
     ),
     "ga_two_columns": (
         "gestational_age_weeks",
@@ -282,14 +296,14 @@ KIND_CASES = {
             },
             dtype=object,
         ),
-        (8, 2, 5, 1, 0),
+        (8, 2, 5, 1, 0, 0),
     ),
     "ga_completed_weeks": (
         "gestational_age_weeks",
         "  gestational_age_weeks: {raw: G, kind: gestational_age, format: completed_weeks, "
         "range: [20, 45]}\n",
         pd.DataFrame({"G": [36, "38", 38.5, "38.5", None, 10]}, dtype=object),
-        (5, 2, 2, 1, 0),
+        (5, 2, 2, 1, 0, 0),
     ),
     "ga_weeks_days_text": (
         "gestational_age_weeks",
@@ -299,13 +313,13 @@ KIND_CASES = {
             {"G": ["38", "37 weeks, 4 days", "38.5", "50 weeks", None, "  ", "38+9", 39]},
             dtype=object,
         ),
-        (6, 3, 2, 1, 0),
+        (6, 3, 2, 1, 0, 0),
     ),
     "hash_key": (
         "mother_key",
         "  mother_key: {raw: ID, kind: hash_key}\n",
         pd.DataFrame({"ID": ["P-1", " P-1 ", None, "  ", "P-2", 7, pd.NA]}, dtype=object),
-        (4, 4, 0, 0, 0),
+        (4, 4, 0, 0, 0, 0),
     ),
 }
 
@@ -315,9 +329,18 @@ def test_every_present_value_is_counted_once(tmp_path: Path, case: str) -> None:
     name, fields, raw, expected = KIND_CASES[case]
     canonical, by = _run(tmp_path, fields, raw)
     f = by[name]
-    counts = (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_out_of_range, f.n_explicit_missing)
+    counts = (
+        f.n_raw_nonnull,
+        f.n_mapped,
+        f.n_unparsed,
+        f.n_out_of_range,
+        f.n_explicit_missing,
+        f.n_incomplete,
+    )
     assert counts == expected
-    assert f.n_raw_nonnull == f.n_mapped + f.n_unparsed + f.n_out_of_range + f.n_explicit_missing
+    assert f.n_raw_nonnull == (
+        f.n_mapped + f.n_unparsed + f.n_out_of_range + f.n_explicit_missing + f.n_incomplete
+    )
     assert int(canonical[name].notna().sum()) == f.n_mapped
     assert str(canonical[name].dtype) == CANONICAL_DTYPES[name]
 
@@ -329,6 +352,145 @@ def test_explicit_missing_level_is_not_a_mapped_value(tmp_path: Path) -> None:
     assert canonical["previous_cs_count"].isna().tolist() == [False, False] + [True] * 4
     assert by["previous_cs_count"].n_explicit_missing == 2
     assert by["previous_cs_count"].n_unparsed == 1
+
+
+# --- integer_sum: derived counts summed from >=2 raw columns -------------------------------
+
+ISUM_FIELDS = (
+    "  parity: {raw: [V, C], kind: integer_sum, range: [0, 20], "
+    'levels: {"4 and above": 4, "4 or more": 4, "Unknown": ~}}\n'
+)
+
+
+def test_integer_sum_parity_from_two_columns_with_topcodes(tmp_path: Path) -> None:
+    raw = pd.DataFrame(
+        {
+            "V": [1, "4 and above", "4 or more", 0],
+            "C": [2, 1, "4 and above", 3],
+        },
+        dtype=object,
+    )
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    assert canonical["parity"].tolist() == [3, 5, 8, 3]
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_out_of_range, f.n_incomplete) == (
+        4,
+        4,
+        0,
+        0,
+        0,
+    )
+    assert str(canonical["parity"].dtype) == "Int64"
+
+
+def test_integer_sum_all_blank_row_not_present(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"V": [1, None, "  "], "C": [2, None, None]}, dtype=object)
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_incomplete) == (1, 1, 0)
+    assert canonical["parity"].isna().tolist() == [False, True, True]
+
+
+def test_integer_sum_one_blank_one_number_is_incomplete(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"V": [2], "C": [None]}, dtype=object)
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_incomplete) == (1, 0, 0, 1)
+    assert pd.isna(canonical["parity"].iloc[0])
+
+
+@pytest.mark.parametrize("bad", ["x", "1.5"])
+def test_integer_sum_unparseable_cell_is_unparsed_even_if_other_is_blank(
+    tmp_path: Path, bad: str
+) -> None:
+    raw = pd.DataFrame({"V": [bad], "C": [None]}, dtype=object)
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_unparsed, f.n_incomplete) == (1, 0, 1, 0)
+    assert pd.isna(canonical["parity"].iloc[0])
+
+
+def test_integer_sum_range_violation(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"V": [100], "C": [1]}, dtype=object)
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_out_of_range) == (1, 0, 1)
+    assert pd.isna(canonical["parity"].iloc[0])
+
+
+def test_integer_sum_explicit_missing_level_is_incomplete_not_explicit_missing(
+    tmp_path: Path,
+) -> None:
+    raw = pd.DataFrame({"V": ["Unknown"], "C": [1]}, dtype=object)
+    canonical, by = _run(tmp_path, ISUM_FIELDS, raw)
+    f = by["parity"]
+    assert (f.n_raw_nonnull, f.n_mapped, f.n_incomplete, f.n_explicit_missing) == (1, 0, 1, 0)
+    assert pd.isna(canonical["parity"].iloc[0])
+
+
+def test_integer_sum_report_serialises_without_raw_values(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"V": ["SECRET-9", "4 and above"], "C": [1, "SECRET-8"]}, dtype=object)
+    path = tmp_path / "m.yaml"
+    path.write_text("fields:\n" + ROW_KEY + ISUM_FIELDS, encoding="utf-8")
+    _, report = apply_mapping(raw, load_mapping(path))
+    payload = json.dumps(dataclasses.asdict(report), default=str)
+    assert "SECRET-9" not in payload
+    assert "SECRET-8" not in payload
+
+
+INTEGER_SUM_INVALID_CONFIGS = {
+    "single raw column": (
+        "  parity: {raw: V, kind: integer_sum}\n",
+        "integer_sum needs at least two",
+    ),
+    "duplicate raw column": (
+        "  parity: {raw: [V, V], kind: integer_sum}\n",
+        "parity",
+    ),
+    "on non-Int64 field": (
+        "  maternal_age: {raw: [A, B], kind: integer_sum}\n",
+        "maternal_age",
+    ),
+    "with format key": (
+        "  parity: {raw: [V, C], kind: integer_sum, format: x}\n",
+        "format",
+    ),
+    "with date_only key": (
+        "  parity: {raw: [V, C], kind: integer_sum, date_only: true}\n",
+        "date_only",
+    ),
+    "level value not an integer": (
+        '  parity: {raw: [V, C], kind: integer_sum, levels: {"a": "4"}}\n',
+        "non-negative integer",
+    ),
+    "level value fractional": (
+        '  parity: {raw: [V, C], kind: integer_sum, levels: {"a": 4.5}}\n',
+        "non-negative integer",
+    ),
+    "level value negative": (
+        '  parity: {raw: [V, C], kind: integer_sum, levels: {"a": -1}}\n',
+        "non-negative integer",
+    ),
+    "level value bool": (
+        '  parity: {raw: [V, C], kind: integer_sum, levels: {"a": true}}\n',
+        "quote yes/no/true/false",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(INTEGER_SUM_INVALID_CONFIGS))
+def test_integer_sum_invalid_config_rejected(tmp_path: Path, case: str) -> None:
+    fields, match = INTEGER_SUM_INVALID_CONFIGS[case]
+    with pytest.raises(MappingError, match=match):
+        _load_fields(tmp_path, fields)
+
+
+def test_integer_sum_valid_config_loads(tmp_path: Path) -> None:
+    _load_fields(
+        tmp_path,
+        "  parity: {raw: [V, C], kind: integer_sum, status: confirmed, range: [0, 20], "
+        'levels: {"4 and above": 4, "Unknown": ~}}\n',
+    )
 
 
 def test_text_kind_never_turns_missing_markers_into_strings(tmp_path: Path) -> None:

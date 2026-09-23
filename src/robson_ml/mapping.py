@@ -37,18 +37,29 @@ from robson_ml.schema import (
 )
 
 KINDS = frozenset(
-    {"row_key", "hash_key", "integer", "float", "category", "datetime", "gestational_age", "text"}
+    {
+        "row_key",
+        "hash_key",
+        "integer",
+        "integer_sum",
+        "float",
+        "category",
+        "datetime",
+        "gestational_age",
+        "text",
+    }
 )
 STATUSES = frozenset({"confirmed", "review"})
 GA_FORMATS = frozenset({"decimal_weeks", "weeks_plus_days", "completed_weeks", "weeks_days_text"})
 ALLOWED_KEYS = frozenset(
     {"raw", "kind", "status", "note", "levels", "dtype", "range", "format", "date_only"}
 )
-RANGE_KINDS = frozenset({"integer", "float", "gestational_age"})
+RANGE_KINDS = frozenset({"integer", "integer_sum", "float", "gestational_age"})
 FORMAT_KINDS = frozenset({"gestational_age", "datetime"})
 # Output dtype each non-category kind produces; it must equal the canonical dtype.
 KIND_DTYPES: dict[str, str] = {
     "integer": "Int64",
+    "integer_sum": "Int64",
     "float": "float64",
     "gestational_age": "float64",
     "datetime": "datetime64[ns]",
@@ -136,9 +147,13 @@ class MappingConfig:
 class FieldReport:
     """Aggregate account of how one canonical field was mapped.
 
-    ``n_raw_nonnull == n_mapped + n_unparsed + n_out_of_range + n_explicit_missing`` always
-    holds. For a two-column gestational age a row counts as present when either column is;
-    for ``row_key`` every row counts as present and mapped.
+    ``n_raw_nonnull == n_mapped + n_unparsed + n_out_of_range + n_explicit_missing +
+    n_incomplete`` always holds. For a two-column gestational age (or an ``integer_sum``
+    field) a row counts as present when any column is; for ``row_key`` every row counts as
+    present and mapped. ``n_incomplete`` is only ever nonzero for ``integer_sum`` (a row
+    where some but not all columns are present and parsed, so the sum is undefined);
+    ``n_explicit_missing`` is always 0 for ``integer_sum`` (an explicit-missing level cell
+    counts as incomplete instead).
     """
 
     canonical: str
@@ -151,6 +166,7 @@ class FieldReport:
     n_unparsed: int = 0
     n_out_of_range: int = 0
     n_explicit_missing: int = 0
+    n_incomplete: int = 0  # integer_sum: some but not all columns present and parsed
     n_days_blank: int = 0  # two-column GA: weeks present, days blank, taken as weeks + 0
     n_tz_aware: int = 0  # datetime: mapped values that carried a UTC offset (converted)
     n_time_dropped: int = 0  # date_only datetime: mapped values whose time of day was dropped
@@ -281,6 +297,33 @@ def _parse_levels(name: str, levels: object, dtype: str) -> dict[str, Any]:
     return parsed
 
 
+def _integer_sum_level_value(name: str, value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise MappingError(f"{name}: quote yes/no/true/false labels and values in YAML")
+    number = _finite(value)
+    if number is None or not number.is_integer() or number < 0:
+        raise MappingError(f"{name}: integer_sum level values must be non-negative integers")
+    return int(number)
+
+
+def _parse_integer_sum_levels(name: str, levels: object) -> dict[str, int | None]:
+    if not isinstance(levels, dict) or not levels:
+        raise MappingError(f"{name}: levels mapping must be non-empty")
+    parsed: dict[str, int | None] = {}
+    for key, value in levels.items():
+        if isinstance(key, bool):
+            raise MappingError(f"{name}: quote yes/no/true/false labels and values in YAML")
+        label = _level_label(key)
+        if not label:
+            raise MappingError(f"{name}: level labels must be non-empty strings or numbers")
+        if label in parsed:
+            raise MappingError(f"{name}: duplicate level label after trimming whitespace")
+        parsed[label] = _integer_sum_level_value(name, value)
+    return parsed
+
+
 def _parse_field(name: str, spec: object) -> FieldMapping:
     if not _known_field(name):
         raise MappingError(f"unknown canonical field: {name}")
@@ -325,13 +368,18 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
     elif kind == "gestational_age" and fmt == "weeks_plus_days":
         if len(raw_cols) > 2:
             raise MappingError(f"{name}: weeks_plus_days takes one column, or two (weeks, days)")
+    elif kind == "integer_sum":
+        if len(raw_cols) < 2:
+            raise MappingError(f"{name}: integer_sum needs at least two distinct raw columns")
     elif len(raw_cols) != 1:
         raise MappingError(f"{name}: exactly one raw column is required")
 
     if kind == "category":
         levels = _parse_levels(name, spec.get("levels"), dtype)
+    elif kind == "integer_sum":
+        levels = _parse_integer_sum_levels(name, spec["levels"]) if "levels" in spec else {}
     elif "levels" in spec:
-        raise MappingError(f"{name}: levels are only allowed on category fields")
+        raise MappingError(f"{name}: levels are only allowed on category and integer_sum fields")
     else:
         levels = {}
 
@@ -339,7 +387,8 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
     if "range" in spec:
         if kind not in RANGE_KINDS:
             raise MappingError(
-                f"{name}: range is only allowed on integer, float and gestational_age fields"
+                f"{name}: range is only allowed on integer, integer_sum, float and "
+                "gestational_age fields"
             )
         valid_range = _parse_range(name, spec["range"])
 
@@ -610,6 +659,45 @@ def _map_category(labels: pd.Series, spec: FieldMapping, report: FieldReport) ->
     return mapped.astype(object)
 
 
+def _map_integer_sum(
+    columns: list[pd.Series], spec: FieldMapping, report: FieldReport, present: pd.Series
+) -> pd.Series:
+    """Sum >=2 raw columns (spec §derived counts): each cell is parsed like ``integer`` after
+    applying ``levels`` (a top-code label -> non-negative int, or ``~`` for explicit missing).
+
+    Per row: unparseable present cell -> unparsed (wins over blank/missing-level cells in the
+    same row); else any cell blank or an explicit-missing level (while others parsed) ->
+    incomplete (sum undefined); else the cells sum to the row's value.
+    """
+    idx = columns[0].index
+    unparsed_cells: list[pd.Series] = []
+    incomplete_cells: list[pd.Series] = []
+    values: list[pd.Series] = []
+    for col in columns:
+        labels = col.map(_label)
+        blank = labels.isna()
+        known = ~blank & labels.isin(list(spec.levels))
+        leveled = labels.map(lambda label: spec.levels.get(label) if label in spec.levels else None)
+        missing_level = known & leveled.isna()
+        numeric = _numbers(col, whole=True)
+        value = pd.Series(np.nan, index=idx, dtype="float64")
+        level_ok = known & ~missing_level
+        value.loc[level_ok] = leveled.loc[level_ok].astype("float64")
+        use_numeric = ~known & ~blank
+        value.loc[use_numeric] = numeric.loc[use_numeric]
+        unparsed_cells.append(use_numeric & value.isna())
+        incomplete_cells.append(blank | missing_level)
+        values.append(value)
+
+    unparsed_row = present & pd.concat(unparsed_cells, axis=1).any(axis=1)
+    incomplete_row = present & ~unparsed_row & pd.concat(incomplete_cells, axis=1).any(axis=1)
+    complete_row = present & ~unparsed_row & ~incomplete_row
+    report.n_unparsed = int(unparsed_row.sum())
+    report.n_incomplete = int(incomplete_row.sum())
+    total = pd.concat(values, axis=1).sum(axis=1, min_count=1)
+    return total.where(complete_row)
+
+
 def _map_gestational_age(
     columns: list[pd.Series], spec: FieldMapping, report: FieldReport
 ) -> pd.Series:
@@ -663,17 +751,26 @@ def _map_one(
     elif spec.kind == "datetime":
         result = _map_datetime(source, spec, report)
         report.n_unparsed = int((present & result.isna()).sum())
-    else:  # integer, float, gestational_age
+    else:  # integer, integer_sum, float, gestational_age
         if spec.kind == "gestational_age":
             numeric = _map_gestational_age(columns, spec, report)
+        elif spec.kind == "integer_sum":
+            numeric = _map_integer_sum(columns, spec, report, present)
         else:
             numeric = _numbers(source, whole=spec.kind == "integer")
-        report.n_unparsed = int((present & numeric.isna()).sum())
+        if spec.kind != "integer_sum":
+            # for integer_sum, n_unparsed is set by _map_integer_sum: numeric is also NaN for
+            # incomplete rows, so the generic present-and-NaN test here would double count them.
+            report.n_unparsed = int((present & numeric.isna()).sum())
         numeric, report.n_out_of_range = _apply_range(numeric, spec.valid_range)
-        result = numeric.astype("Int64") if spec.kind == "integer" else numeric
+        result = numeric.astype("Int64") if spec.kind in ("integer", "integer_sum") else numeric
     report.n_mapped = int(result.notna().sum())
     accounted = (
-        report.n_mapped + report.n_unparsed + report.n_out_of_range + report.n_explicit_missing
+        report.n_mapped
+        + report.n_unparsed
+        + report.n_out_of_range
+        + report.n_explicit_missing
+        + report.n_incomplete
     )
     if accounted != report.n_raw_nonnull:
         raise RuntimeError(
