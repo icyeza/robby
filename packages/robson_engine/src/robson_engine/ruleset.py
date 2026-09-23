@@ -33,6 +33,13 @@ class RuleSetError(ValueError):
     """The rule set is malformed or its checksum does not match its content."""
 
 
+def _outcome(always: bool, never: bool) -> Outcome:
+    """``true`` if the condition holds for every allowed value, ``false`` if for none."""
+    if always:
+        return "true"
+    return "false" if never else "unknown"
+
+
 @dataclass(frozen=True)
 class Condition:
     """A single comparison of one Robson input against a constant."""
@@ -42,21 +49,58 @@ class Condition:
     value: InputValue | tuple[InputValue, ...]
 
     def evaluate(self, inputs: RobsonInputs) -> Outcome:
-        """Return ``unknown`` for a missing input, otherwise ``true`` or ``false``."""
+        """Evaluate against one admission's inputs (spec v1.2 §6.2).
+
+        A missing input gives ``unknown``. A coarse input (a set of presentations, or a GA
+        interval when the exact GA is missing) gives ``true`` if the condition holds for every
+        value it allows, ``false`` if it holds for none, and ``unknown`` otherwise. A precise
+        input gives ``true`` or ``false``.
+        """
+        coarse = inputs.coarse_value(self.field)
+        if isinstance(coarse, frozenset):
+            holds = [self._holds(v) for v in coarse]
+            return _outcome(all(holds), not any(holds))
+        if isinstance(coarse, tuple):
+            return self._evaluate_interval(*coarse)
         actual = inputs.value(self.field)
         if actual is None:
             return "unknown"
+        return "true" if self._holds(actual) else "false"
+
+    def _holds(self, actual: int | float | str) -> bool:
+        """Whether the condition holds for one precise value."""
         if self.op == "eq":
-            ok = actual == self.value
-        elif self.op == "in":
-            if not isinstance(self.value, tuple):
-                raise RuleSetError(f"op 'in' on {self.field} needs a list value")
-            ok = actual in self.value
-        else:
-            if not isinstance(actual, int | float) or not isinstance(self.value, int | float):
+            return actual == self.value
+        if self.op == "in":
+            return actual in self._members()
+        if not isinstance(actual, int | float) or not isinstance(self.value, int | float):
+            raise RuleSetError(f"op {self.op} on {self.field} needs numeric operands")
+        return actual >= self.value if self.op == "ge" else actual < self.value
+
+    def _members(self) -> tuple[InputValue, ...]:
+        if not isinstance(self.value, tuple):
+            raise RuleSetError(f"op 'in' on {self.field} needs a list value")
+        return self.value
+
+    def _evaluate_interval(self, lower: float, upper: float) -> Outcome:
+        """Outcome over every value in the closed interval ``[lower, upper]``."""
+        if lower == upper:
+            return "true" if self._holds(lower) else "false"
+        if self.op in ("ge", "lt"):
+            threshold = self.value
+            if isinstance(threshold, bool) or not isinstance(threshold, int | float):
                 raise RuleSetError(f"op {self.op} on {self.field} needs numeric operands")
-            ok = actual >= self.value if self.op == "ge" else actual < self.value
-        return "true" if ok else "false"
+            if self.op == "ge":
+                return _outcome(lower >= threshold, upper < threshold)
+            return _outcome(upper < threshold, lower >= threshold)
+        # eq / in: a non-degenerate interval never lies wholly on the listed points, and holds
+        # for none of its values when no listed number falls inside it.
+        points = self._members() if self.op == "in" else (self.value,)
+        inside = any(
+            isinstance(p, int | float) and not isinstance(p, bool) and lower <= p <= upper
+            for p in points
+        )
+        return _outcome(False, not inside)
 
 
 @dataclass(frozen=True)

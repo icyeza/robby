@@ -37,12 +37,14 @@ def _subgroup(
 def classify(inputs: RobsonInputs, rule_set: RuleSet) -> ClassificationResult:
     """Classify one admission (spec §6.2).
 
-    A condition over a missing input is ``unknown``; a group is admissible when none of its
-    conditions is ``false``.
+    A condition over a missing input is ``unknown``; over a coarse input (a presentation set
+    or a GA interval) it is ``true`` if it holds for every allowed value, ``false`` if for none,
+    and ``unknown`` otherwise. A group is admissible when none of its conditions is ``false``.
 
     * ``resolved``: exactly one admissible group, all of its conditions ``true``.
     * ``partial``: otherwise, with at least one admissible group. ``resolving_fields`` lists
-      the missing inputs referenced by an ``unknown`` condition of an admissible group.
+      the missing or coarsely recorded inputs referenced by an ``unknown`` condition of an
+      admissible group (a more precise value would narrow the candidates).
     * ``conflict``: a consistency rule fires, or no group is admissible. ``candidates`` holds
       the groups admissible when the consistency rules are ignored (``group`` is always None).
     """
@@ -62,7 +64,8 @@ def classify(inputs: RobsonInputs, rule_set: RuleSet) -> ClassificationResult:
         if all(c.evaluate(inputs) == "true" for c in check.when):
             conflict.extend(c.field for c in check.when)
     if not admissible and not conflict:
-        conflict = [f for f in INPUT_FIELDS if inputs.value(f) is not None]
+        missing = set(inputs.missing_fields())
+        conflict = [f for f in INPUT_FIELDS if f not in missing]
     version = rule_set.version_label
 
     if conflict:

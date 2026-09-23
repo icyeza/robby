@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from robson_engine.models import RobsonInputs
 from robson_engine.ruleset import (
+    Condition,
     RuleSetError,
     compute_checksum,
     load_rule_set,
@@ -65,6 +67,8 @@ def test_malformed_condition_is_rejected(condition: dict) -> None:
         {"field": "gestational_age_weeks", "op": "ge", "value": "37"},
         {"field": "gestational_age_weeks", "op": "ge", "value": True},
         {"field": "parity", "op": "eq", "value": "0"},
+        {"field": "fetal_presentation", "op": "eq", "value": "non_cephalic"},
+        {"field": "fetal_presentation", "op": "in", "value": ["non_cephalic", "breech"]},
     ],
 )
 def test_invalid_domain_value_is_rejected(condition: dict) -> None:
@@ -115,3 +119,75 @@ def test_stamp_roundtrip(tmp_path: Path) -> None:
     target.write_text(text.replace(_data()["checksum"], "UNSTAMPED"), encoding="utf-8")
     checksum = stamp(target)
     assert load_rule_set(target).checksum == checksum
+
+
+# Coarse inputs (spec v1.2 §6.2): true if the condition holds for every allowed value, false if
+# for none, unknown otherwise.
+
+NON_CEPHALIC = RobsonInputs(fetal_presentation="non_cephalic")
+
+
+@pytest.mark.parametrize(
+    ("condition", "outcome"),
+    [
+        (Condition("fetal_presentation", "eq", "cephalic"), "false"),
+        (Condition("fetal_presentation", "eq", "breech"), "unknown"),
+        (Condition("fetal_presentation", "in", ("transverse", "oblique")), "unknown"),
+        (Condition("fetal_presentation", "in", ("breech", "transverse", "oblique")), "true"),
+        (
+            Condition("fetal_presentation", "in", ("cephalic", "breech", "transverse", "oblique")),
+            "true",
+        ),
+        (Condition("fetal_presentation", "in", ("cephalic",)), "false"),
+    ],
+)
+def test_condition_on_coarse_presentation(condition: Condition, outcome: str) -> None:
+    assert condition.evaluate(NON_CEPHALIC) == outcome
+
+
+@pytest.mark.parametrize(
+    ("rng", "op", "value", "outcome"),
+    [
+        ((38.0, 40.857), "ge", 37.0, "true"),
+        ((38.0, 40.857), "lt", 37.0, "false"),
+        ((35.0, 37.857), "ge", 37.0, "unknown"),
+        ((35.0, 37.857), "lt", 37.0, "unknown"),
+        ((20.0, 33.857), "ge", 37.0, "false"),
+        ((20.0, 33.857), "lt", 37.0, "true"),
+        ((37.0, 40.0), "ge", 37.0, "true"),
+        ((37.0, 40.0), "lt", 37.0, "false"),
+        ((30.0, 37.0), "ge", 37.0, "unknown"),
+        ((30.0, 37.0), "lt", 37.0, "unknown"),
+        ((36.0, 36.99), "ge", 37.0, "false"),
+        ((36.0, 36.99), "lt", 37.0, "true"),
+        ((38.0, 38.0), "eq", 38.0, "true"),
+        ((38.0, 38.0), "eq", 39.0, "false"),
+        ((35.0, 40.0), "eq", 38.0, "unknown"),
+        ((20.0, 30.0), "eq", 38.0, "false"),
+        ((35.0, 40.0), "in", (38.0, 41.0), "unknown"),
+        ((20.0, 30.0), "in", (38.0, 41.0), "false"),
+        ((38.0, 38.0), "in", (38.0, 41.0), "true"),
+    ],
+)
+def test_condition_on_ga_range(
+    rng: tuple[float, float], op: str, value: object, outcome: str
+) -> None:
+    inputs = RobsonInputs(gestational_age_range=rng)
+    assert Condition("gestational_age_weeks", op, value).evaluate(inputs) == outcome  # type: ignore[arg-type]
+
+
+def test_exact_ga_is_used_even_when_range_given() -> None:
+    inputs = RobsonInputs(gestational_age_weeks=39.0, gestational_age_range=(20.0, 33.857))
+    assert Condition("gestational_age_weeks", "ge", 37.0).evaluate(inputs) == "true"
+    assert Condition("gestational_age_weeks", "lt", 37.0).evaluate(inputs) == "false"
+
+
+def test_ordering_op_on_coarse_presentation_is_rejected() -> None:
+    with pytest.raises(RuleSetError):
+        Condition("fetal_presentation", "ge", 1).evaluate(NON_CEPHALIC)
+
+
+def test_ordering_op_with_non_numeric_value_on_ga_range_is_rejected() -> None:
+    inputs = RobsonInputs(gestational_age_range=(35.0, 38.0))
+    with pytest.raises(RuleSetError):
+        Condition("gestational_age_weeks", "ge", "37").evaluate(inputs)

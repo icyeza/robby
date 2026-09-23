@@ -462,7 +462,7 @@ wheels = [
 
 [[package]]
 name = "robson-engine"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "packages/robson_engine" }
 dependencies = [
     { name = "pyyaml" },
