@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -101,19 +103,78 @@ def test_console_output_is_aggregate_only(project: Path) -> None:
         assert int(match) == 0 or int(match) >= 5
 
 
-def test_failing_command_does_not_leak_row_data(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """If a command errors out, typer's traceback must not print any row-level sentinel."""
-    sentinel = "ROW_LEVEL_SENTINEL_VALUE_XYZ"
-
-    import robson_ml.cli as cli_module
-
-    monkeypatch.setattr(
-        cli_module,
-        "load_project_config",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError(sentinel)),
+def _run_cli(
+    project: Path, command: str, *, debug: bool = False
+) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    if debug:
+        env["ROBSON_ML_DEBUG"] = "1"
+    else:
+        env.pop("ROBSON_ML_DEBUG", None)
+    return subprocess.run(
+        [sys.executable, "-m", "robson_ml.cli", command],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env=env,
     )
-    result = _invoke(project, "ingest")
-    assert result.exit_code != 0
-    assert sentinel not in result.output
+
+
+def test_failing_command_does_not_leak_row_data(project: Path) -> None:
+    """A mapping that points at an absent raw column fails without leaking details."""
+    (project / "configs/mapping_ur_cmhs.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "source": "synthetic",
+                "sheet": "main",
+                "fields": {
+                    "admission_id": {"kind": "row_key", "status": "confirmed"},
+                    "facility_id": {
+                        "raw": "column_not_in_sheet",
+                        "kind": "text",
+                        "status": "confirmed",
+                    },
+                },
+            }
+        )
+    )
+    result = _run_cli(project, "ingest")
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "details suppressed" in result.stderr
+    assert "column_not_in_sheet" not in combined
+
+
+def test_failing_command_on_corrupt_workbook_does_not_leak_content(project: Path) -> None:
+    """A corrupt xlsx raises an openpyxl/zipfile error whose message could embed file content."""
+    sentinel = "zz_sentinel_zz"
+    (project / "data/raw/raw.xlsx").write_bytes(sentinel.encode("ascii"))
+    result = _run_cli(project, "ingest")
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "details suppressed" in result.stderr
+    assert sentinel not in combined
+
+
+def test_debug_env_var_reraises_original_exception(project: Path) -> None:
+    (project / "configs/mapping_ur_cmhs.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "source": "synthetic",
+                "sheet": "main",
+                "fields": {
+                    "admission_id": {"kind": "row_key", "status": "confirmed"},
+                    "facility_id": {
+                        "raw": "column_not_in_sheet",
+                        "kind": "text",
+                        "status": "confirmed",
+                    },
+                },
+            }
+        )
+    )
+    result = _run_cli(project, "ingest", debug=True)
+    assert result.returncode != 0
+    assert "MappingError" in result.stdout + result.stderr
+    assert "details suppressed" not in result.stderr

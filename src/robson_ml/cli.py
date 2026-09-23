@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import json
+import os
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TypeVar
 
 import pandas as pd
 import typer
@@ -19,8 +23,45 @@ from robson_ml.profile import write_profile
 from robson_ml.robson_run import classify_frame, handcheck_sample, validate_classification
 from robson_ml.schema import validate_canonical
 
-app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_show_locals=False)
+app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+    pretty_exceptions_show_locals=False,
+    pretty_exceptions_enable=False,
+)
 PROJECT_CONFIG = Path("configs/project.yaml")
+
+F = TypeVar("F", bound=Callable[..., None])
+
+
+def guarded(func: F) -> F:
+    """Catch any exception from a command body and refuse to print its details.
+
+    Patient-derived values can end up inside exception messages (bad paths, bad
+    cell contents, etc.). On a real terminal typer/rich would otherwise print the
+    exception message and source lines for any uncaught exception. This decorator
+    ensures only a value-free, generic message reaches stderr, unless the
+    ROBSON_ML_DEBUG=1 escape hatch is set for local debugging in a private session.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: object, **kwargs: object) -> None:
+        try:
+            func(*args, **kwargs)
+        except (typer.Exit, KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            if os.environ.get("ROBSON_ML_DEBUG") == "1":
+                raise
+            typer.echo(
+                f"error: {type(exc).__name__} in '{func.__name__}' "
+                "(details suppressed to protect patient data; rerun with "
+                "ROBSON_ML_DEBUG=1 in a private session to see them)",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
+
+    return wrapper  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -51,6 +92,7 @@ def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
 
 
 @app.command()
+@guarded
 def ingest() -> None:
     """Inventory the raw export; if the mapping has fields, build the canonical dataset."""
     cfg = load_project_config()
@@ -92,6 +134,7 @@ def ingest() -> None:
 
 
 @app.command()
+@guarded
 def robson() -> None:
     """Run the Robson engine over the canonical dataset and export the hand-check list."""
     cfg = load_project_config()
@@ -119,6 +162,7 @@ def robson() -> None:
 
 
 @app.command()
+@guarded
 def profile() -> None:
     """Write the spec §7 profile outputs under reports/profile/."""
     cfg = load_project_config()
@@ -132,3 +176,7 @@ def profile() -> None:
     out_dir = cfg.reports_dir / "profile"
     write_profile(raw, classified, mapping, manual, out_dir)
     typer.echo(f"profile written to {out_dir}")
+
+
+if __name__ == "__main__":
+    app()
