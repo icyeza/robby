@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+import numpy as np
 import pandas as pd
 
 from robson_engine import INPUT_FIELDS, RobsonInputs, RuleSet, classify
@@ -133,3 +134,58 @@ def validate_classification(df: pd.DataFrame) -> RobsonValidation:
         n_complete_unresolved=int((complete & (status == "partial")).sum()),
         n_multi_group_resolved=int((resolved & (n_candidates != 1)).sum()),
     )
+
+
+HANDCHECK_PER_GROUP = 15
+HANDCHECK_BOUNDARY_N = 50
+BOUNDARY_GA_LOW = 36.0
+BOUNDARY_GA_HIGH = 37.0 + 6.0 / 7.0
+HANDCHECK_COLUMNS = [
+    "admission_id",
+    "facility_id",
+    *INPUT_FIELDS,
+    "robson_status",
+    "robson_group",
+    "robson_subgroup",
+    "robson_candidates",
+    "robson_resolving_fields",
+    "robson_conflict_fields",
+    "rule_set_version",
+]
+
+
+def handcheck_sample(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+    """Draw the hand-check list of spec §6.5 item 4. The code never adjudicates it.
+
+    Strata: up to 15 random resolved records per group; up to 50 records with GA between
+    36+0 and 37+6 weeks; every conflict record. A record in several strata appears once,
+    with all its strata listed. Blank columns are added for the manual review.
+    """
+    rng = np.random.default_rng(seed)
+    positions = np.arange(len(df))
+    strata: dict[int, list[str]] = {}
+
+    def add(chosen: np.ndarray, label: str) -> None:
+        for pos in sorted(int(p) for p in chosen):
+            strata.setdefault(pos, []).append(label)
+
+    def draw(pool: np.ndarray, k: int) -> np.ndarray:
+        return pool if len(pool) <= k else rng.choice(pool, size=k, replace=False)
+
+    resolved = (df["robson_status"] == "resolved").to_numpy()
+    for group in range(1, 11):
+        in_group = (df["robson_group"] == group).fillna(False).to_numpy(dtype=bool)
+        add(draw(positions[resolved & in_group], HANDCHECK_PER_GROUP), f"group_{group}")
+    ga = df["gestational_age_weeks"]
+    boundary = ga.between(BOUNDARY_GA_LOW, BOUNDARY_GA_HIGH).fillna(False).to_numpy(dtype=bool)
+    add(draw(positions[boundary], HANDCHECK_BOUNDARY_N), "ga_boundary")
+    add(positions[(df["robson_status"] == "conflict").to_numpy()], "conflict")
+
+    order = sorted(strata)
+    out = df.iloc[order][HANDCHECK_COLUMNS].copy()
+    out["robson_candidates"] = out["robson_candidates"].map(lambda c: ";".join(map(str, c)))
+    out.insert(0, "strata", [";".join(strata[p]) for p in order])
+    out["manual_group"] = pd.NA
+    out["manual_subgroup"] = pd.NA
+    out["reviewer_note"] = pd.NA
+    return out.reset_index(drop=True)

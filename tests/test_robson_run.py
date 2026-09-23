@@ -4,11 +4,14 @@ import pytest
 
 from robson_engine import load_rule_set
 from robson_ml.robson_run import (
+    BOUNDARY_GA_HIGH,
     RobsonValidationError,
     classify_frame,
+    handcheck_sample,
     inputs_from_record,
     validate_classification,
 )
+from tests.synthetic import make_admissions
 
 RULES = load_rule_set()
 
@@ -81,3 +84,32 @@ def test_assert_valid_raises_on_multi_group() -> None:
     out.at[0, "robson_candidates"] = [1, 2]
     with pytest.raises(RobsonValidationError):
         validate_classification(out).assert_valid()
+
+
+def test_handcheck_strata() -> None:
+    df = classify_frame(make_admissions(3000, seed=11), RULES)
+    sample = handcheck_sample(df, seed=7)
+    assert sample["admission_id"].is_unique
+    per_group = sample["strata"].str.extractall(r"group_(\d+)")[0].astype(int).value_counts()
+    assert (per_group <= 15).all()
+    boundary = sample[sample["strata"].str.contains("ga_boundary")]
+    assert len(boundary) <= 50
+    assert boundary["gestational_age_weeks"].between(36.0, BOUNDARY_GA_HIGH).all()
+    conflicts = set(df.loc[df["robson_status"] == "conflict", "admission_id"])
+    assert conflicts <= set(sample["admission_id"])
+    assert {"manual_group", "manual_subgroup", "reviewer_note"} <= set(sample.columns)
+
+
+def test_handcheck_deterministic() -> None:
+    df = classify_frame(make_admissions(2000, seed=12), RULES)
+    pd.testing.assert_frame_equal(handcheck_sample(df, seed=1), handcheck_sample(df, seed=1))
+
+
+def test_handcheck_takes_all_records_of_small_groups() -> None:
+    df = classify_frame(make_admissions(3000, seed=11), RULES)
+    sample = handcheck_sample(df, seed=7)
+    resolved = df[df["robson_status"] == "resolved"]
+    sizes = resolved["robson_group"].astype(int).value_counts()
+    per_group = sample["strata"].str.extractall(r"group_(\d+)")[0].astype(int).value_counts()
+    for group, size in sizes.items():
+        assert per_group.get(group, 0) == min(size, 15)
