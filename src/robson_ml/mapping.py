@@ -25,11 +25,9 @@ from robson_ml.privacy import level_counts
 from robson_ml.schema import (
     CANONICAL_BASE_COLUMNS,
     CANONICAL_DTYPES,
-    OMISSION_REASON_PATTERN,
     ONSET_LEVELS,
     PRELABOUR_CS_TYPES,
     PRESENTATION_LEVELS,
-    PROTEINURIA_LEVELS,
     YES_NO,
     empty_column,
 )
@@ -56,7 +54,6 @@ FIXED_LEVELS: dict[str, frozenset[object]] = {
     "fetal_presentation": frozenset(PRESENTATION_LEVELS),
     "onset_of_labour": frozenset(ONSET_LEVELS),
     "prelabour_cs_type": frozenset(PRELABOUR_CS_TYPES),
-    "proteinuria": frozenset(PROTEINURIA_LEVELS),
     "preeclampsia_recorded": frozenset(YES_NO),
     "gdm_recorded": frozenset(YES_NO),
     "cs": frozenset({0, 1}),
@@ -160,11 +157,11 @@ class _UniqueKeyLoader(yaml.SafeLoader):
 
 
 def _known_field(name: str) -> bool:
-    return name in CANONICAL_DTYPES or bool(OMISSION_REASON_PATTERN.match(name))
+    return name in CANONICAL_DTYPES
 
 
 def _canonical_dtype(name: str) -> str:
-    return CANONICAL_DTYPES.get(name, "object")
+    return CANONICAL_DTYPES[name]
 
 
 def _is_real(value: object) -> bool:
@@ -610,11 +607,6 @@ def apply_mapping(raw: pd.DataFrame, config: MappingConfig) -> tuple[pd.DataFram
             columns[name] = empty_column(name, len(raw))
             missing.append(name)
             continue
-        spec = config.fields[name]
-        report = FieldReport(name, list(spec.raw), spec.kind, spec.status, spec.note)
-        columns[name] = _map_one(raw, spec, report)
-        reports.append(report)
-    for name in sorted(n for n in config.fields if OMISSION_REASON_PATTERN.match(n)):
         spec = config.fields[name]
         report = FieldReport(name, list(spec.raw), spec.kind, spec.status, spec.note)
         columns[name] = _map_one(raw, spec, report)

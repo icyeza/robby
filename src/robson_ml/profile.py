@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Hashable, Iterable, Mapping
 from pathlib import Path
 
 import pandas as pd
 from scipy.stats import chi2_contingency
 from sklearn.metrics import roc_auc_score
 
-from robson_engine import INPUT_FIELDS
+from robson_engine import COARSE_PRESENTATIONS, INPUT_FIELDS
 from robson_ml.audit_offline import (
     OVERALL,
     RESIDUAL,
@@ -26,15 +26,16 @@ from robson_ml.privacy import (
     SECONDARY,
     SMALL_CELL_THRESHOLD,
     SUPPRESSED,
+    DerivedCell,
     SumRelation,
     TableSpec,
-    fmt_count,
     safe_pct,
     suppress_small_cells,
     suppress_table,
     suppress_tables,
 )
 from robson_ml.reporting import markdown_table, write_table
+from robson_ml.schema import GA_BAND_FIELDS
 
 MIN_CLASS_COUNT = 10
 # A quantile is released only with at least this many values at or below it and at or
@@ -61,6 +62,16 @@ QUESTIONS = (
     "plurality represented?",
 )
 NOT_ANSWERED = "Not yet answered: needs human review at Checkpoint 1."
+# Completeness rows beyond the six plain "recorded" rows (spec v1.2 coarse inputs).
+GA_EXACT_OR_BAND = "gestational_age (exact or band)"
+PRESENTATION_PRECISE = "fetal_presentation (precise type)"
+# (larger, smaller) completeness rows with nested masks: their difference (GA known only as
+# a band; a coarse presentation) is never published and must not be recoverable by
+# subtracting one published row from the other.
+NESTED_COMPLETENESS_ROWS = (
+    (GA_EXACT_OR_BAND, "gestational_age_weeks"),
+    ("fetal_presentation", PRESENTATION_PRECISE),
+)
 PROFILE_LINKED = {
     "n_nonnull": [*(f"p{int(q * 100)}" for q in QUANTILES), "association", "n_unique"],
 }
@@ -123,16 +134,40 @@ def pct_by_facility(
     secondary cells depends only on ``min(count, rows - count)``, so ``mask`` and ``~mask``
     hide the same facilities.
     """
-    scopes = [mask, *(mask[facility == fac] for fac in facilities)]
-    n_trues = [int(s.sum()) for s in scopes]
-    n_rows_list = [len(s) for s in scopes]
-    counts = pd.DataFrame({"n_true": n_trues, "n_rows": n_rows_list})
+    spec = _scope_spec(mask, facility, facilities)
     safe = suppress_table(
+        spec.df, spec.count_columns, complements=spec.complements, groups=spec.groups
+    )
+    return _scope_pcts(spec, safe, facilities)
+
+
+def _scope_spec(mask: pd.Series, facility: pd.Series, facilities: list[str]) -> TableSpec:
+    """Counts of ``mask`` overall (row 0) and per facility (rows 1..), for suppression."""
+    scopes = [mask, *(mask[facility == fac] for fac in facilities)]
+    counts = pd.DataFrame(
+        {"n_true": [int(s.sum()) for s in scopes], "n_rows": [len(s) for s in scopes]}
+    )
+    return TableSpec(
         counts,
         ["n_true"],
         complements={"n_true": "n_rows"},
         groups=[SumRelation(tuple(range(1, len(scopes))), total=0)],
     )
+
+
+def _scope_counts(spec: TableSpec) -> tuple[list[int], list[int]]:
+    """(counts, scope sizes) of a :func:`_scope_spec` table, overall first."""
+    return (
+        [int(v) for v in spec.df["n_true"].tolist()],
+        [int(v) for v in spec.df["n_rows"].tolist()],
+    )
+
+
+def _scope_pcts(
+    spec: TableSpec, safe: pd.DataFrame, facilities: list[str]
+) -> dict[str, float | str]:
+    """Percentages from a suppressed :func:`_scope_spec` table; the marker where hidden."""
+    n_trues, n_rows_list = _scope_counts(spec)
     out: dict[str, float | str] = {}
     for position, key in enumerate([OVERALL_SCOPE, *facilities]):
         n_true, n_rows = n_trues[position], n_rows_list[position]
@@ -229,21 +264,64 @@ def _hide(cells: pd.DataFrame, row: int, columns: Iterable[str]) -> None:
             cells.at[row, column] = SECONDARY
 
 
+def _completeness_masks(classified: pd.DataFrame) -> dict[str, pd.Series]:
+    """Row label -> recorded mask: the six inputs (not missing), then GA recorded exactly or
+    as a band, and presentation recorded with its precise type (not a coarse code)."""
+    masks = {name: classified[name].notna() for name in INPUT_FIELDS}
+    if set(GA_BAND_FIELDS) <= set(classified.columns):
+        band = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
+    else:
+        band = pd.Series(False, index=classified.index)
+    masks[GA_EXACT_OR_BAND] = masks["gestational_age_weeks"] | band
+    coarse = classified["fetal_presentation"].isin(list(COARSE_PRESENTATIONS))
+    masks[PRESENTATION_PRECISE] = masks["fetal_presentation"] & ~coarse
+    return masks
+
+
 def input_completeness(
     classified: pd.DataFrame, hide: Mapping[str, Iterable[str]] | None = None
 ) -> pd.DataFrame:
     """% recorded for each of the six Robson inputs, overall (``all``) and per facility,
-    with primary and secondary suppression across the facility cells of each row.
+    then two coarse-aware rows (:data:`GA_EXACT_OR_BAND`, :data:`PRESENTATION_PRECISE`).
+
+    Each row gets primary and secondary suppression across its facility cells, and the rows
+    are suppressed jointly: each new row is nested with an input row
+    (:data:`NESTED_COMPLETENESS_ROWS`), so their per-scope difference (records with GA only
+    as a band; with a coarse presentation) is modelled as a never-published count that must
+    stay unknown when it holds 1-4, like a complement.
 
     ``hide``: for an input, further scopes (``all`` or facility) to mark ``"*"``: those
-    hidden for the raw column it is mapped from (see :func:`linked_hidden_scopes`).
+    hidden for the raw column it is mapped from (see :func:`linked_hidden_scopes`). The two
+    derived rows take no part in that linkage: they are computed from the same canonical
+    columns as the input rows, no raw column's missingness counts the same records, and
+    hiding further cells of the input rows afterwards can only remove information.
     """
     facility = classified["facility_id"].astype(str)
     facilities = sorted(facility.unique())
-    rows = []
-    for field_name in INPUT_FIELDS:
-        pct = pct_by_facility(classified[field_name].notna(), facility, facilities)
-        rows.append({"input": field_name, **pct})
+    masks = _completeness_masks(classified)
+    specs: dict[Hashable, TableSpec] = {
+        label: _scope_spec(mask, facility, facilities) for label, mask in masks.items()
+    }
+    counts = {label: _scope_counts(spec)[0] for label, spec in specs.items()}
+    n_rows = _scope_counts(specs[INPUT_FIELDS[0]])[1]
+    cross: list[SumRelation] = []
+    derived: dict[Hashable, DerivedCell] = {}
+    for larger, smaller in NESTED_COMPLETENESS_ROWS:
+        new_row = smaller if larger in INPUT_FIELDS else larger
+        for position in range(len(facilities) + 1):
+            proxy = (new_row, position, "n_true")
+            difference = ("~difference", larger, position)
+            complement = ("~difference complement", larger, position)
+            value = counts[larger][position] - counts[smaller][position]
+            derived[difference] = DerivedCell(value, proxy)
+            derived[complement] = DerivedCell(n_rows[position] - value, proxy)
+            smaller_cell, larger_cell = (smaller, position, "n_true"), (larger, position, "n_true")
+            cross.append(SumRelation((smaller_cell, difference), larger_cell))
+            cross.append(SumRelation((difference, complement)))  # = the scope's size, known
+    safe = suppress_tables(specs, cross, derived)
+    rows = [
+        {"input": label, **_scope_pcts(specs[label], safe[label], facilities)} for label in masks
+    ]
     out = pd.DataFrame(rows, columns=["input", OVERALL_SCOPE, *facilities])
     for position, field_name in enumerate(out["input"]):
         scopes = (hide or {}).get(field_name, ())
@@ -417,8 +495,8 @@ def robson_inputs_markdown(
     )
 
 
-def _counts_table(series: pd.Series) -> str:
-    """Level counts, suppressed. The levels sum to the published number of rows, and the
+def _counts_spec(series: pd.Series) -> TableSpec:
+    """Level counts to suppress. The levels sum to the published number of rows, and the
     recorded levels to the non-missing count (published for the raw column by the variable
     profile), so both groups are protected from subtraction."""
     labelled = series.astype(object).where(series.notna(), MISSING_LABEL).astype(str)
@@ -427,7 +505,69 @@ def _counts_table(series: pd.Series) -> str:
     recorded = tuple(table.index[table["value"] != MISSING_LABEL])
     if 2 <= len(recorded) < len(table):
         groups.append(SumRelation(recorded))
-    return _table(suppress_table(table, ["n"], groups=groups))
+    return TableSpec(table, ["n"], groups=groups)
+
+
+def _counts_table(series: pd.Series) -> str:
+    """Level counts as a suppressed markdown table (see :func:`_counts_spec`)."""
+    spec = _counts_spec(series)
+    return _table(suppress_table(spec.df, spec.count_columns, groups=spec.groups))
+
+
+def _plurality_evidence(canonical: pd.DataFrame) -> str:
+    """Q9: plurality levels, rows sharing a mother_key, and how many of those are multiples.
+
+    Suppressed jointly. Besides each count's own small-cell rule and its complement, a
+    reader can subtract: shared - shared multiples (shared rows that are not multiples) and
+    the plurality >= 2 levels - shared multiples (multiples that share no key). Both are
+    modelled as never-published counts that must stay unknown when they hold 1-4. Only
+    counts are published, never a key.
+    """
+    n = len(canonical)
+    plurality = canonical["plurality"]
+    counts = _counts_spec(plurality)
+    key = canonical["mother_key"]
+    shared = key.notna() & key.duplicated(keep=False)
+    multiple = (plurality >= 2).fillna(False).astype(bool)
+    n_shared, n_shared_multiple = int(shared.sum()), int((shared & multiple).sum())
+    sharing = pd.DataFrame({"n": [n_shared, n_shared_multiple], "n_rows": [n, n]})
+    shared_cell, multiple_cell = ("sharing", 0, "n"), ("sharing", 1, "n")
+    not_multiple = ("~q9", "shared, not multiple")
+    derived: dict[Hashable, DerivedCell] = {
+        not_multiple: DerivedCell(n_shared - n_shared_multiple, shared_cell)
+    }
+    cross = [SumRelation((multiple_cell, not_multiple), shared_cell)]
+    levels = pd.to_numeric(counts.df["value"], errors="coerce")
+    multiple_rows = tuple(("plurality", i, "n") for i in counts.df.index[levels >= 2])
+    if multiple_rows:
+        all_multiples, not_shared = ("~q9", "multiples"), ("~q9", "multiples, not shared")
+        n_multiple = int(multiple.sum())
+        derived[all_multiples] = DerivedCell(n_multiple, multiple_rows[0])
+        derived[not_shared] = DerivedCell(n_multiple - n_shared_multiple, multiple_cell)
+        cross += [
+            SumRelation(multiple_rows, all_multiples),
+            SumRelation((multiple_cell, not_shared), all_multiples),
+        ]
+    safe = suppress_tables(
+        {
+            "plurality": counts,
+            "sharing": TableSpec(sharing, ["n"], complements={"n": "n_rows"}, groups=[]),
+        },
+        cross,
+        derived,
+    )
+    shown_shared, shown_multiple = safe["sharing"]["n"].tolist()
+    text = (
+        "plurality:\n\n"
+        + _table(safe["plurality"])
+        + f"\n\nRows sharing a mother_key with another row: {shown_shared}. "
+        f"Of these, plurality >= 2: {shown_multiple}. Rows sharing a key are kept, flagged "
+        "and grouped by mother_key in every split (spec v1.2); shared rows with plurality "
+        ">= 2 may be one row per baby."
+    )
+    if SECONDARY in (shown_shared, shown_multiple):
+        text += "\n\n" + SECONDARY_NOTE
+    return text
 
 
 def _evidence(
@@ -472,10 +612,12 @@ def _evidence(
         ]
         return "Raw columns whose names match:\n\n" + markdown_table(pd.DataFrame(rows))
     if number == 6:
-        admitted = canonical["admitted_at"]
-        months = admitted.dt.strftime("%Y-%m")
+        delivered = canonical["delivery_date"]
+        months = delivered.dt.strftime("%Y-%m")
         return (
-            f"admitted_at recorded: {safe_pct(admitted.notna())}%.\n\nBy month:\n\n"
+            "The export has no admission timestamp (no admitted_at); delivery_date (date "
+            "only) is the proxy time axis (spec §5, v1.2).\n\n"
+            f"delivery_date recorded: {safe_pct(delivered.notna())}%.\n\nBy month:\n\n"
             + _counts_table(months)
         )
     if number == 7:
@@ -485,15 +627,7 @@ def _evidence(
         )
     if number == 8:
         return "Not determinable from the data."
-    plural = canonical[canonical["plurality"].fillna(1) >= 2]
-    keys = ["facility_id", "admitted_at", "maternal_age", "parity"]
-    sizes = plural.groupby(keys, dropna=False).size()
-    return (
-        "plurality:\n\n"
-        + _counts_table(canonical["plurality"])
-        + "\n\nGroups of plurality>=2 rows sharing facility, admission time, maternal age and "
-        f"parity (possible one-row-per-baby): {fmt_count(int((sizes >= 2).sum()))}."
-    )
+    return _plurality_evidence(canonical)
 
 
 def open_questions_markdown(

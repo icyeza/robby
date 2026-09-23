@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import numpy as np
@@ -8,8 +9,11 @@ from robson_engine import load_rule_set
 from robson_ml.mapping import FieldMapping, MappingConfig
 from robson_ml.privacy import SUPPRESSED
 from robson_ml.profile import (
+    GA_EXACT_OR_BAND,
+    PRESENTATION_PRECISE,
     QUESTIONS,
     cramers_v,
+    input_completeness,
     open_questions_markdown,
     robson_inputs_markdown,
     single_feature_auc,
@@ -21,7 +25,9 @@ from tests.disclosure import (
     HIDDEN,
     assert_linked_status_system,
     assert_not_recoverable,
+    determined_cells,
     markdown_tables,
+    scan_open_questions,
     scan_profile_outputs,
     scan_robson_inputs,
 )
@@ -178,6 +184,8 @@ def _first_table_after(text: str, marker: str) -> pd.DataFrame:
 def test_counts_table_hides_a_second_level_for_a_lone_small_count() -> None:
     # Reviewer recovery: gdm yes = 1 was "<5" but N - no - (missing) gave it back.
     canonical = _classified()
+    yes = canonical.index[canonical["gdm_recorded"] == "yes"]
+    canonical.loc[yes[1:], "gdm_recorded"] = "no"
     assert (canonical["gdm_recorded"] == "yes").sum() == 1
     text = open_questions_markdown(canonical, pd.DataFrame(index=canonical.index), {})
     table = _first_table_after(text, "gdm_recorded:")
@@ -345,3 +353,114 @@ def test_raw_and_canonical_missingness_hide_the_same_facilities(tmp_path: Path) 
     assert len(unknown) != 1, f"{unknown[0]} = (missing) total - the other facilities"
     assert row["FAC_A"] == SUPPRESSED
     scan_profile_outputs(out_dir)
+
+
+FACILITIES = ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]
+
+
+def test_completeness_adds_coarse_aware_rows() -> None:
+    classified = _classified()
+    table = input_completeness(classified).set_index("input")
+    assert list(table.index[-2:]) == [GA_EXACT_OR_BAND, PRESENTATION_PRECISE]
+    exact, any_ga = table.loc["gestational_age_weeks", "all"], table.loc[GA_EXACT_OR_BAND, "all"]
+    recorded = table.loc["fetal_presentation", "all"]
+    precise = table.loc[PRESENTATION_PRECISE, "all"]
+    band = classified[["ga_band_lower", "ga_band_upper"]].notna().all(axis=1)
+    expected_any = (classified["gestational_age_weeks"].notna() | band).mean()
+    assert float(any_ga) == pytest.approx(round(100 * expected_any, 1))
+    assert float(any_ga) > float(exact)
+    assert float(precise) < float(recorded)
+    text = robson_inputs_markdown(classified)
+    assert GA_EXACT_OR_BAND in text and PRESENTATION_PRECISE in text
+    scan_robson_inputs(text)
+
+
+def _small_coarse_counts_at_fac_a() -> pd.DataFrame:
+    """FAC_A: exactly 2 records with GA only as a band, exactly 3 coarse presentations."""
+    admissions = make_admissions(3000, seed=21)
+    at_a = admissions["facility_id"] == "FAC_A"
+    band_only = at_a & admissions["gestational_age_weeks"].isna()
+    drop = admissions.index[band_only][2:]
+    admissions.loc[drop, ["ga_band_lower", "ga_band_upper"]] = np.nan
+    coarse = admissions.index[at_a & (admissions["fetal_presentation"] == "non_cephalic")]
+    admissions.loc[coarse[3:], "fetal_presentation"] = "cephalic"
+    return classify_frame(admissions, load_rule_set())
+
+
+def _difference_exposed(table: pd.DataFrame, larger: str, smaller: str) -> set[str]:
+    """Scopes whose (larger - smaller) count a reader can pin, from the published cells.
+
+    Unknowns: every hidden cell of the two rows and every difference cell. Equations: each
+    row's facilities sum to its "all" cell, and larger = smaller + difference per scope.
+    """
+    rows = table.set_index("input")
+    scopes = ["all", *FACILITIES]
+    unknown = {("diff", s) for s in scopes}
+    for label in (larger, smaller):
+        unknown |= {(label, s) for s in scopes if rows.loc[label, s] in HIDDEN}
+    equations: list[list[object]] = []
+    signs: list[list[int]] = []
+    for label in (larger, smaller):
+        equations.append([(label, "all"), *((label, f) for f in FACILITIES)])
+        signs.append([-1, *([1] * len(FACILITIES))])
+    for scope in scopes:
+        equations.append([(larger, scope), (smaller, scope), ("diff", scope)])
+        signs.append([1, -1, -1])
+    return {s for kind, s in determined_cells(equations, signs, unknown) if kind == "diff"}
+
+
+def test_small_band_only_and_coarse_counts_are_not_recoverable() -> None:
+    classified = _small_coarse_counts_at_fac_a()
+    table = input_completeness(classified)
+    assert "FAC_A" not in _difference_exposed(table, GA_EXACT_OR_BAND, "gestational_age_weeks")
+    assert "FAC_A" not in _difference_exposed(table, "fetal_presentation", PRESENTATION_PRECISE)
+    scan_robson_inputs(robson_inputs_markdown(classified))
+
+
+def test_q6_uses_delivery_date_as_proxy() -> None:
+    canonical = _classified()
+    text = open_questions_markdown(canonical, pd.DataFrame(index=canonical.index), {})
+    q6 = text.split("## Q6.", 1)[1].split("## Q7.", 1)[0]
+    assert "admitted_at" in q6.splitlines()[0]  # the question keeps the spec wording
+    assert "delivery_date recorded" in q6
+    assert "no admission timestamp" in q6
+    months = markdown_tables(q6)[0]
+    assert {"2023-11", "2024-03"} <= set(months["value"])
+
+
+def _q9(canonical: pd.DataFrame) -> str:
+    text = open_questions_markdown(canonical, pd.DataFrame(index=canonical.index), {})
+    return text.split("## Q9.", 1)[1]
+
+
+def test_q9_reports_shared_mother_keys_without_values() -> None:
+    canonical = _classified()
+    q9 = _q9(canonical)
+    shared = canonical["mother_key"].duplicated(keep=False)
+    assert f"Rows sharing a mother_key with another row: {int(shared.sum())}." in q9
+    assert "Of these, plurality >= 2: 0." in q9
+    for key in canonical["mother_key"].dropna():
+        assert key not in q9
+    scan_open_questions(
+        open_questions_markdown(canonical, pd.DataFrame(index=canonical.index), {}),
+        len(canonical),
+    )
+
+
+def test_q9_small_multiple_count_is_suppressed() -> None:
+    canonical = _classified()
+    shared = canonical.index[canonical["mother_key"].duplicated(keep=False)]
+    canonical.loc[shared[:2], "plurality"] = 2
+    q9 = _q9(canonical)
+    assert f"Of these, plurality >= 2: {SUPPRESSED}." in q9
+
+
+def test_q9_small_non_multiple_remainder_is_protected() -> None:
+    # 2 shared rows that are not multiples: shared - multiples would give 2 if both shown.
+    canonical = _classified()
+    shared = canonical.index[canonical["mother_key"].duplicated(keep=False)]
+    canonical.loc[shared[2:], "plurality"] = 2
+    q9 = _q9(canonical)
+    total = re.search(r"another row: ([^.]+)\.", q9).group(1)  # type: ignore[union-attr]
+    multiples = re.search(r"plurality >= 2: ([^.]+)\.", q9).group(1)  # type: ignore[union-attr]
+    assert total in HIDDEN or multiples in HIDDEN

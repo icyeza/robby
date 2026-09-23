@@ -80,6 +80,17 @@ def test_pipeline_end_to_end(project: Path) -> None:
     assert not ((numeric > 0) & (numeric < 5)).any()
     assert (project / "reports/profile/robson_inputs.md").exists()
     assert (project / "reports/profile/open_questions.md").exists()
+    canonical = pd.read_parquet(project / "data/processed/canonical_robson.parquet")
+    assert str(canonical["delivery_date"].dtype) == "datetime64[ns]"
+    assert canonical["delivery_date"].notna().all()
+    assert str(canonical["ga_band_lower"].dtype) == "float64"
+    assert canonical["ga_band_lower"].notna().any()
+    assert canonical["mother_key"].str.startswith("MK_").all()
+    assert (canonical["fetal_presentation"] == "non_cephalic").any()
+    reports = "".join(
+        p.read_text(encoding="utf-8") for p in (project / "reports/profile").iterdir()
+    )
+    assert "MK_" not in reports
 
 
 def test_ingest_without_mapping_fields_does_inventory_only(project: Path) -> None:
@@ -93,7 +104,7 @@ def test_ingest_without_mapping_fields_does_inventory_only(project: Path) -> Non
 def test_console_output_is_aggregate_only(project: Path) -> None:
     outputs = "".join(_invoke(project, c).output for c in ["ingest", "robson", "profile"])
     df = make_admissions(1200, seed=31)
-    for column in ["facility_id", "recorded_indication", "mode_of_delivery"]:
+    for column in ["facility_id", "mother_key", "recorded_indication", "mode_of_delivery"]:
         for value in df[column].dropna().astype(str).unique():
             assert value not in outputs, f"row value from {column} printed"
     # no bare small counts: every printed "=<n>" count is 0 or >= 5 or "<5"

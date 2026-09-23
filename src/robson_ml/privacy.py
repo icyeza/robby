@@ -332,14 +332,34 @@ def suppress_table(
     return suppress_tables({None: spec})[None]
 
 
+@dataclass(frozen=True)
+class DerivedCell:
+    """A count never published but formable from published cells through ``cross`` sums.
+
+    For example the difference of two published counts of nested masks. Like a table's
+    complement it must stay unknown when it holds 1-4. ``proxy`` is the published cell
+    ``(table key, row label, count column)`` whose suppression hides it.
+    """
+
+    value: float
+    proxy: Hashable
+
+
 def suppress_tables(
-    tables: Mapping[Hashable, TableSpec], cross: Sequence[SumRelation] = ()
+    tables: Mapping[Hashable, TableSpec],
+    cross: Sequence[SumRelation] = (),
+    derived: Mapping[Hashable, DerivedCell] | None = None,
 ) -> dict[Hashable, pd.DataFrame]:
     """:func:`suppress_table` over several tables at once, protected jointly.
 
     ``cross`` are sums a reader can form across tables; their cells are
-    ``(table key, row label, count column)``. A secondary cell hidden to protect one table
-    may sit in another, so the tables are safe to publish only together, as returned.
+    ``(table key, row label, count column)`` or keys of ``derived``. A secondary cell hidden
+    to protect one table may sit in another, so the tables are safe to publish only
+    together, as returned.
+
+    ``derived``: never-published counts that ``cross`` ties to published cells (see
+    :class:`DerivedCell`); each one holding 1-4 is kept undetermined. Keys must not clash
+    with table cells.
     """
     values: dict[Hashable, float] = {}
     sizes: dict[Hashable, float] = {}
@@ -387,6 +407,10 @@ def suppress_tables(
                 comp_total = None if group.total is None else ("~complement", key, group.total, col)
                 comps = tuple(("~complement", key, m, col) for m in group.members)
                 relations.append(SumRelation(comps, comp_total))
+    for cell_key, cell in (derived or {}).items():
+        values[cell_key] = float(cell.value)
+        hidden.append(cell_key)
+        proxies[cell_key] = cell.proxy
     relations.extend(cross)
     final = protect_cells(
         values,

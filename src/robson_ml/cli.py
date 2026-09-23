@@ -155,7 +155,8 @@ def robson() -> None:
         + ", ".join(f"{k}={fmt_count(v)}" for k, v in sorted(summary.group_counts.items()))
     )
     typer.echo(
-        f"complete inputs: {fmt_count(summary.n_complete_inputs)}; "
+        f"complete (precise) inputs: {fmt_count(summary.n_complete_inputs)}; "
+        f"coarse inputs: {fmt_count(summary.n_coarse_inputs)}; "
         f"reconciles: {summary.reconciles}; hand-check rows: {fmt_count(len(handcheck))}"
     )
     summary.assert_valid()

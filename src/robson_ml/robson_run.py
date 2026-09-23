@@ -11,7 +11,8 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-from robson_engine import INPUT_FIELDS, RobsonInputs, RuleSet, classify
+from robson_engine import COARSE_PRESENTATIONS, INPUT_FIELDS, RobsonInputs, RuleSet, classify
+from robson_ml.schema import GA_BAND_FIELDS
 
 
 class RobsonValidationError(AssertionError):
@@ -54,20 +55,37 @@ def _as_str(value: object) -> str | None:
 
 
 def inputs_from_record(record: Mapping[str, object]) -> RobsonInputs:
-    """Build engine inputs from one canonical record; NaN/NA/None all mean not recorded."""
+    """Build engine inputs from one canonical record; NaN/NA/None all mean not recorded.
+
+    When the exact gestational age is missing and both GA band bounds are recorded, the band
+    is passed as ``gestational_age_range`` (coarse input, spec v1.2 §6.2). A presentation of
+    ``non_cephalic`` is passed through as the engine's coarse code.
+    """
+    ga = _as_float(record.get("gestational_age_weeks"))
+    ga_range = None
+    if ga is None:
+        lower = _as_float(record.get("ga_band_lower"))
+        upper = _as_float(record.get("ga_band_upper"))
+        if lower is not None and upper is not None:
+            ga_range = (lower, upper)
     return RobsonInputs(
         parity=_as_int(record.get("parity")),
         previous_cs_count=_as_int(record.get("previous_cs_count")),
         plurality=_as_int(record.get("plurality")),
         fetal_presentation=_as_str(record.get("fetal_presentation")),
-        gestational_age_weeks=_as_float(record.get("gestational_age_weeks")),
+        gestational_age_weeks=ga,
         onset_of_labour=_as_str(record.get("onset_of_labour")),
+        gestational_age_range=ga_range,
     )
 
 
 def classify_frame(df: pd.DataFrame, rule_set: RuleSet) -> pd.DataFrame:
-    """Return a copy of ``df`` with the engine's output columns appended (spec §5)."""
-    records = cast("list[dict[str, object]]", df[list(INPUT_FIELDS)].to_dict("records"))
+    """Return a copy of ``df`` with the engine's output columns appended (spec §5).
+
+    The six inputs are required; the GA band columns are used when present.
+    """
+    columns = [*INPUT_FIELDS, *(c for c in GA_BAND_FIELDS if c in df.columns)]
+    records = cast("list[dict[str, object]]", df[columns].to_dict("records"))
     results = [classify(inputs_from_record(rec), rule_set) for rec in records]
     out = df.copy()
     out["robson_group"] = pd.Series(
@@ -90,7 +108,19 @@ def classify_frame(df: pd.DataFrame, rule_set: RuleSet) -> pd.DataFrame:
 
 @dataclass(frozen=True)
 class RobsonValidation:
-    """Dataset-level engine checks (spec §6.5, acceptance criterion 3)."""
+    """Dataset-level engine checks (spec §6.5, acceptance criterion 3).
+
+    "Complete inputs" means all six inputs recorded *precisely*: a presentation type (not a
+    coarse code such as ``non_cephalic``) and an exact gestational age (not only a band). A
+    record with a coarse input may legitimately stay partial (spec v1.2 §6.2), so only
+    complete, precise records must resolve.
+
+    Attributes:
+        n_complete_inputs: records with all six inputs recorded precisely.
+        n_complete_unresolved: of those, records the engine left partial.
+        n_coarse_inputs: records with at least one coarse input (a coarse presentation, or
+            GA known only as a band).
+    """
 
     n_total: int
     status_counts: dict[str, int]
@@ -98,6 +128,7 @@ class RobsonValidation:
     n_complete_inputs: int
     n_complete_unresolved: int
     n_multi_group_resolved: int
+    n_coarse_inputs: int
 
     @property
     def reconciles(self) -> bool:
@@ -106,8 +137,8 @@ class RobsonValidation:
         return sum(self.group_counts.values()) + residual == self.n_total
 
     def assert_valid(self) -> None:
-        """Raise if any record has several groups, a complete record fails to resolve, or
-        the counts do not reconcile."""
+        """Raise if any record has several groups, a complete (precise, consistent) record
+        fails to resolve, or the counts do not reconcile."""
         problems = []
         if self.n_multi_group_resolved:
             problems.append(f"{self.n_multi_group_resolved} resolved records with >1 candidate")
@@ -119,11 +150,24 @@ class RobsonValidation:
             raise RobsonValidationError("; ".join(problems))
 
 
+def _coarse_masks(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """(coarse presentation, GA known only as a band) per record."""
+    presentation = df["fetal_presentation"].isin(list(COARSE_PRESENTATIONS))
+    if set(GA_BAND_FIELDS) <= set(df.columns):
+        band = df[list(GA_BAND_FIELDS)].notna().all(axis=1)
+        band_only = df["gestational_age_weeks"].isna() & band
+    else:
+        band_only = pd.Series(False, index=df.index)
+    return presentation, band_only
+
+
 def validate_classification(df: pd.DataFrame) -> RobsonValidation:
     """Compute the §6.5 checks on a frame returned by :func:`classify_frame`."""
     status = df["robson_status"]
     resolved = status == "resolved"
-    complete = df[list(INPUT_FIELDS)].notna().all(axis=1)
+    coarse_presentation, band_only = _coarse_masks(df)
+    # All six recorded, and precisely: exact GA (notna) and a presentation type.
+    complete = df[list(INPUT_FIELDS)].notna().all(axis=1) & ~coarse_presentation
     n_candidates = df["robson_candidates"].map(len)
     groups = df.loc[resolved, "robson_group"].astype(int).value_counts().sort_index()
     return RobsonValidation(
@@ -133,6 +177,7 @@ def validate_classification(df: pd.DataFrame) -> RobsonValidation:
         n_complete_inputs=int(complete.sum()),
         n_complete_unresolved=int((complete & (status == "partial")).sum()),
         n_multi_group_resolved=int((resolved & (n_candidates != 1)).sum()),
+        n_coarse_inputs=int((coarse_presentation | band_only).sum()),
     )
 
 
@@ -144,6 +189,7 @@ HANDCHECK_COLUMNS = [
     "admission_id",
     "facility_id",
     *INPUT_FIELDS,
+    *GA_BAND_FIELDS,
     "robson_status",
     "robson_group",
     "robson_subgroup",

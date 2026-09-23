@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 
 import pandas as pd
 import pandera.pandas as pa
 from pandera.errors import SchemaErrors
 
-PRESENTATION_LEVELS = ("cephalic", "breech", "transverse", "oblique")
+PRECISE_PRESENTATION_LEVELS = ("cephalic", "breech", "transverse", "oblique")
+# Coarse codes (spec v1.2 §5, §6.2): "non_cephalic" = known not cephalic, type unknown. Must
+# match the engine's COARSE_PRESENTATIONS keys (checked by tests/test_schema.py).
+COARSE_PRESENTATION_LEVELS = ("non_cephalic",)
+PRESENTATION_LEVELS = PRECISE_PRESENTATION_LEVELS + COARSE_PRESENTATION_LEVELS
 ONSET_LEVELS = ("spontaneous", "induced", "prelabour_cs")
 PRELABOUR_CS_TYPES = ("planned", "emergency")
-PROTEINURIA_LEVELS = ("neg", "trace", "1+", "2+", "3+")
 YES_NO = ("yes", "no")
 SUBGROUP_LEVELS = ("2a", "2b", "4a", "4b", "5a", "5b")
 STATUS_LEVELS = ("resolved", "partial", "conflict")
@@ -22,31 +24,26 @@ MATERNAL_AGE_RANGE = (12.0, 55.0)
 # Plausibility ranges not fixed by the spec; recorded in DECISIONS.md.
 HEIGHT_CM_RANGE = (120.0, 200.0)
 WEIGHT_KG_RANGE = (30.0, 200.0)
-SYSTOLIC_RANGE = (50.0, 260.0)
-DIASTOLIC_RANGE = (20.0, 160.0)
-GLUCOSE_RANGE = (1.0, 40.0)
-
-OMISSION_REASON_PATTERN = re.compile(r"^omission_reason_[a-z0-9_]+$")
+GA_BAND_FIELDS = ("ga_band_lower", "ga_band_upper")
 
 CANONICAL_DTYPES: dict[str, str] = {
     "admission_id": "object",
+    "mother_key": "object",
     "facility_id": "object",
-    "admitted_at": "datetime64[ns]",
+    "delivery_date": "datetime64[ns]",
     "parity": "Int64",
     "previous_cs_count": "Int64",
     "fetal_presentation": "object",
     "plurality": "Int64",
     "gestational_age_weeks": "float64",
+    "ga_band_lower": "float64",
+    "ga_band_upper": "float64",
     "onset_of_labour": "object",
     "prelabour_cs_type": "object",
     "maternal_age": "float64",
     "height_cm": "float64",
     "weight_kg": "float64",
     "anc_contacts": "Int64",
-    "systolic_bp": "float64",
-    "diastolic_bp": "float64",
-    "proteinuria": "object",
-    "glucose_mmol_l": "float64",
     "preeclampsia_recorded": "object",
     "gdm_recorded": "object",
     "mode_of_delivery": "object",
@@ -79,38 +76,60 @@ def _col(
     nullable: bool = True,
     unique: bool = False,
     required: bool = True,
-    regex: bool = False,
 ) -> pa.Column:
-    return pa.Column(
-        dtype,
-        list(checks),
-        nullable=nullable,
-        unique=unique,
-        required=required,
-        regex=regex,
-    )
+    return pa.Column(dtype, list(checks), nullable=nullable, unique=unique, required=required)
 
+
+def _date_only(values: pd.Series) -> pd.Series:
+    """True where the timestamp has no time of day (00:00)."""
+    return values == values.dt.normalize()
+
+
+def _band_pairs(df: pd.DataFrame) -> tuple[pd.Series, pd.Series] | None:
+    if not set(GA_BAND_FIELDS) <= set(df.columns):
+        return None  # the missing column is reported by its own column check
+    return df["ga_band_lower"], df["ga_band_upper"]
+
+
+def _ga_band_both_or_neither(df: pd.DataFrame) -> pd.Series | bool:
+    pair = _band_pairs(df)
+    if pair is None:
+        return True
+    lower, upper = pair
+    return lower.notna() == upper.notna()
+
+
+def _ga_band_ordered(df: pd.DataFrame) -> pd.Series | bool:
+    pair = _band_pairs(df)
+    if pair is None:
+        return True
+    lower, upper = pair
+    return lower.isna() | upper.isna() | (lower <= upper)
+
+
+ROW_CHECKS = frozenset({"ga_band_both_or_neither", "ga_band_lower_le_upper"})
 
 CANONICAL_SCHEMA = pa.DataFrameSchema(
     {
         "admission_id": _col(None, nullable=False, unique=True),
+        # Salted one-way hash of the raw patient identifier: groups rows of one woman only.
+        "mother_key": _col(None),
         "facility_id": _col(None, nullable=False),
-        "admitted_at": _col("datetime64[ns]"),
+        # Date only (spec v1.2 §5): a proxy time axis, never a feature.
+        "delivery_date": _col("datetime64[ns]", pa.Check(_date_only, name="date_only")),
         "parity": _col("Int64", pa.Check.ge(0)),
         "previous_cs_count": _col("Int64", pa.Check.ge(0)),
         "fetal_presentation": _col(None, _levels(PRESENTATION_LEVELS)),
         "plurality": _col("Int64", pa.Check.ge(1)),
         "gestational_age_weeks": _col("float64", _range(GA_RANGE)),
+        "ga_band_lower": _col("float64", _range(GA_RANGE)),
+        "ga_band_upper": _col("float64", _range(GA_RANGE)),
         "onset_of_labour": _col(None, _levels(ONSET_LEVELS)),
         "prelabour_cs_type": _col(None, _levels(PRELABOUR_CS_TYPES)),
         "maternal_age": _col("float64", _range(MATERNAL_AGE_RANGE)),
         "height_cm": _col("float64", _range(HEIGHT_CM_RANGE)),
         "weight_kg": _col("float64", _range(WEIGHT_KG_RANGE)),
         "anc_contacts": _col("Int64", pa.Check.ge(0)),
-        "systolic_bp": _col("float64", _range(SYSTOLIC_RANGE)),
-        "diastolic_bp": _col("float64", _range(DIASTOLIC_RANGE)),
-        "proteinuria": _col(None, _levels(PROTEINURIA_LEVELS)),
-        "glucose_mmol_l": _col("float64", _range(GLUCOSE_RANGE)),
         "preeclampsia_recorded": _col(None, _levels(YES_NO)),
         "gdm_recorded": _col(None, _levels(YES_NO)),
         "mode_of_delivery": _col(None),  # nullable by design (spec §4.2)
@@ -123,8 +142,12 @@ CANONICAL_SCHEMA = pa.DataFrameSchema(
         "robson_resolving_fields": _col(None, required=False),
         "robson_conflict_fields": _col(None, required=False),
         "rule_set_version": _col(None, nullable=False, required=False),
-        OMISSION_REASON_PATTERN.pattern: _col(None, regex=True, required=False),
     },
+    checks=[
+        # Row-wise: a GA band is recorded with both bounds or not at all, lower <= upper.
+        pa.Check(_ga_band_both_or_neither, name="ga_band_both_or_neither"),
+        pa.Check(_ga_band_ordered, name="ga_band_lower_le_upper"),
+    ],
     strict=True,
 )
 
@@ -141,7 +164,19 @@ def validate_canonical(df: pd.DataFrame) -> pd.DataFrame:
         validated: pd.DataFrame = CANONICAL_SCHEMA.validate(df, lazy=True)
     except SchemaErrors as exc:
         cases = exc.failure_cases
-        counts = Counter(zip(cases["column"].astype(str), cases["check"].astype(str), strict=True))
+        # pandera repeats a failing row-wise frame check once per column of the row; those
+        # are counted once per row, under the band columns they concern.
+        row_check = cases["check"].astype(str).isin(ROW_CHECKS)
+        counts = Counter(
+            zip(
+                cases.loc[~row_check, "column"].astype(str),
+                cases.loc[~row_check, "check"].astype(str),
+                strict=True,
+            )
+        )
+        rows = cases.loc[row_check, ["check", "index"]].astype(str).drop_duplicates()
+        for check in rows["check"]:
+            counts["/".join(GA_BAND_FIELDS), check] += 1
         summary = "; ".join(f"{col} / {check}: {n}" for (col, check), n in sorted(counts.items()))
         err = CanonicalSchemaError(f"canonical schema violations (column / check: n): {summary}")
         err.__context__ = None

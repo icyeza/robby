@@ -32,7 +32,7 @@ fields:
     status: confirmed
     range: [20, 45]
   maternal_age: {raw: Age, kind: float, status: confirmed, range: [12, 55]}
-  admitted_at: {raw: When, kind: datetime, status: confirmed}
+  delivery_date: {raw: When, kind: datetime, status: confirmed}
   mode_of_delivery: {raw: Mode, kind: text, status: confirmed}
   cs:
     raw: Mode
@@ -51,7 +51,7 @@ def _raw() -> pd.DataFrame:
             "Previous CS": ["None", "One", "Two or more", "One", "Unknown", "Blah"],
             "GA": ["38+2", "36+6", 39, "  ", "abc", "41+0"],
             "Age": [25, 60, 30.5, None, 22, 19],
-            "When": ["2023-11-02T10:00:00", None, "2024-01-05T08:30:00", "bad", None, None],
+            "When": ["2023-11-02", None, "2024-01-05", "bad", None, None],
             "Mode": [
                 "Caesarean section",
                 "Normal vaginal",
@@ -87,7 +87,7 @@ def test_apply_mapping_values(mapping_path: Path) -> None:
     assert np.isnan(ga.iloc[3]) and np.isnan(ga.iloc[4])
     assert np.isnan(canonical["maternal_age"].iloc[1])
     assert canonical["cs"].tolist()[:4] == [1, 0, 0, 1]
-    assert canonical["admitted_at"].notna().sum() == 2
+    assert canonical["delivery_date"].notna().sum() == 2
     validate_canonical(canonical)
 
 
@@ -99,7 +99,7 @@ def test_mapping_report_counts(mapping_path: Path) -> None:
     assert "Blah" not in str(by["previous_cs_count"].unmapped_levels)
     assert by["gestational_age_weeks"].n_unparsed == 1
     assert by["maternal_age"].n_out_of_range == 1
-    assert by["admitted_at"].n_unparsed == 1
+    assert by["delivery_date"].n_unparsed == 1
     assert "plurality" in report.missing_canonical_fields
     assert report.unreferenced_raw_columns == ["Note"]
     assert report.review_fields == ["previous_cs_count"]
@@ -240,8 +240,8 @@ KIND_CASES = {
         (5, 2, 1, 0, 2),
     ),
     "datetime": (
-        "admitted_at",
-        "  admitted_at: {raw: W, kind: datetime}\n",
+        "delivery_date",
+        "  delivery_date: {raw: W, kind: datetime}\n",
         pd.DataFrame(
             {
                 "W": [
@@ -346,15 +346,15 @@ def test_ga_completed_weeks_rejects_fractional_values(tmp_path: Path) -> None:
     assert by["gestational_age_weeks"].n_unparsed == 2
 
 
-DT_FIELD = "  admitted_at: {raw: W, kind: datetime}\n"
+DT_FIELD = "  delivery_date: {raw: W, kind: datetime}\n"
 LOCAL_0830 = pd.Timestamp("2023-11-02 08:30:00")
 
 
 def test_naive_datetime_is_local_wall_time(tmp_path: Path) -> None:
     raw = pd.DataFrame({"W": ["2023-11-02T08:30:00"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["admitted_at"].tolist() == [LOCAL_0830]
-    assert by["admitted_at"].n_tz_aware == 0
+    assert canonical["delivery_date"].tolist() == [LOCAL_0830]
+    assert by["delivery_date"].n_tz_aware == 0
 
 
 def test_aware_datetime_is_converted_to_kigali(tmp_path: Path) -> None:
@@ -363,17 +363,17 @@ def test_aware_datetime_is_converted_to_kigali(tmp_path: Path) -> None:
         dtype=object,
     )
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["admitted_at"].tolist() == [LOCAL_0830] * 3
-    assert canonical["admitted_at"].dtype == "datetime64[ns]"
-    assert by["admitted_at"].n_tz_aware == 3
+    assert canonical["delivery_date"].tolist() == [LOCAL_0830] * 3
+    assert canonical["delivery_date"].dtype == "datetime64[ns]"
+    assert by["delivery_date"].n_tz_aware == 3
 
 
 def test_mixed_naive_and_aware_datetimes_are_both_parsed(tmp_path: Path) -> None:
     raw = pd.DataFrame({"W": ["2023-11-02T08:30:00", "2023-11-02T06:30:00Z"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["admitted_at"].tolist() == [LOCAL_0830, LOCAL_0830]
-    assert by["admitted_at"].n_tz_aware == 1
-    assert by["admitted_at"].n_unparsed == 0
+    assert canonical["delivery_date"].tolist() == [LOCAL_0830, LOCAL_0830]
+    assert by["delivery_date"].n_tz_aware == 1
+    assert by["delivery_date"].n_unparsed == 0
 
 
 def test_datetime_objects_with_and_without_tzinfo(tmp_path: Path) -> None:
@@ -381,18 +381,18 @@ def test_datetime_objects_with_and_without_tzinfo(tmp_path: Path) -> None:
     naive = dt.datetime(2023, 11, 2, 8, 30)
     raw = pd.DataFrame({"W": [aware, naive, "03/04/2024"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert canonical["admitted_at"].tolist()[:2] == [LOCAL_0830, LOCAL_0830]
-    assert pd.isna(canonical["admitted_at"].iloc[2])
-    assert (by["admitted_at"].n_tz_aware, by["admitted_at"].n_unparsed) == (1, 1)
+    assert canonical["delivery_date"].tolist()[:2] == [LOCAL_0830, LOCAL_0830]
+    assert pd.isna(canonical["delivery_date"].iloc[2])
+    assert (by["delivery_date"].n_tz_aware, by["delivery_date"].n_unparsed) == (1, 1)
 
 
 def test_datetime_explicit_format_is_not_second_guessed(tmp_path: Path) -> None:
-    fields = '  admitted_at: {raw: W, kind: datetime, format: "%d/%m/%Y"}\n'
+    fields = '  delivery_date: {raw: W, kind: datetime, format: "%d/%m/%Y"}\n'
     raw = pd.DataFrame({"W": ["03/04/2024", "2024-01-05"]}, dtype=object)
     canonical, by = _run(tmp_path, fields, raw)
-    assert canonical["admitted_at"].iloc[0] == pd.Timestamp("2024-04-03")
-    assert pd.isna(canonical["admitted_at"].iloc[1])
-    assert by["admitted_at"].n_unparsed == 1
+    assert canonical["delivery_date"].iloc[0] == pd.Timestamp("2024-04-03")
+    assert pd.isna(canonical["delivery_date"].iloc[1])
+    assert by["delivery_date"].n_unparsed == 1
 
 
 def _load_fields(tmp_path: Path, fields: str) -> None:
@@ -402,31 +402,31 @@ def _load_fields(tmp_path: Path, fields: str) -> None:
 
 
 def test_datetime_format_mixed_is_rejected(tmp_path: Path) -> None:
-    fields = "  admitted_at: {raw: W, kind: datetime, format: mixed}\n"
-    with pytest.raises(MappingError, match="admitted_at"):
+    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed}\n"
+    with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
 
 def test_datetime_format_infer_is_rejected(tmp_path: Path) -> None:
-    fields = "  admitted_at: {raw: W, kind: datetime, format: infer}\n"
-    with pytest.raises(MappingError, match="admitted_at"):
+    fields = "  delivery_date: {raw: W, kind: datetime, format: infer}\n"
+    with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
 
 def test_datetime_format_mixed_variant_is_rejected(tmp_path: Path) -> None:
-    fields = "  admitted_at: {raw: W, kind: datetime, format: mixed-format}\n"
-    with pytest.raises(MappingError, match="admitted_at"):
+    fields = "  delivery_date: {raw: W, kind: datetime, format: mixed-format}\n"
+    with pytest.raises(MappingError, match="delivery_date"):
         _load_fields(tmp_path, fields)
 
 
 def test_iso_default_rejects_reduced_precision_dates(tmp_path: Path) -> None:
     raw = pd.DataFrame({"W": ["2024", "2024-03", "2024-03-05"]}, dtype=object)
     canonical, by = _run(tmp_path, DT_FIELD, raw)
-    assert by["admitted_at"].n_mapped == 1
-    assert by["admitted_at"].n_unparsed == 2
-    assert canonical["admitted_at"].tolist()[2] == pd.Timestamp("2024-03-05")
-    assert pd.isna(canonical["admitted_at"].iloc[0])
-    assert pd.isna(canonical["admitted_at"].iloc[1])
+    assert by["delivery_date"].n_mapped == 1
+    assert by["delivery_date"].n_unparsed == 2
+    assert canonical["delivery_date"].tolist()[2] == pd.Timestamp("2024-03-05")
+    assert pd.isna(canonical["delivery_date"].iloc[0])
+    assert pd.isna(canonical["delivery_date"].iloc[1])
 
 
 def test_non_finite_bool_and_huge_numbers_are_unparsed(tmp_path: Path) -> None:
@@ -490,7 +490,7 @@ INVALID_CONFIGS = {
     "integer on text field": ("  facility_id: {raw: F, kind: integer}\n", "facility_id"),
     "float on Int64 field": ("  parity: {raw: P, kind: float}\n", "parity"),
     "integer on float field": ("  maternal_age: {raw: A, kind: integer}\n", "maternal_age"),
-    "text on datetime field": ("  admitted_at: {raw: W, kind: text}\n", "admitted_at"),
+    "text on datetime field": ("  delivery_date: {raw: W, kind: text}\n", "delivery_date"),
     "datetime on float field": ("  maternal_age: {raw: A, kind: datetime}\n", "maternal_age"),
     "row_key on other field": ("  facility_id: {kind: row_key}\n", "row_key"),
     "row_key with raw": ("  admission_id: {raw: ID, kind: row_key}\n", "admission_id"),
@@ -533,8 +533,8 @@ INVALID_CONFIGS = {
         "non-integer or non-numeric level value",
     ),
     "category on datetime field": (
-        '  admitted_at: {raw: X, kind: category, levels: {"a": "b"}}\n',
-        "admitted_at",
+        '  delivery_date: {raw: X, kind: category, levels: {"a": "b"}}\n',
+        "delivery_date",
     ),
     "duplicate field key": (
         "  parity: {raw: P, kind: integer}\n  parity: {raw: Q, kind: integer}\n",
@@ -565,3 +565,21 @@ def test_valid_config_variants_load(tmp_path: Path) -> None:
         "format: weeks_plus_days, range: [20, 45]}\n"
         "  maternal_age: {raw: A, kind: float, dtype: float64, range: [12.5, 55]}\n",
     )
+
+
+@pytest.mark.parametrize(
+    "removed", ["systolic_bp", "proteinuria", "glucose_mmol_l", "omission_reason_systolic_bp"]
+)
+def test_fields_removed_in_v1_2_are_unknown(tmp_path: Path, removed: str) -> None:
+    with pytest.raises(MappingError, match="unknown canonical field"):
+        _load_fields(tmp_path, f"  {removed}: {{raw: X, kind: text}}\n")
+
+
+def test_non_cephalic_presentation_level_allowed(tmp_path: Path) -> None:
+    raw = pd.DataFrame({"M": ["Yes", "No", None]}, dtype=object)
+    fields = (
+        '  fetal_presentation: {raw: M, kind: category, levels: {"Yes": "non_cephalic", '
+        '"No": "cephalic"}}\n'
+    )
+    canonical, _ = _run(tmp_path, fields, raw)
+    assert canonical["fetal_presentation"].tolist() == ["non_cephalic", "cephalic", None]
