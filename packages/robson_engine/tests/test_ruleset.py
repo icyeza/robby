@@ -57,6 +57,40 @@ def test_malformed_condition_is_rejected(condition: dict) -> None:
         parse_rule_set(data)
 
 
+@pytest.mark.parametrize(
+    "condition",
+    [
+        {"field": "fetal_presentation", "op": "eq", "value": "cephalc"},
+        {"field": "onset_of_labour", "op": "in", "value": ["induced", "labour"]},
+        {"field": "gestational_age_weeks", "op": "ge", "value": "37"},
+        {"field": "gestational_age_weeks", "op": "ge", "value": True},
+        {"field": "parity", "op": "eq", "value": "0"},
+    ],
+)
+def test_invalid_domain_value_is_rejected(condition: dict) -> None:
+    data = copy.deepcopy(_data())
+    data["groups"][7]["conditions"] = [condition]
+    data["checksum"] = compute_checksum(data)
+    with pytest.raises(RuleSetError):
+        parse_rule_set(data)
+
+
+def test_missing_groups_key_is_rejected() -> None:
+    data = copy.deepcopy(_data())
+    del data["groups"]
+    data["checksum"] = compute_checksum(data)
+    with pytest.raises(RuleSetError, match="malformed"):
+        parse_rule_set(data)
+
+
+def test_group_missing_conditions_is_rejected() -> None:
+    data = copy.deepcopy(_data())
+    del data["groups"][0]["conditions"]
+    data["checksum"] = compute_checksum(data)
+    with pytest.raises(RuleSetError, match="malformed"):
+        parse_rule_set(data)
+
+
 def test_stamp_roundtrip(tmp_path: Path) -> None:
     target = tmp_path / "rules.yaml"
     text = PACKAGED.read_text(encoding="utf-8").replace("value: 37.0", "value: 37.0 ", 1)

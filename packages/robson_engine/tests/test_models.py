@@ -38,3 +38,17 @@ def test_invalid_values_raise_without_echoing_value(kwargs: dict[str, object]) -
         RobsonInputs(**kwargs)  # type: ignore[arg-type]
     value = next(iter(kwargs.values()))
     assert str(value) not in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"parity": True},
+        {"previous_cs_count": False},
+        {"plurality": True},
+        {"gestational_age_weeks": True},
+    ],
+)
+def test_boolean_counts_are_rejected(kwargs: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        RobsonInputs(**kwargs)  # type: ignore[arg-type]

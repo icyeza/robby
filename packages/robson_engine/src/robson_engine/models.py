@@ -41,6 +41,14 @@ class RobsonInputs:
     onset_of_labour: str | None = None
 
     def __post_init__(self) -> None:
+        if self.parity is not None and isinstance(self.parity, bool):
+            raise ValueError("parity must be an integer, not a boolean")
+        if self.previous_cs_count is not None and isinstance(self.previous_cs_count, bool):
+            raise ValueError("previous_cs_count must be an integer, not a boolean")
+        if self.plurality is not None and isinstance(self.plurality, bool):
+            raise ValueError("plurality must be an integer, not a boolean")
+        if self.gestational_age_weeks is not None and isinstance(self.gestational_age_weeks, bool):
+            raise ValueError("gestational_age_weeks must be a number, not a boolean")
         if self.parity is not None and self.parity < 0:
             raise ValueError("parity must be >= 0")
         if self.previous_cs_count is not None and self.previous_cs_count < 0:

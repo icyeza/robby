@@ -13,10 +13,20 @@ from typing import Any
 
 import yaml
 
-from robson_engine.models import INPUT_FIELDS, InputValue, Outcome, RobsonInputs
+from robson_engine.models import (
+    INPUT_FIELDS,
+    ONSETS,
+    PRESENTATIONS,
+    InputValue,
+    Outcome,
+    RobsonInputs,
+)
 
 OPS: frozenset[str] = frozenset({"eq", "ge", "lt", "in"})
 DEFAULT_RULE_SET = "robson_v1.0.yaml"
+NUMERIC_FIELDS: frozenset[str] = frozenset(
+    {"parity", "previous_cs_count", "plurality", "gestational_age_weeks"}
+)
 
 
 class RuleSetError(ValueError):
@@ -92,6 +102,32 @@ def compute_checksum(data: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _is_plain_number(value: Any) -> bool:
+    """True for an ``int`` or ``float`` that is not a ``bool``."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _check_domain(field: str, value: Any) -> bool:
+    """True if ``value`` is an allowed member of ``field``'s category domain."""
+    if field == "fetal_presentation":
+        return value in PRESENTATIONS
+    if field == "onset_of_labour":
+        return value in ONSETS
+    return True
+
+
+def _validate_condition_value(field: str, op: str, value: Any) -> None:
+    if op in ("eq", "in") and field in ("fetal_presentation", "onset_of_labour"):
+        values = value if op == "in" else (value,)
+        if not all(_check_domain(field, v) for v in values):
+            raise RuleSetError(f"invalid value for {field} in condition")
+    if op in ("ge", "lt"):
+        if not _is_plain_number(value):
+            raise RuleSetError(f"invalid value for {field} in condition")
+    elif op == "eq" and field in NUMERIC_FIELDS and not _is_plain_number(value):
+        raise RuleSetError(f"invalid value for {field} in condition")
+
+
 def _condition(raw: dict[str, Any]) -> Condition:
     field, op, value = raw.get("field"), raw.get("op"), raw.get("value")
     if field not in INPUT_FIELDS:
@@ -101,7 +137,9 @@ def _condition(raw: dict[str, Any]) -> Condition:
     if op == "in":
         if not isinstance(value, list):
             raise RuleSetError(f"op 'in' on {field} needs a list value")
+        _validate_condition_value(str(field), str(op), value)
         return Condition(str(field), str(op), tuple(value))
+    _validate_condition_value(str(field), str(op), value)
     return Condition(str(field), str(op), value)
 
 
@@ -115,25 +153,31 @@ def parse_rule_set(data: dict[str, Any]) -> RuleSet:
     actual = compute_checksum(data)
     if data.get("checksum") != actual:
         raise RuleSetError("rule set checksum mismatch: content changed without re-stamping")
-    groups = tuple(
-        GroupRule(
-            group=int(g["group"]),
-            name=str(g["name"]),
-            conditions=tuple(_condition(c) for c in g["conditions"]),
-            subgroups=tuple(
-                Subgroup(str(s["label"]), tuple(_condition(c) for c in s["conditions"]))
-                for s in g.get("subgroups", [])
-            ),
+    try:
+        groups = tuple(
+            GroupRule(
+                group=int(g["group"]),
+                name=str(g["name"]),
+                conditions=tuple(_condition(c) for c in g["conditions"]),
+                subgroups=tuple(
+                    Subgroup(str(s["label"]), tuple(_condition(c) for c in s["conditions"]))
+                    for s in g.get("subgroups", [])
+                ),
+            )
+            for g in data["groups"]
         )
-        for g in data["groups"]
-    )
-    if sorted(g.group for g in groups) != list(range(1, 11)):
-        raise RuleSetError("rule set must define groups 1-10 exactly once")
-    consistency = tuple(
-        ConsistencyRule(str(r["name"]), tuple(_condition(c) for c in r["when"]))
-        for r in data.get("consistency", [])
-    )
-    return RuleSet(str(data["version_label"]), actual, groups, consistency)
+        if sorted(g.group for g in groups) != list(range(1, 11)):
+            raise RuleSetError("rule set must define groups 1-10 exactly once")
+        consistency = tuple(
+            ConsistencyRule(str(r["name"]), tuple(_condition(c) for c in r["when"]))
+            for r in data.get("consistency", [])
+        )
+        version_label = str(data["version_label"])
+    except RuleSetError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise RuleSetError(f"malformed rule set structure: {exc}") from None
+    return RuleSet(version_label, actual, groups, consistency)
 
 
 def load_rule_set(path: Path | None = None) -> RuleSet:
