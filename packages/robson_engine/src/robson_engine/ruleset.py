@@ -168,10 +168,16 @@ def parse_rule_set(data: dict[str, Any]) -> RuleSet:
         )
         if sorted(g.group for g in groups) != list(range(1, 11)):
             raise RuleSetError("rule set must define groups 1-10 exactly once")
+        for group in groups:
+            if not group.conditions:
+                raise RuleSetError(f"group {group.group} has no conditions")
         consistency = tuple(
             ConsistencyRule(str(r["name"]), tuple(_condition(c) for c in r["when"]))
             for r in data.get("consistency", [])
         )
+        for rule in consistency:
+            if not rule.when:
+                raise RuleSetError(f"consistency rule '{rule.name}' has no conditions")
         version_label = str(data["version_label"])
     except RuleSetError:
         raise

@@ -43,7 +43,8 @@ def classify(inputs: RobsonInputs, rule_set: RuleSet) -> ClassificationResult:
     * ``resolved``: exactly one admissible group, all of its conditions ``true``.
     * ``partial``: otherwise, with at least one admissible group. ``resolving_fields`` lists
       the missing inputs referenced by an ``unknown`` condition of an admissible group.
-    * ``conflict``: a consistency rule fires, or no group is admissible.
+    * ``conflict``: a consistency rule fires, or no group is admissible. ``candidates`` holds
+      the groups admissible when the consistency rules are ignored (``group`` is always None).
     """
     trace: list[ConditionTrace] = []
     outcomes: dict[int, list[Outcome]] = {}
@@ -76,6 +77,8 @@ def classify(inputs: RobsonInputs, rule_set: RuleSet) -> ClassificationResult:
                 "resolved", group, subgroup, admissible, (), (), tuple(trace), version
             )
     resolving = _ordered(t.field for t in trace if t.outcome == "unknown" and t.group in admissible)
+    # Under rule set v1.0 a single admissible group always has all conditions true (verified by
+    # the exhaustive grid test); other rule sets could reach here with one candidate.
     return ClassificationResult(
         "partial", None, None, admissible, resolving, (), tuple(trace), version
     )

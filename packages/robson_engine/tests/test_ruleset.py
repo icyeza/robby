@@ -91,6 +91,24 @@ def test_group_missing_conditions_is_rejected() -> None:
         parse_rule_set(data)
 
 
+def test_group_with_empty_conditions_is_rejected() -> None:
+    data = copy.deepcopy(_data())
+    data["groups"][0]["conditions"] = []
+    data["checksum"] = compute_checksum(data)
+    with pytest.raises(RuleSetError, match="group 1 has no conditions"):
+        parse_rule_set(data)
+
+
+def test_consistency_rule_with_empty_when_is_rejected() -> None:
+    data = copy.deepcopy(_data())
+    data["consistency"][0]["when"] = []
+    data["checksum"] = compute_checksum(data)
+    with pytest.raises(
+        RuleSetError, match="consistency rule 'nulliparous_with_previous_cs' has no conditions"
+    ):
+        parse_rule_set(data)
+
+
 def test_stamp_roundtrip(tmp_path: Path) -> None:
     target = tmp_path / "rules.yaml"
     text = PACKAGED.read_text(encoding="utf-8").replace("value: 37.0", "value: 37.0 ", 1)

@@ -3,6 +3,7 @@ import itertools
 import pytest
 
 from robson_engine import INPUT_FIELDS, RobsonInputs, classify, load_rule_set
+from robson_engine.ruleset import Condition, GroupRule, RuleSet
 
 RULES = load_rule_set()
 
@@ -64,6 +65,17 @@ def test_conflict_nulliparous_with_previous_cs() -> None:
     assert result.status == "conflict"
     assert result.group is None
     assert result.conflict_fields == ("parity", "previous_cs_count")
+    assert result.candidates == frozenset({1})
+
+
+def test_zero_admissible_groups_is_conflict() -> None:
+    groups = tuple(GroupRule(g, "g", (Condition("plurality", "ge", 5),), ()) for g in range(1, 11))
+    rule_set = RuleSet("test", "x", groups=groups, consistency=())
+    result = classify(RobsonInputs(plurality=1), rule_set)
+    assert result.status == "conflict"
+    assert result.group is None
+    assert result.candidates == frozenset()
+    assert result.conflict_fields == ("plurality",)
 
 
 def test_partial_ga_missing_group_5_or_10() -> None:
@@ -75,6 +87,7 @@ def test_partial_ga_missing_group_5_or_10() -> None:
 
 def test_partial_onset_missing_group_1_or_2() -> None:
     result = classify(full(onset_of_labour=None), RULES)
+    assert result.status == "partial"
     assert result.candidates == frozenset({1, 2})
     assert result.resolving_fields == ("onset_of_labour",)
 
