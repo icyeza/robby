@@ -113,8 +113,8 @@ CANONICAL_SCHEMA = pa.DataFrameSchema(
         "glucose_mmol_l": _col("float64", _range(GLUCOSE_RANGE)),
         "preeclampsia_recorded": _col(None, _levels(YES_NO)),
         "gdm_recorded": _col(None, _levels(YES_NO)),
-        "mode_of_delivery": _col(None),
-        "cs": _col("Int64", pa.Check.isin([0, 1])),
+        "mode_of_delivery": _col(None),  # nullable by design (spec §4.2)
+        "cs": _col("Int64", pa.Check.isin([0, 1])),  # nullable by design (spec §4.2)
         "recorded_indication": _col(None),
         "robson_group": _col("Int64", pa.Check.in_range(1, 10), required=False),
         "robson_subgroup": _col(None, _levels(SUBGROUP_LEVELS), required=False),
@@ -136,13 +136,18 @@ def validate_canonical(df: pd.DataFrame) -> pd.DataFrame:
         CanonicalSchemaError: with per-(column, check) failure counts. The original pandera
             error, which contains row values, is deliberately not chained.
     """
+    err: CanonicalSchemaError | None = None
     try:
         validated: pd.DataFrame = CANONICAL_SCHEMA.validate(df, lazy=True)
     except SchemaErrors as exc:
         cases = exc.failure_cases
         counts = Counter(zip(cases["column"].astype(str), cases["check"].astype(str), strict=True))
         summary = "; ".join(f"{col} / {check}: {n}" for (col, check), n in sorted(counts.items()))
-        raise CanonicalSchemaError(
-            f"canonical schema violations (column / check: n): {summary}"
-        ) from None
+        err = CanonicalSchemaError(f"canonical schema violations (column / check: n): {summary}")
+        err.__context__ = None
+        err.__cause__ = None
+
+    if err is not None:
+        raise err from None
+
     return validated

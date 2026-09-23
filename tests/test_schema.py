@@ -61,3 +61,12 @@ def test_omission_reason_columns_allowed() -> None:
     df = _valid_frame()
     df["omission_reason_systolic_bp"] = ["equipment_unavailable", None]
     validate_canonical(df)
+
+
+def test_error_does_not_retain_original_exception() -> None:
+    df = _valid_frame()
+    df.loc[0, "gestational_age_weeks"] = 50.5
+    with pytest.raises(CanonicalSchemaError) as excinfo:
+        validate_canonical(df)
+    assert excinfo.value.__context__ is None
+    assert excinfo.value.__cause__ is None
