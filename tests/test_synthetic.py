@@ -33,11 +33,25 @@ def test_missingness_and_conflicts_present() -> None:
     assert df["cs"].isna().sum() > 0
 
 
-def test_prelabour_cs_is_always_cesarean() -> None:
+def test_prelabour_cs_onset_is_almost_always_cesarean() -> None:
     df = make_admissions(3000, seed=5)
     rows = df[(df["onset_of_labour"] == "prelabour_cs") & df["cs"].notna()]
     assert len(rows) > 0
-    assert (rows["cs"] == 1).all()
+    vaginal = rows["cs"] == 0
+    assert 0 < vaginal.sum() < 0.1 * len(rows)  # a few planned-CS-onset vaginal births
+    assert rows.loc[vaginal, "prelabour_cs_type"].isna().all()
+
+
+def test_cs_type_recorded_for_cs_rows_only() -> None:
+    """As in the export: the CS type is filled for (almost) all CS, not only pre-labour CS."""
+    df = make_admissions(3000, seed=5)
+    cs_type = df["prelabour_cs_type"]
+    assert cs_type[df["cs"] == 0].isna().all()
+    in_labour_cs = (df["cs"] == 1) & df["onset_of_labour"].isin(["spontaneous", "induced"])
+    types = cs_type[in_labour_cs]
+    assert (types == "emergency").mean() > 0.8
+    assert (types == "planned").sum() > 0
+    assert 0 < types.isna().sum() < 0.15 * len(types)
 
 
 def test_delivery_dates_are_dates_in_the_study_period() -> None:

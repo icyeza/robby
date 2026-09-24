@@ -92,6 +92,7 @@ def test_run_and_compare(project: Path) -> None:
     assert result.exit_code == 0, result.output  # type: ignore[attr-defined]
     output = result.output  # type: ignore[attr-defined]
     assert rule_commit in output
+    assert "population version: v1.3" in output
     assert "B1|FS0|M0|S1|P_pred run_id=" in output
     assert "SYN0" not in output
     assert len(list((project / "data" / "interim" / "oof").glob("*.parquet"))) == 1
@@ -102,4 +103,5 @@ def test_run_and_compare(project: Path) -> None:
     assert tuple(table.columns) == COMPARISON_COLUMNS
     assert len(table) == 1
     assert table.loc[0, "model"] == "B1"
+    assert table.loc[0, "population_version"] == "v1.3"
     assert not [c for c in table.columns if c == "n" or c.startswith("n_") or "count" in c]

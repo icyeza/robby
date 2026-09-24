@@ -1,0 +1,25 @@
+# Sensitivity analysis (spec v1.3 item 4): the v1.2 onset-coded population P_pred_onset_coded
+# (onset spontaneous/induced only), under S1 on FS4. Its model data is built with
+# legacy_onset (automatic for this population, refused for any other): the onset-free
+# robson_group_no_onset is replaced by the v1.2 onset_of_labour and onset-based robson_group,
+# so this reproduces the pre-v1.3 analysis for comparison only. Onset is outcome-contaminated
+# (coded retrospectively), so none of these runs is eligible for model selection (the
+# pre-registered rule reads population P_pred only).
+# Two documents so B1 (untuned, reads one column) runs once rather than once per strategy.
+model: B1
+feature_set: FS4
+missing_strategy: M0
+split: S1
+population: P_pred_onset_coded
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+model: [logreg_l2, xgboost, mlp]
+feature_set: FS4
+missing_strategy: [M0, M1, M2]
+split: S1
+population: P_pred_onset_coded
+n_trials: 50
+seed: 20260923
+n_boot: 1000

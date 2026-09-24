@@ -19,6 +19,7 @@ from robson_ml.evaluate import (
 )
 from robson_ml.feature_sets import FACILITY, ModelData, allowed_columns, feature_spec
 from robson_ml.features import load_feature_registry
+from robson_ml.populations import POPULATION_VERSION
 from robson_ml.splits import RECALIBRATION_N_FIRST
 from tests.test_feature_sets import model_data
 
@@ -148,7 +149,11 @@ def test_run_outputs(runs: dict[str, RunResult], ctx: RunContext) -> None:
     assert oof["fold"].nunique() == 4
     for key in ("mean_auc", "min_auc", "max_auc", "pooled_auc", "pooled_calibration_slope"):
         assert key in result.summary
-    assert set(result.report["subgroups"]) == {"facility_id", "robson_group", "parity_group"}
+    assert set(result.report["subgroups"]) == {
+        "facility_id",
+        "robson_group_no_onset",
+        "parity_group",
+    }
     mlflow.set_tracking_uri(ctx.tracking_uri)
     run = mlflow.get_run(result.run_id)
     for tag in (
@@ -161,8 +166,11 @@ def test_run_outputs(runs: dict[str, RunResult], ctx: RunContext) -> None:
         "missing_strategy",
         "seed",
         "selection_rule_commit",
+        "population_version",
     ):
         assert tag in run.data.tags
+    assert run.data.tags["population_version"] == POPULATION_VERSION == "v1.3"
+    assert run.data.params["population_version"] == POPULATION_VERSION
     artifacts = {a.path for a in mlflow.MlflowClient().list_artifacts(result.run_id)}
     assert artifacts == {
         "calibration.png",
@@ -206,6 +214,50 @@ def test_compare_has_no_counts(runs: dict[str, RunResult], ctx: RunContext, tmp_
     assert not [c for c in table.columns if c == "n" or c.startswith("n_") or "count" in c]
 
 
+def test_compare_keeps_only_current_population_version(
+    runs: dict[str, RunResult], tmp_path: Path
+) -> None:
+    """Spec v1.3: runs without the tag (pre-v1.3) or with another version are left out."""
+    import mlflow
+
+    from robson_ml.evaluate import EXPERIMENT_NAME
+
+    uri = (tmp_path / "mlruns").as_uri()
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    stale = {}
+    for label, tags in (("untagged", {}), ("v1.2", {"population_version": "v1.2"})):
+        with mlflow.start_run(run_name=label, tags=tags) as run:
+            mlflow.log_params({"model": "B1", "split": "S1", "population": "P_pred"})
+            mlflow.log_metrics({"mean_auc": 0.9})
+            stale[label] = run.info.run_id
+    with mlflow.start_run(tags={"population_version": POPULATION_VERSION}) as run:
+        mlflow.log_params({"model": "B1", "split": "S1", "population": "P_pred"})
+        mlflow.log_metrics({"mean_auc": 0.7})
+        current = run.info.run_id
+    table = comparison_table(uri)
+    assert list(table["run_id"]) == [current]
+    assert list(table["population_version"]) == [POPULATION_VERSION]
+
+
+def test_onset_coded_sensitivity_run(ctx: RunContext) -> None:
+    """P_pred_onset_coded runs end to end with the legacy onset features, tagged v1.3."""
+    import mlflow
+
+    legacy = model_data(
+        load_feature_registry(REGISTRY), n=1200, seed=21, population="P_pred_onset_coded"
+    )
+    config = replace(BASE, model="B1", missing_strategy="M0", population="P_pred_onset_coded")
+    result = run_experiment(config, legacy, ctx)
+    assert np.isfinite(result.summary["pooled_brier"])
+    mlflow.set_tracking_uri(ctx.tracking_uri)
+    tags = mlflow.get_run(result.run_id).data.tags
+    assert tags["population"] == "P_pred_onset_coded"
+    assert tags["population_version"] == POPULATION_VERSION
+    with pytest.raises(ValueError, match="population"):
+        validate_config(replace(BASE, population="P_pred_sens"))
+
+
 def test_expand_experiments() -> None:
     doc = {
         "model": ["logreg_l2", "xgboost"],
@@ -228,7 +280,15 @@ def test_expand_experiments() -> None:
 def test_committed_experiment_configs() -> None:
     configs = [c for path in sorted(EXPERIMENTS.glob("*.yaml")) for c in load_experiments(path)]
     assert len({c.name for c in configs}) == len(configs)
-    assert all(c.population == "P_pred" and c.feature_set != "FS4_deploy" for c in configs)
+    assert all(c.feature_set != "FS4_deploy" for c in configs)
+    sensitivity = load_experiments(EXPERIMENTS / "sensitivity_onset_coded.yaml")
+    assert {c.population for c in sensitivity} == {"P_pred_onset_coded"}
+    assert {(c.feature_set, c.split) for c in sensitivity} == {("FS4", "S1")}
+    assert {c.model for c in sensitivity} == {"B1", "logreg_l2", "xgboost", "mlp"}
+    assert sum(c.model == "B1" for c in sensitivity) == 1
+    main = [c for c in configs if c not in sensitivity]
+    assert all(c.population == "P_pred" for c in main)
+    configs = main
     assert all(c.n_trials == 50 and c.n_boot == 1000 for c in configs)
     baselines = {(c.model, c.split) for c in configs if c.model.startswith("B")}
     assert baselines == {(m, s) for m in ("B0", "B1", "B2", "B3") for s in ("S1", "S2", "S3")}

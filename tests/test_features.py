@@ -165,3 +165,17 @@ def test_build_raw_features_maps_raw_columns(tmp_path: Path) -> None:
     assert features["insurance_type"].tolist() == ["RSSB", "Mutuelle", None]
     assert features["gravidity"].tolist() == [1, 3, pd.NA]  # "abc" unparsed -> missing
     assert {r.canonical for r in reports} == {"insurance_type", "gravidity"}
+
+
+def test_committed_registry_drops_onset_features_v13() -> None:
+    """Spec v1.3: onset is excluded (outcome-contaminated); Robson group is onset-free."""
+    registry = load_feature_registry(Path("configs/features_v1.yaml"))
+    entries = {e.name: e for e in registry.entries}
+    onset = entries["onset_of_labour"]
+    assert onset.status == "exclude"
+    assert onset.reason == "Outcome-contaminated: onset coded retrospectively (spec v1.3)"
+    assert "robson_group" not in entries
+    robson = entries["robson_group_no_onset"]
+    assert (robson.source, robson.status, robson.group) == ("derived", "include", "G_robson")
+    included = {e.name for e in registry.included()}
+    assert not {"onset_of_labour", "robson_group"} & included

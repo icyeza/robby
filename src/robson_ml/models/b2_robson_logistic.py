@@ -1,7 +1,10 @@
-"""B2: logistic regression on the six Robson inputs (spec §12.2; linear version of B1).
+"""B2: logistic regression on the Robson inputs except onset (spec §12.2, v1.3).
 
-L2 penalty with C from the tiny ``BASELINE_C_GRID``; gestational age also gets 4-knot
-spline terms (spec §9.3, logistic baselines).
+The linear version of B1. Onset is left out: it is outcome-contaminated (coded
+retrospectively, spec v1.3), so B2 reads parity, previous CS count, presentation, plurality
+and gestational age (exact value plus band bounds). L2 penalty with C from the tiny
+``BASELINE_C_GRID``; gestational age also gets 4-knot spline terms (spec §9.3, logistic
+baselines).
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from robson_ml.models.base import (
     split_params,
 )
 
-# The six Robson inputs (spec §6.1); gestational age is the exact value plus its band.
+# The Robson inputs (spec §6.1) except onset (v1.3); GA is the exact value plus its band.
 ROBSON_INPUTS = (
     "parity",
     "previous_cs_count",
@@ -33,12 +36,11 @@ ROBSON_INPUTS = (
     "gestational_age_weeks",
     "ga_band_lower",
     "ga_band_upper",
-    "onset_of_labour",
 )
 
 
 def build(params: dict[str, Any], fs: FeatureSpec) -> Pipeline:
-    """One-hot + standardised Robson inputs (GA splines) into an L2 logistic regression."""
+    """One-hot + standardised Robson inputs, no onset (GA splines), into L2 logistic."""
     hyper, strategy, seed = split_params(params)
     prep = make_preprocessor(
         fs,

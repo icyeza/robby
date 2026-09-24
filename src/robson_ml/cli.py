@@ -21,7 +21,7 @@ from robson_ml.features import build_raw_features, check_coverage, load_feature_
 from robson_ml.ingest import file_sha256, infer_kind, inventory, read_workbook, select_sheet
 from robson_ml.leakage import run_screens
 from robson_ml.mapping import apply_mapping, load_mapping
-from robson_ml.populations import audit_population
+from robson_ml.populations import POPULATION_VERSION, audit_population
 from robson_ml.preregistration import (
     check_preregistration,
     git_commit,
@@ -317,7 +317,10 @@ def run(config: Path) -> None:
         git_commit=git_commit(repo),
         selection_rule_commit=rule_commit,
     )
-    typer.echo(f"configurations: {len(experiments)}; selection rule commit: {rule_commit}")
+    typer.echo(
+        f"configurations: {len(experiments)}; selection rule commit: {rule_commit}; "
+        f"population version: {POPULATION_VERSION}"
+    )
     populations = {}
     for experiment in experiments:
         if experiment.population not in populations:
@@ -338,7 +341,8 @@ def run(config: Path) -> None:
 @app.command()
 @guarded
 def compare() -> None:
-    """Aggregate every harness run into reports/model_comparison.csv (metrics only)."""
+    """Aggregate the harness runs of the current population version (spec v1.3) into
+    reports/model_comparison.csv (metrics only); older runs are left out."""
     from robson_ml.evaluate import comparison_table
 
     cfg = load_project_config()
@@ -346,7 +350,7 @@ def compare() -> None:
     out = cfg.reports_dir / COMPARISON_CSV
     out.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(out, index=False)
-    typer.echo(f"runs: {len(table)}; written to {out}")
+    typer.echo(f"runs (population version {POPULATION_VERSION}): {len(table)}; written to {out}")
 
 
 if __name__ == "__main__":

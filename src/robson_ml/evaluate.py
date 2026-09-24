@@ -14,10 +14,12 @@ Optuna trials). For every fold of the split scheme:
    rest; intercept-plus-slope recalibration is reported as a secondary variant.
 
 Metrics per fold, their mean and range, pooled out-of-fold metrics (spec §11.6), and pooled
-subgroups (facility, Robson group, nulliparous vs multiparous; §11.4) are logged to a local
-MLflow file store with the plots and tags of spec §19. Out-of-fold predictions (row ids, y,
-p, fold) go to ``<oof_dir>/<run_id>.parquet``, never to MLflow. Nothing here recommends a
-mode of delivery: outputs are probabilities of CS under current practice.
+subgroups (facility, onset-free Robson group, nulliparous vs multiparous; §11.4) are logged
+to a local MLflow file store with the plots and tags of spec §19, including the population
+version (spec v1.3); :func:`comparison_table` keeps only runs of the current version.
+Out-of-fold predictions (row ids, y, p, fold) go to ``<oof_dir>/<run_id>.parquet``, never to
+MLflow. Nothing here recommends a mode of delivery: outputs are probabilities of CS under
+current practice.
 """
 
 from __future__ import annotations
@@ -41,7 +43,15 @@ import yaml
 from sklearn.exceptions import ConvergenceWarning
 
 from robson_ml.calibration import CalibratedModel, calibrate
-from robson_ml.feature_sets import FACILITY, FEATURE_SETS, FeatureSpec, ModelData, feature_spec
+from robson_ml.feature_sets import (
+    FACILITY,
+    FEATURE_SETS,
+    POPULATIONS,
+    ROBSON_NO_ONSET,
+    FeatureSpec,
+    ModelData,
+    feature_spec,
+)
 from robson_ml.metrics import (
     INSUFFICIENT,
     evaluate,
@@ -54,6 +64,7 @@ from robson_ml.metrics import (
 from robson_ml.models import get_model
 from robson_ml.models.base import CLF, PREP, ModelSpec
 from robson_ml.plots import calibration_plot, decision_curve_plot, roc_plot
+from robson_ml.populations import POPULATION_VERSION
 from robson_ml.privacy import SMALL_CELL_THRESHOLD, fmt_count
 from robson_ml.splits import (
     Fold,
@@ -70,7 +81,7 @@ LOHO_SPLITS = frozenset({"S1", "S2"})
 DEFAULT_N_BOOT = 1000
 SUMMARY_METRICS = ("auc", "calibration_slope", "calibration_in_the_large", "brier", "log_loss")
 POOLED_EXTRA = ("auc_ci_low", "auc_ci_high", "reliability", "resolution", "accuracy_at_05")
-SUBGROUPS = ("facility_id", "robson_group", "parity_group")
+SUBGROUPS = ("facility_id", ROBSON_NO_ONSET, "parity_group")
 SLOPE_UPDATE = "slope_update"
 CONFIG_KEYS = frozenset(
     {"model", "feature_set", "missing_strategy", "split", "population", "n_trials", "seed"}
@@ -141,16 +152,22 @@ def expand_experiments(doc: Mapping[str, Any]) -> list[ExperimentConfig]:
 
 
 def load_experiments(path: Path) -> list[ExperimentConfig]:
-    """Read and expand a ``configs/experiments/*.yaml`` file."""
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(doc, dict):
-        raise ValueError("an experiment config must be a mapping")
-    return expand_experiments(doc)
+    """Read and expand a ``configs/experiments/*.yaml`` file.
+
+    The file may hold several YAML documents (separated by ``---``); each is expanded on its
+    own, so a file can pair grids that must not be crossed (e.g. B1 once, P0 per strategy).
+    """
+    docs = [d for d in yaml.safe_load_all(path.read_text(encoding="utf-8")) if d is not None]
+    if not docs or not all(isinstance(doc, dict) for doc in docs):
+        raise ValueError("an experiment config must be a mapping (or several documents of one)")
+    return [config for doc in docs for config in expand_experiments(doc)]
 
 
 def validate_config(config: ExperimentConfig) -> None:
     """Reject unknown values and ``facility_id`` in any S1/S2 feature set (spec §4.5)."""
     get_model(config.model)
+    if config.population not in POPULATIONS:
+        raise ValueError(f"unknown population {config.population!r}; expected one of {POPULATIONS}")
     if config.feature_set not in FEATURE_SETS:
         raise ValueError(f"unknown feature set {config.feature_set!r}")
     if config.split not in SPLITS:
@@ -363,11 +380,14 @@ def _subgroups(
     p: npt.NDArray[np.float64],
     config: ExperimentConfig,
 ) -> dict[str, dict[str, Any]]:
-    """Pooled out-of-fold metrics per facility, Robson group and parity (spec §11.4)."""
+    """Pooled out-of-fold metrics per facility, Robson group and parity (spec §11.4).
+
+    The Robson subgroup is the onset-free group (spec v1.3), whatever the population.
+    """
     frame = pd.DataFrame(
         {
             "facility_id": data.meta[FACILITY].iloc[rows].astype(str).to_numpy(),
-            "robson_group": data.x["robson_group"].iloc[rows].to_numpy(),
+            ROBSON_NO_ONSET: data.meta[ROBSON_NO_ONSET].iloc[rows].to_numpy(),
             "parity_group": _parity_group(data.meta["parity"].iloc[rows]).to_numpy(),
         }
     )
@@ -392,7 +412,7 @@ def _subgroup_table(subgroups: Mapping[str, Mapping[str, Any]]) -> pd.DataFrame:
 
 
 def _exclusion_report(table: pd.DataFrame) -> list[dict[str, Any]]:
-    """§4.4 exclusion counts with small cells suppressed and the share of all CS."""
+    """§4.4 exclusion (and kept-but-counted) counts, small cells suppressed, share of all CS."""
     out = []
     for row in table.to_dict("records"):
         n_cs, n_cs_audit = int(row["n_cs_excluded"]), int(row["n_cs_audit"])
@@ -406,6 +426,7 @@ def _exclusion_report(table: pd.DataFrame) -> list[dict[str, Any]]:
                 "category": str(row["category"]),
                 "n_excluded": fmt_count(int(row["n_excluded"])),
                 "n_cs_excluded": fmt_count(n_cs),
+                "n_kept": fmt_count(int(row.get("n_kept", 0))),
                 "share_of_all_cs": share,
             }
         )
@@ -500,6 +521,7 @@ def _log_run(
         "selection_rule_commit": ctx.selection_rule_commit,
         "split_scheme": config.split,
         "population": config.population,
+        "population_version": POPULATION_VERSION,
         "feature_set": config.feature_set,
         "missing_strategy": config.missing_strategy,
         "seed": str(config.seed),
@@ -507,6 +529,7 @@ def _log_run(
     }
     params: dict[str, Any] = {
         **asdict(config),
+        "population_version": POPULATION_VERSION,
         "family": spec.family,
         "complexity_rank": spec.complexity_rank,
         "n_features": len(fs.columns),
@@ -546,6 +569,7 @@ COMPARISON_COLUMNS = (
     "missing_strategy",
     "split",
     "population",
+    "population_version",
     "complexity_rank",
     "mean_auc",
     "min_auc",
@@ -566,7 +590,12 @@ COMPARISON_COLUMNS = (
 
 
 def comparison_table(tracking_uri: str) -> pd.DataFrame:
-    """One row per finished harness run (spec §11.5): metrics only, no counts."""
+    """One row per finished harness run of the current population version: metrics only.
+
+    Spec v1.3: only runs tagged ``population_version`` equal to :data:`POPULATION_VERSION`
+    are compared; runs without the tag predate v1.3 (onset-defined ``P_pred``) and are left
+    out, as are runs of any other version. No counts (spec §11.5).
+    """
     import mlflow
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -580,12 +609,16 @@ def comparison_table(tracking_uri: str) -> pd.DataFrame:
     assert isinstance(runs, pd.DataFrame)
     rows = []
     for _, run in runs.iterrows():
+        version = run.get("tags.population_version")
+        if not isinstance(version, str) or version != POPULATION_VERSION:
+            continue
         row: dict[str, Any] = {
             "model": run.get("params.model"),
             "feature_set": run.get("params.feature_set"),
             "missing_strategy": run.get("params.missing_strategy"),
             "split": run.get("params.split"),
             "population": run.get("params.population"),
+            "population_version": version,
             "complexity_rank": run.get("params.complexity_rank"),
             "run_id": run["run_id"],
         }

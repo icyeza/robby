@@ -218,10 +218,10 @@ features:
 - name: onset_of_labour
   raw_name: Labor Onset
   source: canonical
-  status: include
+  status: exclude
   available_at_admission: true
   group: G_robson
-  reason: 'Robson input; within P_pred only spontaneous/induced (pre-labour CS rows excluded: onset encodes the outcome)'
+  reason: 'Outcome-contaminated: onset coded retrospectively (spec v1.3)'
 - name: induction_indication
   raw_name: 'Indication of induction '
   source: raw
@@ -1174,13 +1174,13 @@ features:
   available_at_admission: false
   group: none
   reason: Empty in this export
-- name: robson_group
+- name: robson_group_no_onset
   raw_name: null
   source: derived
   status: include
   available_at_admission: true
   group: G_robson
-  reason: Robson group from the engine (within P_pred)
+  reason: Robson group computed without onset; 1+2 and 3+4 merged (spec v1.3)
 - name: bmi
   raw_name: null
   source: derived

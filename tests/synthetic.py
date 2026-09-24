@@ -53,6 +53,11 @@ PRECISE_NON_CEPHALIC_RATE = 0.2
 SHARED_KEY_PAIR_RATE = 0.015
 SHARED_KEY_SAME_DATE_RATE = 0.85
 CONTRADICTION_RATE = 0.005
+# Spec v1.3: the CS-type field is filled for every CS, not only pre-labour CS. CS after a
+# labour onset are typed emergency / planned / not typed at these rates; a few
+# planned-CS-onset admissions deliver vaginally (and so carry no CS type).
+IN_LABOUR_CS_TYPE_SHARE = {"emergency": 0.90, "planned": 0.04, "": 0.06}
+PLANNED_ONSET_VAGINAL_RATE = 0.03
 OUTCOME_MISSING_RATE = 0.003
 PERIOD_START = pd.Timestamp("2023-11-01")
 PERIOD_DAYS = 152  # 2023-11-01 to 2024-03-31
@@ -179,6 +184,18 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
     )
     cs = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)
     cs = np.where(onset == "prelabour_cs", 1, cs)
+    # A separate stream, so the draws below leave every other synthetic column unchanged.
+    aux = np.random.default_rng(seed + 2)
+    planned_onset_vaginal = (onset == "prelabour_cs") & (aux.random(n) < PLANNED_ONSET_VAGINAL_RATE)
+    cs = np.where(planned_onset_vaginal, 0, cs)
+    in_labour_type = aux.choice(
+        np.array(list(IN_LABOUR_CS_TYPE_SHARE), dtype=object),
+        size=n,
+        p=list(IN_LABOUR_CS_TYPE_SHARE.values()),
+    )
+    cs_type = np.where(onset == "prelabour_cs", prelabour_type, in_labour_type)
+    cs_type = np.where((cs == 1) & (cs_type != ""), cs_type, None)
+    df["prelabour_cs_type"] = pd.Series(cs_type, dtype=object)
     mode = np.where(
         cs == 1,
         "cesarean",
