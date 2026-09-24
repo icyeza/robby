@@ -989,22 +989,19 @@ def _check_profile_markers(profile: pd.DataFrame, raw: pd.DataFrame, facility: p
             check_small_marker(row[f"pct_missing_{fac}"], float(in_fac.sum()), float(len(in_fac)))
 
 
-def write_profile(
-    raw: pd.DataFrame,
-    classified: pd.DataFrame,
-    config: MappingConfig,
-    manual: Mapping[str, str],
-    out_dir: Path,
-) -> None:
-    """Write the three §7 outputs under ``out_dir`` (reports/profile).
+def published_profile(
+    raw: pd.DataFrame, classified: pd.DataFrame, config: MappingConfig
+) -> tuple[pd.DataFrame, CanonicalCounts]:
+    """The variable profile and canonical counts exactly as :func:`write_profile` publishes
+    them (all linked suppression applied), without writing anything.
 
     Each count published more than once (a field's missingness for its raw column, its
-    completeness row, its ``"(missing)"`` level count) is hidden alike in every file
-    (:func:`linked_hidden_scopes`): the files are suppressed, the union of their hidden
+    completeness row, its ``"(missing)"`` level count) is hidden alike in every output
+    (:func:`linked_hidden_scopes`): the outputs are suppressed, the union of their hidden
     cells is forced hidden in all of them and each is protected again around it, until no
-    file hides anything new.
+    output hides anything new. Callers displaying these tables (e.g. the pipeline notebook)
+    show the same cells as the files, so the two cannot be differenced.
     """
-    out_dir.mkdir(parents=True, exist_ok=True)
     raw_hide: dict[str, dict[str, str]] = {}
     hide: dict[str, dict[str, str]] = {}
     for _ in range(MAX_LINK_ROUNDS):
@@ -1027,6 +1024,34 @@ def write_profile(
     profile = _blank_key_statistics(profile, key_columns(config))
     facility = classified["facility_id"].astype(str).reset_index(drop=True)
     _check_profile_markers(profile, raw, facility)
+    return profile, counts
+
+
+def status_tables(classified: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(engine status, resolving fields of partial records, Robson report table), suppressed
+    jointly exactly as in ``robson_inputs.md`` (the report table rounded to 2 decimals)."""
+    return _status_tables(classified)
+
+
+def released_quantiles(numeric: pd.Series | None) -> dict[str, float | None]:
+    """``p5``..``p95`` of ``numeric``, each released only with at least
+    ``QUANTILE_MIN_SIDE`` values at or below and at or above it (else ``None``)."""
+    return _released_quantiles(numeric)
+
+
+def write_profile(
+    raw: pd.DataFrame,
+    classified: pd.DataFrame,
+    config: MappingConfig,
+    manual: Mapping[str, str],
+    out_dir: Path,
+) -> None:
+    """Write the three §7 outputs under ``out_dir`` (reports/profile).
+
+    The tables are those of :func:`published_profile` (linked suppression across files).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profile, counts = published_profile(raw, classified, config)
     write_table(
         profile,
         out_dir / "variable_profile.csv",
