@@ -653,7 +653,7 @@ def _map_category(labels: pd.Series, spec: FieldMapping, report: FieldReport) ->
         for level, n in level_counts(labels[unmapped]).values.tolist()
         if level != MISSING_ROW_LABEL
     }
-    dtype = _canonical_dtype(spec.canonical)
+    dtype = spec.dtype
     if dtype in ("Int64", "float64"):
         return pd.to_numeric(mapped.astype("float64")).astype(dtype)  # type: ignore[call-overload]
     return mapped.astype(object)
@@ -778,6 +778,20 @@ def _map_one(
             f"values but {accounted} accounted for"
         )
     return result.reset_index(drop=True)
+
+
+def map_field(
+    raw: pd.DataFrame, spec: FieldMapping, *, salt: bytes | None = None
+) -> tuple[pd.Series, FieldReport]:
+    """Map one field from ``raw`` per ``spec``, with its :class:`FieldReport` (spec §8.1).
+
+    Public entry point to the same per-field mapping machinery :func:`apply_mapping` uses,
+    for building feature columns that are not part of the canonical schema (the feature
+    registry, spec §8.1). Keeps the same counting guarantees as :func:`apply_mapping`.
+    """
+    report = FieldReport(spec.canonical, list(spec.raw), spec.kind, spec.status, spec.note)
+    series = _map_one(raw, spec, report, salt)
+    return series, report
 
 
 def apply_mapping(

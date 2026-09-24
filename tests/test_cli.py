@@ -74,7 +74,7 @@ def _invoke(project: Path, command: str) -> "object":
 
 
 def test_pipeline_end_to_end(project: Path) -> None:
-    for command in ["ingest", "robson", "profile"]:
+    for command in ["ingest", "robson", "profile", "leakage"]:
         result = _invoke(project, command)
         assert result.exit_code == 0, result.output
     assert (project / "data/interim/raw_inventory.json").exists()
@@ -219,7 +219,8 @@ def test_ingest_without_mapping_fields_does_inventory_only(project: Path) -> Non
 
 
 def test_console_output_is_aggregate_only(project: Path) -> None:
-    outputs = "".join(_invoke(project, c).output for c in ["ingest", "robson", "profile"])
+    commands = ["ingest", "robson", "profile", "leakage"]
+    outputs = "".join(_invoke(project, c).output for c in commands)
     df = make_admissions(1200, seed=31)
     for column in ["facility_id", "mother_key", "recorded_indication", "mode_of_delivery"]:
         for value in df[column].dropna().astype(str).unique():
@@ -306,3 +307,44 @@ def test_debug_env_var_reraises_original_exception(project: Path) -> None:
     assert result.returncode != 0
     assert "MappingError" in result.stdout + result.stderr
     assert "details suppressed" not in result.stderr
+
+
+def test_leakage_without_feature_registry(project: Path) -> None:
+    for command in ["ingest", "robson"]:
+        assert _invoke(project, command).exit_code == 0
+    result = _invoke(project, "leakage")
+    assert result.exit_code == 0, result.output
+    assert "feature registry not found" in result.output
+    out_path = project / "reports/leakage/leakage_screens.csv"
+    assert out_path.exists()
+    table = pd.read_csv(out_path)
+    assert "flagged" in table.columns
+
+
+def test_leakage_reports_feature_registry_coverage(project: Path) -> None:
+    for command in ["ingest", "robson"]:
+        assert _invoke(project, command).exit_code == 0
+    raw_columns = pd.read_excel(project / "data/raw/raw.xlsx", sheet_name="main").columns.tolist()
+    covered = raw_columns[:-1]  # leave one raw column uncovered, on purpose
+    features = [
+        {
+            "name": f"feat_{i}",
+            "raw_name": column,
+            "source": "raw",
+            "kind": "text",
+            "status": "review",
+            "available_at_admission": True,
+            "group": "none",
+            "reason": "test coverage",
+        }
+        for i, column in enumerate(covered)
+    ]
+    (project / "configs/features_v1.yaml").write_text(
+        yaml.safe_dump({"version": "test", "features": features}), encoding="utf-8"
+    )
+    result = _invoke(project, "leakage")
+    assert result.exit_code == 0, result.output
+    assert "feature registry sha256" in result.output
+    # exactly one raw column was left uncovered on purpose; a count of 1-4 is suppressed
+    assert "raw columns missing from registry: <5" in result.output
+    assert "registry columns not in raw export: 0" in result.output

@@ -17,8 +17,11 @@ import typer
 import yaml
 
 from robson_engine import load_rule_set
-from robson_ml.ingest import file_sha256, inventory, read_workbook, select_sheet
+from robson_ml.features import check_coverage, load_feature_registry
+from robson_ml.ingest import file_sha256, infer_kind, inventory, read_workbook, select_sheet
+from robson_ml.leakage import run_screens
 from robson_ml.mapping import apply_mapping, load_mapping
+from robson_ml.populations import audit_population
 from robson_ml.privacy import fmt_count
 from robson_ml.profile import write_profile
 from robson_ml.robson_run import classify_frame, handcheck_sample, validate_classification
@@ -32,7 +35,10 @@ app = typer.Typer(
 )
 PROJECT_CONFIG = Path("configs/project.yaml")
 DEFAULT_SALT_PATH = Path("data/interim/mother_key.salt")
+DEFAULT_FEATURES_PATH = Path("configs/features_v1.yaml")
 SALT_BYTES = 32
+# infer_kind results that a leakage screen cannot meaningfully run on.
+UNSCREENABLE_KINDS = frozenset({"empty", "text", "datetime"})
 
 F = TypeVar("F", bound=Callable[..., None])
 
@@ -79,10 +85,11 @@ class ProjectConfig:
     reports_dir: Path
     seed: int
     salt_path: Path = DEFAULT_SALT_PATH
+    features_path: Path = DEFAULT_FEATURES_PATH
 
 
 def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
-    """Read configs/project.yaml (``salt_path`` is optional, for older configs)."""
+    """Read configs/project.yaml (``salt_path``, ``features_path`` are optional)."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return ProjectConfig(
         raw_path=Path(data["raw_path"]),
@@ -93,6 +100,7 @@ def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
         reports_dir=Path(data["reports_dir"]),
         seed=int(data["seed"]),
         salt_path=Path(data.get("salt_path") or DEFAULT_SALT_PATH),
+        features_path=Path(data.get("features_path") or DEFAULT_FEATURES_PATH),
     )
 
 
@@ -203,6 +211,68 @@ def profile() -> None:
     out_dir = cfg.reports_dir / "profile"
     write_profile(raw, classified, mapping, manual, out_dir)
     typer.echo(f"profile written to {out_dir}")
+
+
+@app.command()
+@guarded
+def leakage() -> None:
+    """Run the leakage screens (spec §8.2) over every raw column, within P_audit."""
+    cfg = load_project_config()
+    mapping = load_mapping(cfg.mapping_path)
+    raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
+    canonical = pd.read_parquet(cfg.processed_dir / "canonical_robson.parquet")
+    audit, _ = audit_population(canonical)
+    raw_audit = raw.loc[audit.index].reset_index(drop=True)
+
+    frame = pd.DataFrame(
+        {
+            "cs": audit["cs"].reset_index(drop=True),
+            "facility_id": audit["facility_id"].reset_index(drop=True),
+        }
+    )
+    candidates: list[str] = []
+    n_skipped = 0
+    for column in raw.columns:
+        kind = infer_kind(raw[column])
+        if kind in UNSCREENABLE_KINDS:
+            n_skipped += 1
+            continue
+        series = raw_audit[column]
+        if kind == "numeric":
+            series = pd.to_numeric(series, errors="coerce")
+        frame[str(column)] = series.to_numpy()
+        candidates.append(str(column))
+
+    typer.echo(
+        f"raw columns: {fmt_count(raw.shape[1])}; screened: {fmt_count(len(candidates))}; "
+        f"skipped (empty/text/datetime): {fmt_count(n_skipped)}"
+    )
+    if not candidates:
+        typer.echo("no screenable raw columns; nothing written")
+        return
+
+    out_path = cfg.reports_dir / "leakage" / "leakage_screens.csv"
+    table = run_screens(frame, candidates, out_path)
+    typer.echo(f"leakage screens written to {out_path}")
+    typer.echo(
+        "flagged: "
+        f"auc={fmt_count(int(table['auc_flag'].eq(True).sum()))} "
+        f"name={fmt_count(int(table['name_flag'].eq(True).sum()))} "
+        f"completeness={fmt_count(int(table['completeness_flag'].eq(True).sum()))} "
+        f"any={fmt_count(int(table['flagged'].eq(True).sum()))}"
+    )
+
+    if not cfg.features_path.exists():
+        typer.echo(f"feature registry not found at {cfg.features_path}; screens run without it")
+        return
+    registry = load_feature_registry(cfg.features_path)
+    missing, extra = check_coverage(registry, [str(c) for c in raw.columns])
+    typer.echo(
+        f"feature registry sha256: {registry.sha256}; entries: {fmt_count(len(registry.entries))}; "
+        f"included: {fmt_count(len(registry.included()))}"
+    )
+    typer.echo(f"raw columns missing from registry: {fmt_count(len(missing))}")
+    typer.echo(f"registry columns not in raw export: {fmt_count(len(extra))}")
 
 
 if __name__ == "__main__":
