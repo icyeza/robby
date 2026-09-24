@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "ML workstream: Robson classification, readiness model and audit analytics"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "mlflow>=3.16.1",
     "numpy>=2.4.6",
     "openpyxl>=3.1.5",
+    "optuna>=5.0.0",
     "pandas>=2.2,<3",
     "pandera>=0.24",
     "pyarrow>=25.0.1",
@@ -13,7 +15,9 @@ dependencies = [
     "robson-engine",
     "scikit-learn>=1.9.1",
     "scipy>=1.17.1",
+    "statsmodels>=0.15.0",
     "typer>=0.27.2",
+    "xgboost>=3.2.0",
 ]
 
 [project.scripts]
@@ -50,7 +54,7 @@ warn_redundant_casts = true
 mypy_path = "src:packages/robson_engine/src"
 
 [[tool.mypy.overrides]]
-module = ["pandera.*", "openpyxl.*", "sklearn.*", "scipy.*", "pyarrow.*"]
+module = ["pandera.*", "openpyxl.*", "sklearn.*", "scipy.*", "pyarrow.*", "statsmodels.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
