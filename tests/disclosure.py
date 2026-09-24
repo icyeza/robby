@@ -20,7 +20,14 @@ reader would, and asserts:
      ``ga_band (recorded)`` row and the raw column the band is mapped from;
 (v) every raw column mapped to ``mother_key`` (the only field a ``hash_key`` may produce)
      publishes ``n_unique`` as ``"*"``: ``n_nonnull - n_unique`` would count the rows that
-     repeat a key, which Q9 publishes only suppressed.
+     repeat a key, which Q9 publishes only suppressed. It publishes no quantile and no
+     association either (a quantile of a numeric ID is one patient's ID);
+(vi) every published copy of a field's overall missing count agrees on whether it is
+     hidden, and with which marker: the ``"(missing)"`` row of its level counts in
+     open_questions.md (Q2 onset, Q3 PE and GDM, Q6 months, Q9 plurality), the ``all`` cell
+     of its completeness row and of Q1 (a Robson input), and its single raw column's
+     ``pct_missing`` and ``n_nonnull`` in the variable profile. So the recorded levels of a
+     level table have a known total exactly when the ``"(missing)"`` row is shown.
 
 :class:`CountReader` is a stronger reader for tests: an integer programme over published
 percentages and markers, used to check that given never-published counts cannot be pinned.
@@ -43,6 +50,16 @@ from robson_ml.profile import GA_BAND_RECORDED
 
 COUNT_COLUMNS = frozenset({"n", "n_cs", "n_nonnull"})
 MISSING_LABEL = "(missing)"
+# open_questions.md (question, table index) -> the canonical field whose levels it counts,
+# with a "(missing)" row linked to the field's other published missing counts (vi).
+LINKED_LEVEL_TABLES = {
+    ("2", 0): "onset_of_labour",
+    ("3", 0): "preeclampsia_recorded",
+    ("3", 1): "gdm_recorded",
+    ("6", 0): "delivery_date",
+    ("9", 0): "plurality",
+}
+QUANTILE_COLUMNS = ("p5", "p25", "p50", "p75", "p95")
 HIDDEN = (SUPPRESSED, SECONDARY)
 
 
@@ -134,10 +151,18 @@ def assert_not_recoverable(cells: Sequence[object], total: object, where: str) -
     assert not pinned, f"{where}: {pinned} (cells {list(cells)}, total {total})"
 
 
-def _counts_table_checks(table: pd.DataFrame, total: object, where: str) -> None:
+def _counts_table_checks(
+    table: pd.DataFrame, total: object, where: str, linked: bool = False
+) -> None:
+    """(i) and (ii) for a level-counts table. Its recorded levels sum to the non-missing
+    count; for a ``linked`` table that total is published exactly when the ``"(missing)"``
+    row is shown (vi), else it is taken as published (a raw column's ``n_nonnull``)."""
     assert_no_small_counts(table, where)
     assert_not_recoverable(table["n"].tolist(), total, where)
     recorded = table[table.iloc[:, 0] != MISSING_LABEL]
+    missing = table.loc[table.iloc[:, 0] == MISSING_LABEL, "n"].tolist()
+    if linked and missing and is_hidden(missing[0]):
+        return
     if 2 <= len(recorded) < len(table):
         assert_not_recoverable(recorded["n"].tolist(), None, f"{where} (recorded levels)")
 
@@ -279,7 +304,8 @@ def scan_open_questions(text: str, records: int) -> None:
             # Every counts table covers the whole frame except Q2's second one (pre-labour CS
             # rows only), whose total is the published prelabour_cs count.
             total = None if (number == "2" and index == 1) else records
-            _counts_table_checks(table, total, f"Q{number} table {index}")
+            linked = (number, index) in LINKED_LEVEL_TABLES
+            _counts_table_checks(table, total, f"Q{number} table {index}", linked)
 
 
 def scan_variable_profile(profile: pd.DataFrame) -> None:
@@ -313,10 +339,50 @@ def assert_linked_inputs_hide_alike(profile: pd.DataFrame, completeness: pd.Data
 
 
 def assert_hash_key_uniques_hidden(profile: pd.DataFrame) -> None:
-    """(v): a raw column mapped to mother_key never shows its number of distinct values."""
+    """(v): a raw column mapped to mother_key never shows its number of distinct values,
+    a quantile or an association."""
     names = profile["canonical_name"].fillna("").str.split(";")
     for _, row in profile[names.map(lambda parts: "mother_key" in parts)].iterrows():
         assert row["n_unique"] == SECONDARY, f"{row['raw_name']}: n_unique {row['n_unique']}"
+        for column in (*QUANTILE_COLUMNS, "association"):
+            cell = row.get(column)
+            assert pd.isna(cell) or is_hidden(cell), f"{row['raw_name']}: {column} {cell}"
+
+
+def _missing_rows(open_questions: str) -> dict[str, object]:
+    """Field -> its ``"(missing)"`` cell in open_questions.md ("0" when there is no row)."""
+    sections = re.split(r"\n## Q(\d+)\. ", open_questions)[1:]
+    out: dict[str, object] = {}
+    for number, body in zip(sections[::2], sections[1::2], strict=True):
+        for index, table in enumerate(markdown_tables(body)):
+            field = LINKED_LEVEL_TABLES.get((number, index))
+            if field is None or "n" not in table.columns:
+                continue
+            cells = table.loc[table.iloc[:, 0] == MISSING_LABEL, "n"].tolist()
+            out[field] = cells[0] if cells else "0"
+    return out
+
+
+def assert_missing_copies_agree(
+    profile: pd.DataFrame, completeness: pd.DataFrame, open_questions: str
+) -> None:
+    """(vi): each copy of a field's overall missing count is hidden alike."""
+    by_input = completeness.set_index("input")
+    q1 = markdown_tables(open_questions.split("## Q1.", 1)[1])[0].set_index("input")
+    names = profile["canonical_name"].fillna("")
+    for field, cell in _missing_rows(open_questions).items():
+        copies = {"(missing)": cell}
+        if field in by_input.index:
+            copies["completeness all"] = by_input.loc[field, "all"]
+            copies["Q1"] = q1.loc[field, "pct_recorded"]
+        rows = profile[names == field]
+        if len(rows) == 1:
+            copies["pct_missing"] = rows.iloc[0]["pct_missing"]
+            copies["n_nonnull"] = rows.iloc[0]["n_nonnull"]
+        markers = {where: c if is_hidden(c) else "shown" for where, c in copies.items()}
+        if cell == "0":
+            continue  # nothing missing: nothing to hide
+        assert len(set(markers.values())) == 1, f"{field}: {markers}"
 
 
 def scan_profile_outputs(out_dir: Path) -> None:
@@ -329,6 +395,8 @@ def scan_profile_outputs(out_dir: Path) -> None:
     scan_variable_profile(profile)
     assert_hash_key_uniques_hidden(profile)
     assert_linked_inputs_hide_alike(profile, markdown_tables(inputs)[0])
+    open_questions = (out_dir / "open_questions.md").read_text(encoding="utf-8")
+    assert_missing_copies_agree(profile, markdown_tables(inputs)[0], open_questions)
 
 
 class CountReader:

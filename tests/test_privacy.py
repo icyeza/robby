@@ -4,11 +4,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from robson_ml import privacy
 from robson_ml.privacy import (
     SECONDARY,
     SUPPRESSED,
+    DisclosureError,
     SumRelation,
     TableSpec,
+    check_small_marker,
     fmt_count,
     level_counts,
     protect_cells,
@@ -293,3 +296,56 @@ def test_protect_cells_known_total_all_ones_still_hides_a_published_cell() -> No
     result = protect_cells(values, {"a", "b"}, [SumRelation(("a", "b", "c", "d"))])
     assert result.hidden == {"a", "b", "c"}
     assert result.demoted == set()
+
+
+def test_check_small_marker_allows_only_small_counts_or_complements() -> None:
+    check_small_marker(SUPPRESSED, 3)
+    check_small_marker(SUPPRESSED, 97, 100)  # its complement is 3
+    check_small_marker(SECONDARY, 50, 100)  # "*" may hide any value
+    check_small_marker(12, 12)
+    for value, total in ((0, None), (7, None), (50, 100), (0, 100)):
+        with pytest.raises(DisclosureError):
+            check_small_marker(SUPPRESSED, value, total)
+
+
+def test_suppress_tables_refuses_a_small_marker_on_a_large_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Internal guard: whatever goes wrong upstream, "<5" never marks a count outside 1-4.
+    def mark_everything(df: pd.DataFrame, count_columns, *args, **kwargs) -> pd.DataFrame:
+        out = df.astype(object).copy()
+        out[list(count_columns)] = SUPPRESSED
+        return out
+
+    monkeypatch.setattr(privacy, "suppress_small_cells", mark_everything)
+    with pytest.raises(DisclosureError, match="n"):
+        suppress_table(pd.DataFrame({"n": [3, 40, 50]}), ["n"])
+
+
+def test_suppress_table_linked_small_marker_follows_its_count() -> None:
+    # n_cs is "<5" on the row whose n is 1-4 (linked), though n_cs itself is 0: allowed.
+    df = pd.DataFrame({"n": [3, 40, 60], "n_cs": [0, 20, 30]})
+    out = suppress_table(df, ["n", "n_cs"], linked={"n": ["n_cs"]}, complements={"n_cs": "n"})
+    assert out.loc[0, "n_cs"] == SUPPRESSED
+
+
+def test_forced_cells_are_hidden_and_protected() -> None:
+    # A cell hidden because another file hides the same count: "*", and not recoverable.
+    spec = TableSpec(pd.DataFrame({"n": [100, 40, 30, 20]}), ["n"])
+    out = suppress_tables({"t": spec}, forced=[("t", 1, "n")])["t"]["n"].tolist()
+    assert out[1] == SECONDARY
+    assert sum(cell in (SUPPRESSED, SECONDARY) for cell in out) >= 2
+    assert_not_recoverable(out, 190, "forced")
+
+
+def test_rank_orders_secondary_cells_by_row_not_value() -> None:
+    # Facility cells 1-4 sum to row 0. By size the smallest non-zero (row 4) would go; by
+    # rank the first non-zero row in order does, and a zero row is still skipped.
+    df = pd.DataFrame({"n": [67, 2, 0, 50, 15], "n_rows": [900, 200, 200, 300, 200]})
+    groups = [SumRelation((1, 2, 3, 4), total=0)]
+    kwargs = {"complements": {"n": "n_rows"}, "groups": groups}
+    by_size = suppress_tables({"t": TableSpec(df, ["n"], **kwargs)})["t"]["n"].tolist()
+    ranked = TableSpec(df, ["n"], rank=[1, 2, 3, 4, 0], **kwargs)
+    by_rank = suppress_tables({"t": ranked})["t"]["n"].tolist()
+    assert by_size == [67, SUPPRESSED, 0, 50, SECONDARY]
+    assert by_rank == [67, SUPPRESSED, 0, SECONDARY, 15]

@@ -1,3 +1,4 @@
+import itertools
 import re
 from pathlib import Path
 
@@ -160,7 +161,8 @@ def test_variable_profile_blocks_facility_differencing() -> None:
     profile = variable_profile(raw, canonical, MappingConfig("t", None, {})).iloc[0]
     facility_cells = [profile[f"pct_missing_{f}"] for f in ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]]
     assert profile["pct_missing_FAC_A"] == SUPPRESSED
-    assert profile["pct_missing"] not in HIDDEN
+    # Two facilities are hidden, so the overall cell is too, whatever the values.
+    assert profile["pct_missing"] == SECONDARY
     assert_not_recoverable(facility_cells, None, "FacDiff")
     # FAC_D has no missing values: a published 0.0 hides nobody and is not a candidate.
     assert profile["pct_missing_FAC_D"] == 0.0
@@ -285,7 +287,8 @@ def test_write_profile_passes_disclosure_scan(tmp_path: Path) -> None:
     scan_profile_outputs(out_dir)
     profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).set_index("raw_name")
     assert pd.isna(profile.loc["Bin40", "p95"])
-    assert pd.isna(profile.loc["Tiny HIV", "association"])
+    tiny = profile.loc["Tiny HIV", "association"]
+    assert pd.isna(tiny) or tiny in HIDDEN
 
 
 def test_write_profile_default_frame_passes_disclosure_scan(tmp_path: Path) -> None:
@@ -364,7 +367,12 @@ def test_completeness_adds_ga_band_row() -> None:
     table = input_completeness(classified).set_index("input")
     assert table.index[-1] == GA_BAND_RECORDED
     band = classified[list(GA_BAND_FIELDS)].notna().all(axis=1)
-    assert float(table.loc[GA_BAND_RECORDED, "all"]) == pytest.approx(round(100 * band.mean(), 1))
+    band_facilities = table.loc[GA_BAND_RECORDED, FACILITIES]
+    overall = table.loc[GA_BAND_RECORDED, "all"]
+    if band_facilities.isin(HIDDEN).sum() >= 2:
+        assert overall == SECONDARY  # hidden whenever two facilities are
+    else:
+        assert float(overall) == pytest.approx(round(100 * band.mean(), 1))
     text = robson_inputs_markdown(classified)
     # No row nested in another: their difference would be a count published by subtraction.
     assert "exact or band" not in text and "precise type" not in text
@@ -564,3 +572,188 @@ def test_q9_small_non_multiple_remainder_is_protected() -> None:
     total = re.search(r"another row: ([^.]+)\.", q9).group(1)  # type: ignore[union-attr]
     multiples = re.search(r"plurality >= 2: ([^.]+)\.", q9).group(1)  # type: ignore[union-attr]
     assert total in HIDDEN or multiples in HIDDEN
+
+
+# Reviewer case (c4_pin): one missing value in each facility. The field's missing count is
+# then published four times (completeness "all", Q1, the raw column's pct_missing and
+# n_nonnull, and the "(missing)" level count), and a "<5" in any copy restored the "1-4"
+# that a "*" elsewhere withheld: four facility cells each >= 1 under a total <= 4 are all 1.
+LINKED_MISSING_CASES = {
+    "onset_of_labour": ("spontaneous", "## Q2.", "Canonical onset categories:"),
+    "plurality": (1, "## Q9.", "plurality:"),
+    "preeclampsia_recorded": ("no", "## Q3.", "preeclampsia_recorded:"),
+}
+
+
+def _one_missing_per_facility(field: str) -> tuple[pd.DataFrame, pd.DataFrame, MappingConfig]:
+    classified = _classified()
+    fill = LINKED_MISSING_CASES[field][0]
+    classified[field] = classified[field].fillna(fill)
+    facility = classified["facility_id"].astype(str).to_numpy()
+    first = [classified.index[np.where(facility == fac)[0][0]] for fac in FACILITIES]
+    classified.loc[first, field] = pd.NA if field == "plurality" else None
+    raw_name = f"{field} raw"
+    raw = pd.DataFrame({raw_name: classified[field].astype(object)})
+    mapping = FieldMapping(field, "category", (raw_name,), "confirmed")
+    return raw, classified, MappingConfig("t", None, {field: mapping})
+
+
+def _missing_level_table(open_questions: str, field: str) -> pd.DataFrame:
+    _, section, heading = LINKED_MISSING_CASES[field]
+    body = open_questions.split(section, 1)[1]
+    return markdown_tables(body.split(heading, 1)[1])[0].set_index("value")
+
+
+def _missing_reader(out_dir: Path, field: str, sizes: dict[str, int]) -> CountReader:
+    """An integer-programming reader of every published copy of ``field``'s missing count:
+    its completeness row and Q1 (a Robson input), its raw column's missingness and
+    n_nonnull, and its level counts (the "(missing)" row and the levels summing to the
+    records), with the facilities summing to the overall count in each file."""
+    inputs = (out_dir / "robson_inputs.md").read_text(encoding="utf-8")
+    open_questions = (out_dir / "open_questions.md").read_text(encoding="utf-8")
+    completeness = markdown_tables(inputs)[0].set_index("input")
+    profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).set_index("raw_name")
+    raw = profile.loc[f"{field} raw"]
+    n = sizes["all"]
+    reader = CountReader()
+    for scope, size in sizes.items():
+        column = "pct_missing" if scope == "all" else f"pct_missing_{scope}"
+        missing = reader.pct(("missing", scope), raw[column], size)
+        if field in completeness.index:
+            copy = reader.pct(("recorded", scope), completeness.loc[field, scope], size, False)
+            reader.constrain({missing: 1, copy: -1}, 0, 0)
+    for key in ("missing", "recorded") if field in completeness.index else ("missing",):
+        reader.constrain({(key, "all"): -1, **{(key, f): 1 for f in FACILITIES}}, 0, 0)
+    if field in completeness.index:
+        q1 = markdown_tables(open_questions.split("## Q1.", 1)[1])[0].set_index("input")
+        q1_copy = reader.pct(("q1", "all"), q1.loc[field, "pct_recorded"], n, False)
+        reader.constrain({q1_copy: 1, ("missing", "all"): -1}, 0, 0)
+    nonnull = reader.var(("n_nonnull",), 0, n)
+    reader.constrain({nonnull: 1, ("missing", "all"): 1}, n, n)
+    if raw["n_nonnull"] not in HIDDEN:
+        reader.constrain({nonnull: 1}, float(raw["n_nonnull"]), float(raw["n_nonnull"]))
+    levels = _missing_level_table(open_questions, field)
+    terms = {}
+    for value, cell in levels["n"].items():
+        x = reader.var(("level", value), 0, n)
+        terms[x] = 1.0
+        if cell == SUPPRESSED:
+            reader.constrain({x: 1}, 1, 4)
+        elif cell != SECONDARY:
+            reader.constrain({x: 1}, float(cell), float(cell))
+    reader.constrain(terms, n, n)
+    reader.constrain({("level", "(missing)"): 1, ("missing", "all"): -1}, 0, 0)
+    return reader
+
+
+@pytest.mark.parametrize("field", list(LINKED_MISSING_CASES))
+def test_missing_level_row_is_hidden_like_every_other_copy(tmp_path: Path, field: str) -> None:
+    raw, classified, config = _one_missing_per_facility(field)
+    out_dir = tmp_path / "profile"
+    write_profile(raw, classified, config, {}, out_dir)
+    scan_profile_outputs(out_dir)
+    inputs = (out_dir / "robson_inputs.md").read_text(encoding="utf-8")
+    open_questions = (out_dir / "open_questions.md").read_text(encoding="utf-8")
+    missing_row = _missing_level_table(open_questions, field).loc["(missing)", "n"]
+    profile = pd.read_csv(out_dir / "variable_profile.csv", dtype=str).set_index("raw_name")
+    assert profile.loc[f"{field} raw", "pct_missing"] == SECONDARY
+    completeness = markdown_tables(inputs)[0].set_index("input")
+    if field in completeness.index:
+        assert completeness.loc[field, "all"] == SECONDARY
+    assert missing_row == SECONDARY, f"(missing) shows {missing_row}"
+    facility = classified["facility_id"].astype(str)
+    sizes = {"all": len(classified), **{f: int((facility == f).sum()) for f in FACILITIES}}
+    reader = _missing_reader(out_dir, field, sizes)
+    for scope in sizes:
+        low, high = reader.range({("missing", scope): 1})
+        assert low < high, f"{field} missing at {scope} pinned to {low}"
+
+
+def test_numeric_patient_id_publishes_no_quantile_or_association(tmp_path: Path) -> None:
+    # Reviewer finding: the p50 of a numeric patient ID (odd count) is one patient's ID.
+    classified = _classified().iloc[:2999].reset_index(drop=True)
+    ids = pd.Series(np.arange(700001, 700001 + len(classified)), dtype=object)
+    raw = pd.DataFrame({"Patient ID": ids, "Age raw": classified["maternal_age"].astype(object)})
+    config = MappingConfig(
+        "t",
+        None,
+        {
+            "mother_key": FieldMapping("mother_key", "hash_key", ("Patient ID",), "confirmed"),
+            "maternal_age": FieldMapping("maternal_age", "float", ("Age raw",), "confirmed"),
+        },
+    )
+    profile = variable_profile(raw, classified, config).set_index("raw_name")
+    assert profile.loc["Patient ID", "kind"] == "numeric"
+    for column in ("p5", "p25", "p50", "p75", "p95", "association"):
+        assert pd.isna(profile.loc["Patient ID", column]), column
+    assert profile.loc["Patient ID", "n_unique"] == SECONDARY
+    assert profile.loc["Age raw", ["p50", "association"]].notna().all()
+    out_dir = tmp_path / "profile"
+    write_profile(raw, classified, config, {}, out_dir)
+    median = str(int(ids.median()))
+    for name in ("variable_profile.csv", "robson_inputs.md", "open_questions.md"):
+        assert median not in (out_dir / name).read_text(encoding="utf-8"), name
+    scan_profile_outputs(out_dir)
+
+
+@pytest.mark.parametrize(
+    ("missing", "overall"),
+    [
+        ((0, 0, 4, 4), SECONDARY),  # was "*" only because 4 + 4 pinned both: decodable
+        ((0, 0, 2, 3), SECONDARY),  # now hidden alike
+        ((0, 0, 1, 1), SUPPRESSED),  # its own count is 1-4
+        ((2, 0, 0, 0), SUPPRESSED),
+    ],
+)
+def test_overall_cell_hidden_whenever_two_facilities_are(
+    missing: tuple[int, ...], overall: str
+) -> None:
+    facility = pd.Series(np.repeat(FACILITIES, 200))
+    mask = pd.Series(False, index=facility.index)
+    for position, k in enumerate(missing):
+        mask.iloc[position * 200 : position * 200 + k] = True
+    out = pct_by_facility(mask, facility, FACILITIES)
+    assert out["all"] == overall
+    assert_not_recoverable([out[f] for f in FACILITIES], out["all"], str(missing))
+
+
+def _published(missing: tuple[int, ...], sizes: dict[str, int]) -> tuple[object, ...]:
+    facility = pd.Series([f for f, k in sizes.items() for _ in range(k)])
+    mask = pd.Series(False, index=facility.index)
+    start = 0
+    for (_, k), x in zip(sizes.items(), missing, strict=True):
+        mask.iloc[start : start + x] = True
+        start += k
+    out = pct_by_facility(mask, facility, list(sizes))
+    return tuple(out.values())
+
+
+def test_marker_patterns_do_not_decode_a_small_facility_count() -> None:
+    # Reviewer attack (c4_demote): the markers alone decoded missing (0, 0, 4, 4), whose
+    # overall cell was hidden only because 4 + 4 pinned both. Over every pattern of 0-4
+    # missing in four facilities, no published output leaves a "<5" facility one value.
+    sizes = {"FAC_A": 90, "FAC_B": 75, "FAC_C": 74, "FAC_D": 61}
+    seen: dict[tuple[object, ...], list[tuple[int, ...]]] = {}
+    for missing in itertools.product(range(5), repeat=4):
+        seen.setdefault(_published(missing, sizes), []).append(missing)
+    for shown, candidates in seen.items():
+        for position, cell in enumerate(shown[1:]):
+            if cell == SUPPRESSED:
+                values = {c[position] for c in candidates}
+                assert len(values) > 1, f"{shown} decodes to {candidates}"
+
+
+@pytest.mark.parametrize(("shared_multiples", "shown"), [(0, "0"), (2, SUPPRESSED)])
+def test_q9_shared_multiples_marker(shared_multiples: int, shown: str) -> None:
+    # One pair of rows sharing a mother_key (2, shown "<5"): a true zero among them is shown
+    # 0 (never "<5", which means 1-4), and 1-4 is shown "<5".
+    canonical = _classified()
+    canonical["mother_key"] = [f"K{i}" for i in range(len(canonical))]
+    canonical.loc[1, "mother_key"] = canonical.loc[0, "mother_key"]
+    canonical["plurality"] = canonical["plurality"].fillna(1)
+    canonical.loc[canonical["plurality"] >= 2, "plurality"] = 1
+    canonical.loc[canonical.index[100:110], "plurality"] = 2
+    canonical.loc[[0, 1][:shared_multiples], "plurality"] = 2
+    q9 = _q9(canonical)
+    assert f"Rows sharing a mother_key with another row: {SUPPRESSED}." in q9
+    assert f"Of these, plurality >= 2: {shown}." in q9

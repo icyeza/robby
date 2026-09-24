@@ -21,6 +21,26 @@ _NULL_TOLERANCE = 1e-9
 _MAX_SWEEPS = 100
 
 
+class DisclosureError(RuntimeError):
+    """Internal error: an output about to be published marks ``"<5"`` a cell that neither
+    holds 1-4 nor has a complement of 1-4. ``"<5"`` must only ever mean that; every other
+    protective hide is ``"*"``."""
+
+
+def check_small_marker(shown: object, value: float, total: float | None = None) -> None:
+    """Raise :class:`DisclosureError` if ``shown`` is ``"<5"`` but neither ``value`` nor
+    ``total - value`` (when ``total`` is given) is 1-4."""
+    if not (isinstance(shown, str) and shown == SUPPRESSED):
+        return
+    if _small_value(value) or (total is not None and _small_value(total - value)):
+        return
+    of = "" if total is None else f" out of {total:g}"
+    raise DisclosureError(
+        f'"{SUPPRESSED}" marks a count of {value:g}{of}; only a count (or complement) of 1-4 '
+        f'may show "{SUPPRESSED}"'
+    )
+
+
 def _is_small(values: pd.Series) -> pd.Series:
     numeric = pd.to_numeric(values, errors="coerce")
     return (numeric > 0) & (numeric < SMALL_CELL_THRESHOLD)
@@ -424,13 +444,19 @@ def protect_cells(
 
 @dataclass(frozen=True)
 class TableSpec:
-    """An aggregate table to suppress, with the arguments of :func:`suppress_table`."""
+    """An aggregate table to suppress, with the arguments of :func:`suppress_table`.
+
+    ``rank``: row labels in the order secondary cells are chosen among non-zero cells, in
+    place of their size, so the choice does not depend on the values (rows not listed come
+    after, by size). Zeros are still chosen only as a last resort.
+    """
 
     df: pd.DataFrame
     count_columns: Sequence[str]
     linked: Mapping[str, Sequence[str]] | None = None
     complements: Mapping[str, str] | None = None
     groups: Sequence[SumRelation] | None = None
+    rank: Sequence[Hashable] | None = None
 
 
 def suppress_table(
@@ -471,6 +497,7 @@ def suppress_tables(
     tables: Mapping[Hashable, TableSpec],
     cross: Sequence[SumRelation] = (),
     derived: Mapping[Hashable, DerivedCell] | None = None,
+    forced: Iterable[Hashable] = (),
 ) -> dict[Hashable, pd.DataFrame]:
     """:func:`suppress_table` over several tables at once, protected jointly.
 
@@ -482,6 +509,14 @@ def suppress_tables(
     ``derived``: never-published counts that ``cross`` ties to published cells (see
     :class:`DerivedCell`); each one holding 1-4 is kept undetermined. Keys must not clash
     with table cells.
+
+    ``forced``: cells ``(table key, row label, count column)`` to hide whatever their value
+    (e.g. the same count is hidden where another file publishes it), marked ``"*"`` unless
+    primary suppression marks them ``"<5"``. Like every hidden cell they are then protected
+    from recovery.
+
+    Before returning, every ``"<5"`` is checked to mark a count (or complement) of 1-4, or a
+    value derived from one; :class:`DisclosureError` otherwise.
     """
     values: dict[Hashable, float] = {}
     sizes: dict[Hashable, float] = {}
@@ -532,14 +567,25 @@ def suppress_tables(
                 comp_total = None if group.total is None else ("~complement", key, group.total, col)
                 comps = tuple(("~complement", key, m, col) for m in group.members)
                 relations.append(SumRelation(comps, comp_total))
+        if spec.rank is not None:
+            order = {label: i for i, label in enumerate(spec.rank)}
+            for col in spec.count_columns:
+                for row in rows:
+                    ranked = (key, row, col)
+                    size = sizes.get(ranked, values[ranked])
+                    # Rank among non-zero cells; a zero stays a last resort.
+                    sizes[ranked] = 0.0 if size == 0 else 1.0 + order.get(row, len(order) + size)
     for cell_key, cell in (derived or {}).items():
         values[cell_key] = float(cell.value)
         hidden.append(cell_key)
         proxies[cell_key] = cell.proxy
     relations.extend(cross)
+    forced_cells = list(dict.fromkeys(forced))
+    if missing := [cell for cell in forced_cells if cell not in values]:
+        raise ValueError(f"forced cells not in any table: {missing}")
     final = protect_cells(
         values,
-        suppressed,
+        [*suppressed, *(cell for cell in forced_cells if cell not in set(suppressed))],
         relations,
         hidden=hidden,
         linked=cell_links,
@@ -574,8 +620,38 @@ def suppress_tables(
             for target in (col, *links.get(col, ())):
                 safe[target] = safe[target].astype(object)
                 safe.at[row, target] = SECONDARY
+        _check_markers(safe, spec)
         out[key] = safe
     return out
+
+
+def _check_markers(safe: pd.DataFrame, spec: TableSpec) -> None:
+    """Raise :class:`DisclosureError` unless every ``"<5"`` in ``safe`` sits on a row where
+    a count column it is (or is linked to) holds 1-4 or has a complement of 1-4."""
+    df = spec.df
+    comps = dict(spec.complements or {})
+    owners: dict[str, list[str]] = {}
+    for col in spec.count_columns:
+        for target in dict.fromkeys((col, *(spec.linked or {}).get(col, ()))):
+            owners.setdefault(target, []).append(col)
+    for column in safe.columns:
+        for row in safe.index[safe[column].astype(object).isin([SUPPRESSED])]:
+            reasons: list[str] = []
+            for col in owners.get(column, []):
+                value = float(pd.to_numeric(df.at[row, col], errors="coerce"))
+                total = None
+                if col in comps:
+                    total = float(pd.to_numeric(df.at[row, comps[col]], errors="coerce"))
+                try:
+                    check_small_marker(SUPPRESSED, value, total)
+                except DisclosureError as error:
+                    reasons.append(str(error))
+                else:
+                    break
+            else:
+                raise DisclosureError(
+                    f"row {row!r}, column {column!r}: " + ("; ".join(reasons) or "not a count")
+                )
 
 
 def assert_no_small_cells(df: pd.DataFrame, count_columns: Sequence[str]) -> None:
