@@ -1,0 +1,12 @@
+# Baselines B0 (training prevalence) and B1 (Robson-group lookup), spec §12.2, under S1, S2
+# and S3. B0 reads no feature, B1 only robson_group (FS0); neither imputes (M0: B1 maps a
+# partial or conflict group to the overall training rate). Neither is tuned; n_trials does
+# not apply to them.
+model: [B0, B1]
+feature_set: FS0
+missing_strategy: M0
+split: [S1, S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

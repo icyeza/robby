@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from robson_engine import load_rule_set
+from robson_ml.features import FeatureRegistry
 from robson_ml.robson_run import classify_frame
 from robson_ml.schema import CANONICAL_BASE_COLUMNS
 
@@ -189,3 +190,37 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
     df["cs"] = _mask(pd.Series(pd.array(cs, dtype="Int64")), outcome_missing)
     df["recorded_indication"] = _mask(pd.Series(indication, dtype=object), outcome_missing)
     return df[list(CANONICAL_BASE_COLUMNS)]
+
+
+# Invented labels for the raw text features the registry includes (spec §8.1); only their
+# structure matters. A text feature takes one of these, or is blank.
+RAW_TEXT_LEVELS = ("level_a", "level_b", "level_c", "level_d")
+RAW_TEXT_MISSING_RATE = 0.25
+RAW_NUMBER_MISSING_RATE = 0.30
+
+
+def make_raw_sheet(registry: FeatureRegistry, n: int, seed: int = 20260923) -> pd.DataFrame:
+    """Synthetic raw-export columns for every raw registry entry that carries a mapping.
+
+    Excluded entries get columns too (as in the real export), so tests can check they never
+    reach a model. Columns are named by the entry's first raw column, so
+    :func:`build_raw_features` maps them exactly as it maps the real export. Text features
+    draw from ``RAW_TEXT_LEVELS``; numeric features draw whole numbers inside the entry's
+    valid range. Rows align by position with ``make_admissions(n, seed)``.
+    """
+    rng = np.random.default_rng(seed + 1)
+    columns: dict[str, pd.Series] = {}
+    for entry in registry.entries:
+        if entry.source != "raw" or entry.mapping is None:
+            continue
+        mapping = entry.mapping
+        if mapping.kind in ("text", "category"):
+            values = pd.Series(rng.choice(RAW_TEXT_LEVELS, size=n), dtype=object)
+            columns[entry.raw_name[0]] = values.mask(rng.random(n) < RAW_TEXT_MISSING_RATE)
+        else:
+            low, high = mapping.valid_range or (0.0, 10.0)
+            draw = rng.integers(int(low), int(min(high, low + 6)) + 1, size=n).astype(float)
+            columns[entry.raw_name[0]] = pd.Series(draw).mask(
+                rng.random(n) < RAW_NUMBER_MISSING_RATE
+            )
+    return pd.DataFrame(columns)

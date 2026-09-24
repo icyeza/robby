@@ -1,0 +1,10 @@
+# P0 models on the full LOHO-evaluable set FS4 under S2 (local recalibration) and S3
+# (internal nested CV, to size the internal-vs-LOHO gap), every applicable strategy.
+model: [logreg_l2, xgboost, mlp]
+feature_set: FS4
+missing_strategy: [M0, M1, M2]
+split: [S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

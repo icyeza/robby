@@ -1,0 +1,10 @@
+# Baseline B3 (spec §12.2): L2 logistic with age/GA splines on FS4, under S1, S2 and S3.
+# Tuned only over a tiny C grid; median/mode imputation with missing indicators (M1).
+model: B3
+feature_set: FS4
+missing_strategy: M1
+split: [S1, S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

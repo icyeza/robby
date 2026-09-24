@@ -71,6 +71,11 @@ def _groups(df: pd.DataFrame) -> npt.NDArray[np.str_]:
     return labels.astype(str)
 
 
+def mother_groups(df: pd.DataFrame) -> npt.NDArray[np.str_]:
+    """Mother-level group label per row of ``df`` (the grouping every split uses)."""
+    return _groups(df)
+
+
 def _outcome(df: pd.DataFrame, idx: IndexArray) -> npt.NDArray[np.int64]:
     """``cs`` for the rows in ``idx``; raises if any is missing (splits need P_audit rows)."""
     cs = df["cs"].iloc[idx]

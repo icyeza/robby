@@ -17,11 +17,17 @@ import typer
 import yaml
 
 from robson_engine import load_rule_set
-from robson_ml.features import check_coverage, load_feature_registry
+from robson_ml.features import build_raw_features, check_coverage, load_feature_registry
 from robson_ml.ingest import file_sha256, infer_kind, inventory, read_workbook, select_sheet
 from robson_ml.leakage import run_screens
 from robson_ml.mapping import apply_mapping, load_mapping
 from robson_ml.populations import audit_population
+from robson_ml.preregistration import (
+    check_preregistration,
+    git_commit,
+    is_real_data,
+    selection_rule_commit,
+)
 from robson_ml.privacy import fmt_count
 from robson_ml.profile import write_profile
 from robson_ml.robson_run import classify_frame, handcheck_sample, validate_classification
@@ -34,6 +40,9 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
 )
 PROJECT_CONFIG = Path("configs/project.yaml")
+MLRUNS_DIR = Path("mlruns")
+CANONICAL_ROBSON = "canonical_robson.parquet"
+COMPARISON_CSV = "model_comparison.csv"
 DEFAULT_SALT_PATH = Path("data/interim/mother_key.salt")
 DEFAULT_FEATURES_PATH = Path("configs/features_v1.yaml")
 SALT_BYTES = 32
@@ -273,6 +282,71 @@ def leakage() -> None:
     )
     typer.echo(f"raw columns missing from registry: {fmt_count(len(missing))}")
     typer.echo(f"registry columns not in raw export: {fmt_count(len(extra))}")
+
+
+@app.command()
+@guarded
+def run(config: Path) -> None:
+    """Run every configuration declared in an experiment YAML (spec §11, §19).
+
+    Refuses to touch real data (anything under data/processed) unless
+    configs/selection_rule.yaml is committed and unmodified (spec §13.2). Prints aggregate
+    metrics only.
+    """
+    from robson_ml.evaluate import RunContext, load_experiments, run_experiment
+    from robson_ml.feature_sets import build_model_data
+
+    cfg = load_project_config()
+    experiments = load_experiments(config)
+    repo = Path.cwd()
+    data_path = cfg.processed_dir / CANONICAL_ROBSON
+    if is_real_data(data_path):
+        rule_commit = check_preregistration(repo)
+    else:
+        rule_commit = selection_rule_commit(repo)
+    registry = load_feature_registry(cfg.features_path)
+    canonical = pd.read_parquet(data_path)
+    mapping = load_mapping(cfg.mapping_path)
+    raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
+    raw_features, _ = build_raw_features(raw, registry)
+    ctx = RunContext(
+        tracking_uri=MLRUNS_DIR.resolve().as_uri(),
+        oof_dir=cfg.interim_dir / "oof",
+        data_hash=file_sha256(data_path),
+        features_yaml_hash=registry.sha256,
+        git_commit=git_commit(repo),
+        selection_rule_commit=rule_commit,
+    )
+    typer.echo(f"configurations: {len(experiments)}; selection rule commit: {rule_commit}")
+    populations = {}
+    for experiment in experiments:
+        if experiment.population not in populations:
+            populations[experiment.population] = build_model_data(
+                canonical, registry, raw_features, experiment.population
+            )
+        result = run_experiment(experiment, populations[experiment.population], ctx)
+        s = result.summary
+        typer.echo(
+            f"{experiment.name} run_id={result.run_id} "
+            f"mean_auc={s['mean_auc']:.3f} (range {s['min_auc']:.3f}-{s['max_auc']:.3f}) "
+            f"pooled_auc={s['pooled_auc']:.3f} mean_slope={s['mean_calibration_slope']:.2f} "
+            f"mean_citl={s['mean_calibration_in_the_large']:.2f} "
+            f"pooled_brier={s['pooled_brier']:.4f}"
+        )
+
+
+@app.command()
+@guarded
+def compare() -> None:
+    """Aggregate every harness run into reports/model_comparison.csv (metrics only)."""
+    from robson_ml.evaluate import comparison_table
+
+    cfg = load_project_config()
+    table = comparison_table(MLRUNS_DIR.resolve().as_uri())
+    out = cfg.reports_dir / COMPARISON_CSV
+    out.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(out, index=False)
+    typer.echo(f"runs: {len(table)}; written to {out}")
 
 
 if __name__ == "__main__":
