@@ -293,7 +293,12 @@ def run(config: Path) -> None:
     configs/selection_rule.yaml is committed and unmodified (spec §13.2). Prints aggregate
     metrics only.
     """
-    from robson_ml.evaluate import RunContext, load_experiments, run_experiment
+    from robson_ml.evaluate import (
+        RunContext,
+        find_completed_run,
+        load_experiments,
+        run_experiment,
+    )
     from robson_ml.feature_sets import build_model_data
 
     cfg = load_project_config()
@@ -323,6 +328,10 @@ def run(config: Path) -> None:
     )
     populations = {}
     for experiment in experiments:
+        done = find_completed_run(experiment, ctx)
+        if done is not None:
+            typer.echo(f"{experiment.name} already completed (run_id={done}); skipped")
+            continue
         if experiment.population not in populations:
             populations[experiment.population] = build_model_data(
                 canonical, registry, raw_features, experiment.population

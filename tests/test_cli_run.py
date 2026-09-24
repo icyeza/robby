@@ -105,3 +105,13 @@ def test_run_and_compare(project: Path) -> None:
     assert table.loc[0, "model"] == "B1"
     assert table.loc[0, "population_version"] == "v1.3"
     assert not [c for c in table.columns if c == "n" or c.startswith("n_") or "count" in c]
+
+
+def test_rerun_skips_completed_configuration(project: Path) -> None:
+    commit_rule(project)
+    first = _invoke(project, "run", "configs/experiments/b1.yaml")
+    assert first.exit_code == 0, first.output  # type: ignore[attr-defined]
+    second = _invoke(project, "run", "configs/experiments/b1.yaml")
+    assert second.exit_code == 0, second.output  # type: ignore[attr-defined]
+    assert "already completed" in second.output  # type: ignore[attr-defined]
+    assert len(list((project / "data" / "interim" / "oof").glob("*.parquet"))) == 1

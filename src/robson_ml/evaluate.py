@@ -589,6 +589,31 @@ COMPARISON_COLUMNS = (
 )
 
 
+def find_completed_run(config: ExperimentConfig, ctx: RunContext) -> str | None:
+    """Return the id of a finished run of ``config`` on the same data, registry, population
+    version and seed, or None. Runs are logged only after they complete, so a match is a
+    finished result; re-running it would only duplicate it."""
+    import mlflow
+
+    mlflow.set_tracking_uri(ctx.tracking_uri)
+    experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+    if experiment is None:
+        return None
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=(
+            f"attributes.run_name = '{config.name}' "
+            f"and attributes.status = 'FINISHED' "
+            f"and tags.data_hash = '{ctx.data_hash}' "
+            f"and tags.features_yaml_hash = '{ctx.features_yaml_hash}' "
+            f"and tags.population_version = '{POPULATION_VERSION}' "
+            f"and tags.seed = '{config.seed}'"
+        ),
+        output_format="list",
+    )
+    return str(runs[0].info.run_id) if runs else None
+
+
 def comparison_table(tracking_uri: str) -> pd.DataFrame:
     """One row per finished harness run of the current population version: metrics only.
 
