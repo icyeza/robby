@@ -1,0 +1,16 @@
+# Pre-registered model selection rule (spec §13.2-13.3). Committed before any model is run on real data.
+version: 1
+eligible:
+  split: S1                      # leave-one-hospital-out
+  population: P_pred
+  feature_sets: [FS0, FS1, FS2, FS3, FS4]
+  mean_calibration_slope: [0.8, 1.2]
+rank_by: mean_loho_auc
+tie_break:
+  within_auc: 0.01
+  prefer: lowest_complexity_rank
+baseline_check:
+  baseline: B1                   # Robson-group lookup
+  if_not_exceeded: report "the model does not add discrimination beyond the Robson classification"; still package the best-calibrated configuration and flag it in the manifest
+fallback_if_none_eligible: select the configuration whose mean calibration slope is closest to 1.0 and report as a limitation
+baselines_selectable: false      # B0-B3 are comparators, not candidates

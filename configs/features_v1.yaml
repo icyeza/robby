@@ -1,0 +1,1211 @@
+version: features_v1
+note: 'Approved by the project lead 2026-09-24 (Checkpoint 2). Only status: include reaches models (spec §8.1).'
+features:
+- name: facility_id
+  raw_name: Hospital Name
+  source: canonical
+  status: exclude
+  available_at_admission: true
+  group: G_context
+  reason: Facility; never a feature in leave-one-hospital-out runs (spec §4.5); used only in FS4_deploy and case-mix models
+- name: mother_key
+  raw_name: Patient UPI
+  source: canonical
+  status: exclude
+  available_at_admission: true
+  group: identifier
+  reason: Patient identifier; only its salted hash is kept, for grouping rows of the same woman
+- name: delivery_date
+  raw_name: Date of Delivery
+  source: canonical
+  status: exclude
+  available_at_admission: false
+  group: admin
+  reason: Proxy time axis for splits/replay only; never a feature (spec v1.2)
+- name: maternal_age
+  raw_name: 'Maternal Age '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Maternal characteristic known at admission
+- name: height_cm
+  raw_name: Maternal Height
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Maternal characteristic; used for BMI
+- name: weight_kg
+  raw_name: Maternal Weight
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Maternal weight before delivery (booking or admission; timing not recorded); used for BMI
+- name: education_level
+  raw_name: Education Level
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Sociodemographic, known at admission
+- name: residency
+  raw_name: Residency
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Sociodemographic, known at admission
+- name: sector
+  raw_name: Sector
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: identifier
+  reason: Free-text location (~300 values); quasi-identifier, facility proxy
+- name: district
+  raw_name: District
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: identifier
+  reason: Location (~90 values); quasi-identifier and facility proxy
+- name: referring_centre
+  raw_name: Transferring Health Center
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Referral origin (~150 free-text values); a derived ''referred in yes/no'' flag may be usable; needs a decision
+    [approved 2026-09-24: exclude]'
+- name: insurance_type
+  raw_name: Health Insurance Type
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Sociodemographic, known at admission
+- name: marital_status
+  raw_name: Marital Status
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Sociodemographic, known at admission
+- name: occupation
+  raw_name: Mother's Occupation
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Sociodemographic, known at admission
+- name: occupation_specify
+  raw_name: 'Specify:'
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: none
+  reason: Free text
+- name: gravidity
+  raw_name: Gravidity
+  source: raw
+  kind: integer
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history
+  range:
+  - 1
+  - 30
+- name: register_parity
+  raw_name: Parity
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: G_robson
+  reason: Register parity includes the current birth; replaced by derived previous-births parity
+- name: abortions
+  raw_name: Abortion
+  source: raw
+  kind: integer
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history
+  range:
+  - 0
+  - 20
+- name: living_children_band
+  raw_name: Number of Living Children
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history (banded)
+- name: died_children
+  raw_name: Died Children
+  source: raw
+  kind: integer
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history
+  range:
+  - 0
+  - 20
+- name: previous_stillbirth
+  raw_name: Previous Stillbirth
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history
+- name: anc_contacts
+  raw_name: Number of ANC Visits
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal history known at admission; '4 or more' top-coded
+- name: gestational_age_weeks
+  raw_name: Actual Gestational week at delivery
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: Gestational age of the same episode; Robson input
+- name: gestational_age_band
+  raw_name: Gestational Age at Time of Labor
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: Banded gestational age at labour; Robson input (interval) when exact GA missing
+- name: parity
+  raw_name: Number of previous Vaginal delivery
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: Previous births = previous vaginal + previous CS (derived, user decision); Robson input
+- name: previous_cs_count
+  raw_name: 'Number of Previous C-Sections '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: Obstetric history; Robson input; also used in derived parity
+- name: previous_preterm
+  raw_name: Previous Pre-term Delivery
+  source: raw
+  kind: integer
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Obstetric history
+  range:
+  - 0
+  - 20
+- name: onset_of_labour
+  raw_name: Labor Onset
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: 'Robson input; within P_pred only spontaneous/induced (pre-labour CS rows excluded: onset encodes the outcome)'
+- name: induction_indication
+  raw_name: 'Indication of induction '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Indication field, only for induced labour; name/indication screen
+- name: labour_duration
+  raw_name: Duration of Labor
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: birth_attendant
+  raw_name: Birth Attendant
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Who conducted the delivery; post-admission
+- name: attendant_other
+  raw_name: 'If "other", please specify:'
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Free text about the delivery
+- name: cs
+  raw_name: Mode of Delivery
+  source: canonical
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Outcome source (cs and mode_of_delivery)
+- name: prelabour_cs_type
+  raw_name: If C-Section
+  source: canonical
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: CS type; outcome-side. Used only to define P_pred_sens (emergency pre-labour CS)
+- name: maternal_request
+  raw_name: 'Maternal Request '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: previous_scar_indication
+  raw_name: 'Previous Scar '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen); duplicates previous
+    CS count
+- name: ind_dystocia
+  raw_name: 'Labor Dystocia '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: ind_fetal_distress
+  raw_name: Fetal Distress
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: fetal_presentation
+  raw_name: 'Fetal Malpresentation '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: 'Only presentation information (yes/no), but sits in the CS-indication block; filled for all deliveries. Robson
+    input for the engine regardless; as a model feature needs approval [approved 2026-09-24: include]'
+- name: ind_multiple_fetus
+  raw_name: 'Multiple Fetus '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: postdated
+  raw_name: 'Postdated Pregnancy '
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen); but post-dates is
+    knowable at admission [approved 2026-09-24: exclude]'
+- name: amniotic_fluid_disorder
+  raw_name: Amniotic Fluid Disorders
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen); may be an antenatal
+    finding [approved 2026-09-24: exclude]'
+- name: ind_obstructed_labour
+  raw_name: 'Prolonged Obstructed Labor '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: antepartum_haemorrhage
+  raw_name: 'Antepartum Hemorrhage '
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen); may be present at
+    admission [approved 2026-09-24: exclude]'
+- name: ind_failed_induction
+  raw_name: 'Failed Induction '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: ind_maternal_distress
+  raw_name: 'Maternal Distress '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: ind_retained_twin
+  raw_name: 'Retained Second Twin '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: ind_cord_prolapse
+  raw_name: Cord Prolapse
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: ind_uterine_rupture
+  raw_name: 'Uterine Rupture '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Part of the CS-indication/complication block; outcome-side (spec §8.2 name/indication screen)
+- name: delivery_day
+  raw_name: 'Day of Delivery '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Day of delivery; post-admission
+- name: delivery_time
+  raw_name: Time of Delivery
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Time of delivery; post-admission
+- name: twin_baby
+  raw_name: 'Twin baby '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: birth_weight
+  raw_name: Birth Weight
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: birth_weight_twin
+  raw_name: 'Birth weight for twin baby '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: perineal_tear
+  raw_name: 'Delivery Complicated by Perineal Tear '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: placenta_retention
+  raw_name: 'Placenta Retention '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: uterine_atony
+  raw_name: 'Uterus Atony '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: placenta_praevia
+  raw_name: 'Placenta Previa '
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Complication block, but often an antenatal diagnosis known at admission [approved 2026-09-24: exclude]'
+- name: uterine_hyperstimulation
+  raw_name: Hyperkinesia(Hypercinesie)
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Intrapartum finding
+- name: preeclampsia_recorded
+  raw_name: 'Pre-eclampsia '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: 'Screening diagnosis, under-recorded; may be diagnosed at or after admission (timing not recorded) [approved 2026-09-24:
+    include]'
+- name: eclampsia
+  raw_name: Eclampsia
+  source: raw
+  kind: text
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'May be present at admission or occur later; timing not recorded [approved 2026-09-24: exclude]'
+- name: surgeon_cadre
+  raw_name: 'Qualification of the Surgeon '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Only for CS; outcome-side
+- name: pph
+  raw_name: PPH
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: plurality
+  raw_name: 'Multiple Pregnancy '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: General pregnancy field; Robson input
+- name: haemoglobin
+  raw_name: Hemoglobin Level
+  source: raw
+  kind: float
+  status: exclude
+  available_at_admission: true
+  group: G_obs
+  reason: 'Lab value; timing (antenatal/admission vs postpartum) not recorded [approved 2026-09-24: exclude]'
+  range:
+  - 3
+  - 25
+- name: hiv_positive
+  raw_name: HIV positive Status
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal status known at admission
+- name: age_first_pregnancy
+  raw_name: 'Age at First   Pregnancy  '
+  source: raw
+  kind: float
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: Obstetric history (partly recorded)
+  range:
+  - 10
+  - 50
+- name: episiotomy
+  raw_name: 'Episiotomy/ Perineal Tear '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: oxytocin
+  raw_name: Oxytocin Use
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Intrapartum treatment
+- name: misoprostol
+  raw_name: Misoprostol Use
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Intrapartum/postpartum treatment
+- name: ivf
+  raw_name: IVF
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Conception history known at admission
+- name: instrumental
+  raw_name: Instrumental Delivery
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: general_anaesthesia
+  raw_name: General Anesthesia
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: spinal
+  raw_name: Spinal Tap
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: epidural
+  raw_name: Epidural analgesia
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Intrapartum treatment
+- name: antenatal_admission
+  raw_name: 'Hospitalization During Pregnancy '
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal history known at admission
+- name: gdm_recorded
+  raw_name: 'Gestational Diabetes '
+  source: canonical
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal diagnosis; under-recorded (RQ2)
+- name: malaria_in_pregnancy
+  raw_name: 'Malaria during Pregnancy '
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal history known at admission
+- name: gu_infection
+  raw_name: 'Genital Urinary Infections '
+  source: raw
+  kind: text
+  status: include
+  available_at_admission: true
+  group: G_obs
+  reason: Antenatal history known at admission
+- name: outcome_79_surgical_site_infection
+  raw_name: 'Surgical Site Infection '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_80_hysterectomy
+  raw_name: 'Hysterectomy '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_81_fistula
+  raw_name: 'Fistula '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_82_deep_venous_thrombosis
+  raw_name: 'Deep Venous Thrombosis '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_83_maternal_discharged_(clinically_stable)
+  raw_name: Maternal discharged (Clinically stable)
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_84_maternal_transfer
+  raw_name: Maternal Transfer
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_85_death_at_the_actual_hospital
+  raw_name: Death at the actual hospital
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_86_death_at_referred_hospital
+  raw_name: 'Death at referred hospital '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_87_bowel_perforation
+  raw_name: 'Bowel Perforation '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_88_blood_transfusion
+  raw_name: 'Blood Transfusion '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_89_full_blood
+  raw_name: 'Full Blood '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_90_red_blood_cells
+  raw_name: 'Red Blood Cells '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_91_platelets
+  raw_name: 'Platelets '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_92_frozen_plasma
+  raw_name: 'Frozen Plasma '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_93_cryoprecipitate
+  raw_name: 'Cryoprecipitate '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_94_infant_sex
+  raw_name: Infant Sex
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_95_infant_sex_male
+  raw_name: 'Infant Sex/Male                   '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_96_infant_sex_male___________________.1
+  raw_name: Infant Sex/Male                   .1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_97_infant_sex_female
+  raw_name: Infant Sex/Female
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_98_infant_sex_male-male
+  raw_name: Infant Sex/Male-Male
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_99_infant_sex_female-female
+  raw_name: Infant Sex/Female-Female
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_100_apgar_at_birth
+  raw_name: APGAR at Birth
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_101_apgar_at_birth_twin:1-10
+  raw_name: APGAR at Birth Twin:1-10
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_102_apgar_at_5_minutes
+  raw_name: APGAR at 5 minutes
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_103_apgar_at_5_minutes_twin
+  raw_name: 'APGAR at 5 minutes Twin '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_104_apgar_at_10_minutes
+  raw_name: APGAR at 10 minutes
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_105_apgar_at_10_minutes_twin
+  raw_name: 'APGAR at 10 minutes twin '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_106_new_born_alive_and_discharged_in_healthy
+  raw_name: New Born alive and discharged in healthy conditions
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_107_newborn_resuscitation_at_birth
+  raw_name: 'Newborn Resuscitation at Birth '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_108_newborn_admission_into_nicu
+  raw_name: Newborn Admission into NICU
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_109_reason_for_newborn_admission_into_nicu
+  raw_name: Reason for Newborn Admission into NICU
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_110_reason_for_newborn_admission_into_nicu_p
+  raw_name: Reason for Newborn Admission into NICU/Premature
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_111_reason_for_newborn_admission_into_nicu_s
+  raw_name: Reason for Newborn Admission into NICU/Sepsis
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_112_reason_for_newborn_admission_into_nicu_r
+  raw_name: Reason for Newborn Admission into NICU/Respiratory Distress
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_113_reason_for_newborn_admission_into_nicu_h
+  raw_name: Reason for Newborn Admission into NICU/Hypoglycemia
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_114_reason_for_newborn_admission_into_nicu_a
+  raw_name: Reason for Newborn Admission into NICU/Asphyxia
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_115_reason_for_newborn_admission_into_nicu_h
+  raw_name: Reason for Newborn Admission into NICU/Hypothermia
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_116_reason_for_newborn_admission_into_nicu_o
+  raw_name: Reason for Newborn Admission into NICU/Other
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_117_if_other,_please_specify:.1
+  raw_name: If "other", please specify:.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: outcome_118_newborn_death
+  raw_name: 'Newborn Death '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: empty_119_hospital_name.1
+  raw_name: Hospital Name.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_120_start
+  raw_name: start
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_121_patient_upi.1
+  raw_name: Patient UPI.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_122_end
+  raw_name: end
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_123_date_of_delivery.1
+  raw_name: Date of Delivery.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_124_maternal_dob
+  raw_name: Maternal DOB
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_125_maternal_age
+  raw_name: Maternal Age
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_126_maternal_age_in_years
+  raw_name: Maternal Age in Years
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_127_maternal_height.1
+  raw_name: Maternal Height.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_128_maternal_height_in_cm
+  raw_name: Maternal Height in cm
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_129_maternal_weight.1
+  raw_name: Maternal Weight.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_130_maternal_weight_in_kg
+  raw_name: 'Maternal Weight in kg '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_131_education_level.1
+  raw_name: Education Level.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_132_residency.1
+  raw_name: Residency.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_133_numbers!
+  raw_name: numbers!
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_134_sector.1
+  raw_name: Sector.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_135_district.1
+  raw_name: District.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_136_transferring_health_center.1
+  raw_name: Transferring Health Center.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_137_health_insurance_type.1
+  raw_name: Health Insurance Type.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_138_marital_status.1
+  raw_name: Marital Status.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: wealth_category
+  raw_name: Wealth Category
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: none
+  reason: Almost empty (<5 values)
+- name: empty_140_indication_of_induction_.1
+  raw_name: Indication of induction .1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_141_maternal_request
+  raw_name: Maternal request
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_142_prom_(premature_rupture_of_the_membrane)
+  raw_name: 'PROM (premature Rupture Of the Membrane)  '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_143_maternal_request_.1
+  raw_name: Maternal Request .1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_144_uterus_rupture
+  raw_name: 'Uterus Rupture '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: preeclampsia_dup
+  raw_name: 'Preeclampsia '
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: none
+  reason: Almost empty duplicate of 'Pre-eclampsia'
+- name: empty_146_additional_uterotonic
+  raw_name: 'Additional Uterotonic '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_147_previous_pph
+  raw_name: Previous PPH
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: hiv_dup
+  raw_name: 'HIV positive '
+  source: raw
+  status: exclude
+  available_at_admission: true
+  group: none
+  reason: Almost empty duplicate of 'HIV positive Status'
+- name: empty_149_ongoing_medication
+  raw_name: 'Ongoing Medication '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_150_anemia
+  raw_name: 'Anemia '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_151_if_yes,_specify
+  raw_name: If yes, specify
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_152_birth_interval_less_than_2_years
+  raw_name: 'Birth Interval less than 2 years '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: first_pregnancy_old_age
+  raw_name: 'First Pregnancy at Old Age '
+  source: raw
+  kind: integer
+  status: exclude
+  available_at_admission: true
+  group: G_maternal
+  reason: 'Meaning/coding unclear (numeric, 9 values); needs confirmation [approved 2026-09-24: exclude]'
+  range:
+  - 0
+  - 60
+- name: empty_154_epidural
+  raw_name: Epidural
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_155_previous_still_birth
+  raw_name: 'Previous Still Birth '
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_156_apgar_>=_7
+  raw_name: APGAR >= 7
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: empty_157_apgar<7
+  raw_name: APGAR<7
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: death
+  raw_name: Death
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: outcome
+  reason: Recorded after the delivery decision or describes delivery/newborn outcome; not available at admission
+- name: empty_159_reason_for_newborn_admission_into_nicu.1
+  raw_name: Reason for Newborn Admission into NICU.1
+  source: raw
+  status: exclude
+  available_at_admission: false
+  group: none
+  reason: Empty in this export
+- name: robson_group
+  raw_name: null
+  source: derived
+  status: include
+  available_at_admission: true
+  group: G_robson
+  reason: Robson group from the engine (within P_pred)
+- name: bmi
+  raw_name: null
+  source: derived
+  status: include
+  available_at_admission: true
+  group: G_maternal
+  reason: weight_kg / (height_cm/100)^2 when both present
+- name: is_missing_gestational_age_weeks
+  raw_name: null
+  source: derived
+  status: include
+  available_at_admission: true
+  group: G_missing
+  reason: Exact GA missing in ~35%; missingness may be informative
+- name: is_missing_living_children_band
+  raw_name: null
+  source: derived
+  status: include
+  available_at_admission: true
+  group: G_missing
+  reason: ~30% missing
+- name: is_missing_age_first_pregnancy
+  raw_name: null
+  source: derived
+  status: include
+  available_at_admission: true
+  group: G_missing
+  reason: ~67% missing
