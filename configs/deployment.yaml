@@ -1,0 +1,13 @@
+# Deployment fit (spec §11.1 S5, §13.4): robson-ml fit-deploy configs/deployment.yaml
+# The selected specification (DECISIONS 2026-09-25: logreg_l2 FS2 M2). use_facility: auto
+# applies spec §13.4: FS2_deploy (FS2 + facility_id) is used only if its S3 mean log loss is
+# lower than FS2's (runs from configs/experiments/phase_f.yaml must exist). true/false
+# override the rule and must be justified in DECISIONS.md.
+model: logreg_l2
+feature_set: FS2
+use_facility: auto
+missing_strategy: M2
+population: P_pred
+seed: 20260923
+n_trials: 50
+version_label: readiness-v1.0

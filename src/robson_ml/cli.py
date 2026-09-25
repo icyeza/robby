@@ -17,7 +17,12 @@ import typer
 import yaml
 
 from robson_engine import load_rule_set
-from robson_ml.features import build_raw_features, check_coverage, load_feature_registry
+from robson_ml.features import (
+    FeatureRegistry,
+    build_raw_features,
+    check_coverage,
+    load_feature_registry,
+)
 from robson_ml.ingest import file_sha256, infer_kind, inventory, read_workbook, select_sheet
 from robson_ml.leakage import run_screens
 from robson_ml.mapping import apply_mapping, load_mapping
@@ -41,6 +46,9 @@ app = typer.Typer(
 )
 PROJECT_CONFIG = Path("configs/project.yaml")
 MLRUNS_DIR = Path("mlruns")
+ARTEFACTS_DIR = Path("artefacts")
+EXPLANATIONS_SUBDIR = "explanations"
+FACILITY_CONTRIBUTION_CSV = "interpretation/facility_contribution.csv"
 CANONICAL_ROBSON = "canonical_robson.parquet"
 COMPARISON_CSV = "model_comparison.csv"
 DEFAULT_SALT_PATH = Path("data/interim/mother_key.salt")
@@ -284,6 +292,40 @@ def leakage() -> None:
     typer.echo(f"registry columns not in raw export: {fmt_count(len(extra))}")
 
 
+@dataclass(frozen=True)
+class ModelInputs:
+    """Everything a model-fitting command reads, loaded after the pre-registration guard."""
+
+    canonical: pd.DataFrame
+    registry: FeatureRegistry
+    raw_features: pd.DataFrame
+    data_hash: str
+    git_commit: str
+    selection_rule_commit: str
+
+
+def _model_inputs(cfg: ProjectConfig) -> ModelInputs:
+    """Guard (spec §13.2), then load the canonical data, registry and raw features.
+
+    Real data (anything under data/processed) is refused unless configs/selection_rule.yaml
+    is committed and unmodified.
+    """
+    repo = Path.cwd()
+    data_path = cfg.processed_dir / CANONICAL_ROBSON
+    if is_real_data(data_path):
+        rule_commit = check_preregistration(repo)
+    else:
+        rule_commit = selection_rule_commit(repo)
+    registry = load_feature_registry(cfg.features_path)
+    canonical = pd.read_parquet(data_path)
+    mapping = load_mapping(cfg.mapping_path)
+    raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
+    raw_features, _ = build_raw_features(raw, registry)
+    return ModelInputs(
+        canonical, registry, raw_features, file_sha256(data_path), git_commit(repo), rule_commit
+    )
+
+
 @app.command()
 @guarded
 def run(config: Path) -> None:
@@ -303,23 +345,15 @@ def run(config: Path) -> None:
 
     cfg = load_project_config()
     experiments = load_experiments(config)
-    repo = Path.cwd()
-    data_path = cfg.processed_dir / CANONICAL_ROBSON
-    if is_real_data(data_path):
-        rule_commit = check_preregistration(repo)
-    else:
-        rule_commit = selection_rule_commit(repo)
-    registry = load_feature_registry(cfg.features_path)
-    canonical = pd.read_parquet(data_path)
-    mapping = load_mapping(cfg.mapping_path)
-    raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
-    raw_features, _ = build_raw_features(raw, registry)
+    inputs = _model_inputs(cfg)
+    rule_commit = inputs.selection_rule_commit
+    canonical, registry, raw_features = inputs.canonical, inputs.registry, inputs.raw_features
     ctx = RunContext(
         tracking_uri=MLRUNS_DIR.resolve().as_uri(),
         oof_dir=cfg.interim_dir / "oof",
-        data_hash=file_sha256(data_path),
+        data_hash=inputs.data_hash,
         features_yaml_hash=registry.sha256,
-        git_commit=git_commit(repo),
+        git_commit=inputs.git_commit,
         selection_rule_commit=rule_commit,
     )
     typer.echo(
@@ -360,6 +394,106 @@ def compare() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(out, index=False)
     typer.echo(f"runs (population version {POPULATION_VERSION}): {len(table)}; written to {out}")
+
+
+@app.command("fit-deploy")
+@guarded
+def fit_deploy(config: Path) -> None:
+    """Fit the deployment model under S5 (spec §11.1, §13.4) into artefacts/<version_label>/.
+
+    Reads a deployment YAML (configs/deployment.yaml). ``use_facility: auto`` applies spec
+    §13.4 from the finished S3 runs of the base set and its _deploy variant on the same
+    data. The pre-registration guard applies. Prints aggregate facts only.
+    """
+    from robson_ml.deploy import (
+        AUTO,
+        Provenance,
+        deployment_feature_choice,
+        fit_deployment,
+        load_deployment_config,
+    )
+    from robson_ml.feature_sets import build_model_data
+
+    cfg = load_project_config()
+    dcfg = load_deployment_config(config)
+    inputs = _model_inputs(cfg)
+    tracking_uri = MLRUNS_DIR.resolve().as_uri()
+    decision = None
+    if dcfg.use_facility == AUTO:
+        decision = deployment_feature_choice(
+            tracking_uri,
+            dcfg.model,
+            dcfg.feature_set,
+            dcfg.missing_strategy,
+            dcfg.population,
+            data_hash=inputs.data_hash,
+        )
+        use_facility = bool(decision["use_facility"])
+        typer.echo(
+            f"facility decision (spec §13.4): S3 mean log loss {decision['feature_set']}="
+            f"{decision['s3_mean_log_loss']:.4f}, {decision['deploy_feature_set']}="
+            f"{decision['s3_mean_log_loss_deploy']:.4f}; use_facility={use_facility}"
+        )
+    else:
+        use_facility = bool(dcfg.use_facility)
+        typer.echo(f"use_facility={use_facility} (set in the config, not by the §13.4 rule)")
+    data = build_model_data(inputs.canonical, inputs.registry, inputs.raw_features, dcfg.population)
+    provenance = Provenance(
+        tracking_uri=tracking_uri,
+        data_hash=inputs.data_hash,
+        features_yaml_hash=inputs.registry.sha256,
+        git_commit=inputs.git_commit,
+        selection_rule_commit=inputs.selection_rule_commit,
+    )
+    result = fit_deployment(dcfg, data, provenance, ARTEFACTS_DIR, use_facility, decision)
+    s = result.summary
+    typer.echo(
+        f"{dcfg.version_label}: {s['algorithm']} {s['feature_set']} {dcfg.missing_strategy} "
+        f"{dcfg.population}; calibration={s['calibration']['method']}; "
+        f"fit rows={s['n_fit_rows']}; calibration rows={s['n_calibration_rows']}; "
+        f"selection rule commit: {s['selection_rule_commit']}; run_id={result.run_id}"
+    )
+    typer.echo(f"artefact written to {result.out_dir}")
+    if use_facility:
+        out = cfg.reports_dir / FACILITY_CONTRIBUTION_CSV
+        out.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(s["facility_contribution"]).to_csv(out, index=False)
+        typer.echo(f"facility contribution (spec §14.6) written to {out}")
+
+
+@app.command("explain-local")
+@guarded
+def explain_local(run_id: str) -> None:
+    """Local explanations (spec §14.2) for the 20 highest-error S1 out-of-fold cases of a run.
+
+    Written only to data/interim/explanations/<run_id>_local.parquet (row level; never to
+    reports/). The pre-registration guard applies. Prints counts only.
+    """
+    from robson_ml.explain import CONTRIBUTION_PREFIX, LOCAL_N, local_explanations
+    from robson_ml.feature_sets import build_model_data
+    from robson_ml.select import experiment_config, load_runs, run_fold_params
+
+    cfg = load_project_config()
+    tracking_uri = MLRUNS_DIR.resolve().as_uri()
+    runs = load_runs(tracking_uri, latest_only=False)
+    match = runs[runs["run_id"] == run_id]
+    if match.empty:
+        raise LookupError("no finished harness run of the current population version has that id")
+    config = experiment_config(match.iloc[0])
+    inputs = _model_inputs(cfg)
+    data = build_model_data(
+        inputs.canonical, inputs.registry, inputs.raw_features, config.population
+    )
+    table = local_explanations(data, config, run_fold_params(tracking_uri, run_id), n=LOCAL_N)
+    out_dir = cfg.interim_dir / EXPLANATIONS_SUBDIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{run_id}_local.parquet"
+    table.to_parquet(out, index=False)
+    n_features = sum(str(c).startswith(CONTRIBUTION_PREFIX) for c in table.columns)
+    typer.echo(
+        f"local explanations: cases={len(table)}; input features={n_features}; "
+        f"written to {out} (row level: keep under data/interim, never in reports/)"
+    )
 
 
 if __name__ == "__main__":

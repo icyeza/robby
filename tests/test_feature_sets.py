@@ -163,14 +163,17 @@ def test_no_facility_in_loho_feature_sets(data: ModelData) -> None:
     """Spec §4.5: facility_id is in no FS0-FS4 set, only in FS4_deploy."""
     for name in LOHO_SETS:
         assert FACILITY not in feature_spec(data, name).columns
-    deploy = feature_spec(data, "FS4_deploy")
-    assert FACILITY in deploy.columns
-    assert set(deploy.columns) - set(feature_spec(data, "FS4").columns) == {FACILITY}
+    assert set(FEATURE_SETS) == {*LOHO_SETS, *(f"{name}_deploy" for name in LOHO_SETS)}
+    for name in LOHO_SETS:
+        deploy = feature_spec(data, f"{name}_deploy")
+        assert FACILITY in deploy.columns and FACILITY in deploy.categorical
+        base = feature_spec(data, name).columns
+        assert deploy.columns == (*base, FACILITY)
 
 
 def test_feature_sets_nest_and_partition(data: ModelData) -> None:
     previous: set[str] = set()
-    for name in FEATURE_SETS:
+    for name in LOHO_SETS:
         spec = feature_spec(data, name)
         assert previous <= set(spec.columns)
         previous = set(spec.columns)

@@ -1,11 +1,12 @@
-"""Model input frames and the FS0-FS4 / FS4_deploy feature sets (spec §9.1, §9.2, §4.5).
+"""Model input frames, the FS0-FS4 feature sets and their ``_deploy`` variants (spec §9, §4.5).
 
 Only registry ``status: include`` features reach a model (spec §8.1): the input frame holds
 the included canonical columns, the included derived columns (``bmi``,
 ``robson_group_no_onset``, ``is_missing_<field>``) and the included raw extra features, plus
-``facility_id``, which is used only by FS4_deploy. Cleaning here is row-wise and stateless
-(dtype normalisation and derivations); every fitted transformation (imputation, encoding,
-scaling) happens inside the model Pipeline, within folds.
+``facility_id``, which is used only by the deploy variants (``FS<k>_deploy`` = ``FS<k>`` plus
+``facility_id``; evaluated only under S3 and fitted only under S5). Cleaning here is
+row-wise and stateless (dtype normalisation and derivations); every fitted transformation
+(imputation, encoding, scaling) happens inside the model Pipeline, within folds.
 
 Spec v1.3: the onset field is outcome-contaminated (coded retrospectively), so
 ``onset_of_labour`` and the onset-based ``robson_group`` never reach a model built on
@@ -63,15 +64,34 @@ RAW_CATEGORICAL_KINDS = frozenset({"text", "category"})
 RAW_NUMERIC_KINDS = frozenset({"integer", "integer_sum", "float", "gestational_age"})
 MISSING_PREFIX = "is_missing_"
 GROUP_ORDER = ("G_robson", "G_maternal", "G_obs", "G_missing", "G_context")
-FEATURE_SETS: dict[str, tuple[str, ...]] = {
+BASE_FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "FS0": GROUP_ORDER[:1],
     "FS1": GROUP_ORDER[:2],
     "FS2": GROUP_ORDER[:3],
     "FS3": GROUP_ORDER[:4],
     "FS4": GROUP_ORDER[:5],
-    "FS4_deploy": GROUP_ORDER[:5],
 }
-DEPLOY_SETS = frozenset({"FS4_deploy"})
+DEPLOY_SUFFIX = "_deploy"
+# Every base set has a deploy variant: the same groups plus facility_id (spec §9.2, §13.4).
+FEATURE_SETS: dict[str, tuple[str, ...]] = {
+    **BASE_FEATURE_SETS,
+    **{f"{name}{DEPLOY_SUFFIX}": groups for name, groups in BASE_FEATURE_SETS.items()},
+}
+DEPLOY_SETS = frozenset(name for name in FEATURE_SETS if name.endswith(DEPLOY_SUFFIX))
+
+
+def is_deploy_set(name: str) -> bool:
+    """True for a deploy variant (``FS<k>_deploy``: the base set plus ``facility_id``)."""
+    return name in DEPLOY_SETS
+
+
+def deploy_variant(name: str) -> str:
+    """The deploy variant of base feature set ``name`` (``FS2`` -> ``FS2_deploy``)."""
+    if name not in BASE_FEATURE_SETS:
+        raise ValueError(
+            f"{name!r} is not a base feature set; expected one of {list(BASE_FEATURE_SETS)}"
+        )
+    return f"{name}{DEPLOY_SUFFIX}"
 
 
 @dataclass(frozen=True)
@@ -339,8 +359,8 @@ def _derived(name: str, meta: pd.DataFrame) -> pd.Series:
 def feature_spec(data: ModelData, name: str) -> FeatureSpec:
     """The FeatureSpec for feature set ``name`` over ``data`` (spec §9.2).
 
-    FS0-FS4 never contain ``facility_id`` (spec §4.5); FS4_deploy is FS4 plus it. In v1.2
-    G_context holds no feature other than facility, so FS4 equals FS3.
+    FS0-FS4 never contain ``facility_id`` (spec §4.5); each ``FS<k>_deploy`` is ``FS<k>``
+    plus it. In v1.2 G_context holds no feature other than facility, so FS4 equals FS3.
     """
     if name not in FEATURE_SETS:
         raise ValueError(f"unknown feature set {name!r}; expected one of {list(FEATURE_SETS)}")

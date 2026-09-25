@@ -51,6 +51,7 @@ from robson_ml.feature_sets import (
     FeatureSpec,
     ModelData,
     feature_spec,
+    is_deploy_set,
 )
 from robson_ml.metrics import (
     INSUFFICIENT,
@@ -78,6 +79,8 @@ from robson_ml.splits import (
 EXPERIMENT_NAME = "robson-readiness"
 SPLITS = ("S1", "S2", "S3", "S4")
 LOHO_SPLITS = frozenset({"S1", "S2"})
+# The only evaluation split a *_deploy (facility) set may run under; S5 is the deployment fit.
+DEPLOY_EVAL_SPLITS = frozenset({"S3"})
 DEFAULT_N_BOOT = 1000
 SUMMARY_METRICS = ("auc", "calibration_slope", "calibration_in_the_large", "brier", "log_loss")
 POOLED_EXTRA = ("auc_ci_low", "auc_ci_high", "reliability", "resolution", "accuracy_at_05")
@@ -164,7 +167,7 @@ def load_experiments(path: Path) -> list[ExperimentConfig]:
 
 
 def validate_config(config: ExperimentConfig) -> None:
-    """Reject unknown values and ``facility_id`` in any S1/S2 feature set (spec §4.5)."""
+    """Reject unknown values and ``facility_id`` (a ``*_deploy`` set) under S1/S2/S4 (§4.5)."""
     get_model(config.model)
     if config.population not in POPULATIONS:
         raise ValueError(f"unknown population {config.population!r}; expected one of {POPULATIONS}")
@@ -172,8 +175,11 @@ def validate_config(config: ExperimentConfig) -> None:
         raise ValueError(f"unknown feature set {config.feature_set!r}")
     if config.split not in SPLITS:
         raise ValueError(f"unknown split {config.split!r}; expected one of {SPLITS}")
-    if config.split in LOHO_SPLITS and config.feature_set == "FS4_deploy":
-        raise ValueError("facility_id (FS4_deploy) is never a feature under S1/S2 (spec §4.5)")
+    if is_deploy_set(config.feature_set) and config.split not in DEPLOY_EVAL_SPLITS:
+        raise ValueError(
+            f"facility_id ({config.feature_set}) is a feature only under S3 (evaluation) or "
+            "S5 (deployment fit, robson-ml fit-deploy); never under S1/S2/S4 (spec §4.5)"
+        )
     if config.n_trials < 1 or config.n_boot < 1:
         raise ValueError("n_trials and n_boot must be positive")
 
@@ -450,8 +456,8 @@ def run_experiment(config: ExperimentConfig, data: ModelData, ctx: RunContext) -
     if config.missing_strategy not in spec.strategies():
         raise ValueError(f"{config.model} does not support {config.missing_strategy}")
     fs = feature_spec(data, config.feature_set)
-    if config.split in LOHO_SPLITS and FACILITY in fs.columns:
-        raise AssertionError("facility_id must never be a feature under S1/S2 (spec §4.5)")
+    if config.split not in DEPLOY_EVAL_SPLITS and FACILITY in fs.columns:
+        raise AssertionError("facility_id must never be a feature under S1/S2/S4 (spec §4.5)")
     x = data.x[list(fs.columns)]
     random.seed(config.seed)
     np.random.seed(config.seed)  # legacy global seed, fixed per run (spec §19)

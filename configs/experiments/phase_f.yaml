@@ -1,0 +1,35 @@
+# Phase F (spec §13.4, §11.1 S3/S4). Three documents, each expanded on its own.
+#
+# 1. Deployment-variant evidence (spec §13.4, DECISIONS 2026-09-25): the selected
+#    specification (logreg_l2, M2) on FS2 and on FS2_deploy (FS2 + facility_id) under S3
+#    internal nested CV. FS2_deploy is used for the deployment fit only if its S3 mean log
+#    loss is lower (robson-ml fit-deploy with use_facility: auto). facility_id is allowed
+#    here only because S3 is internal evaluation; *_deploy sets are refused under S1/S2/S4.
+model: logreg_l2
+feature_set: [FS2, FS2_deploy]
+missing_strategy: M2
+split: S3
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# 2. The selected specification under the S4 temporal split (train Nov-Jan, test Feb-Mar).
+model: logreg_l2
+feature_set: FS2
+missing_strategy: M2
+split: S4
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# 3. Comparator for S4: B1 (Robson-group lookup, untuned, no imputation).
+model: B1
+feature_set: FS0
+missing_strategy: M0
+split: S4
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

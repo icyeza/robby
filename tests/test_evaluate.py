@@ -280,7 +280,7 @@ def test_expand_experiments() -> None:
 def test_committed_experiment_configs() -> None:
     configs = [c for path in sorted(EXPERIMENTS.glob("*.yaml")) for c in load_experiments(path)]
     assert len({c.name for c in configs}) == len(configs)
-    assert all(c.feature_set != "FS4_deploy" for c in configs)
+    assert all(c.split == "S3" for c in configs if c.feature_set.endswith("_deploy"))
     sensitivity = load_experiments(EXPERIMENTS / "sensitivity_onset_coded.yaml")
     assert {c.population for c in sensitivity} == {"P_pred_onset_coded"}
     assert {(c.feature_set, c.split) for c in sensitivity} == {("FS4", "S1")}
@@ -291,7 +291,8 @@ def test_committed_experiment_configs() -> None:
     configs = main
     assert all(c.n_trials == 50 and c.n_boot == 1000 for c in configs)
     baselines = {(c.model, c.split) for c in configs if c.model.startswith("B")}
-    assert baselines == {(m, s) for m in ("B0", "B1", "B2", "B3") for s in ("S1", "S2", "S3")}
+    expected = {(m, s) for m in ("B0", "B1", "B2", "B3") for s in ("S1", "S2", "S3")}
+    assert baselines == expected | {("B1", "S4")}  # B1 is the S4 comparator (phase_f.yaml)
     p0_s1 = {(c.model, c.feature_set, c.missing_strategy) for c in configs if c.split == "S1"}
     for fs in ("FS0", "FS1", "FS2", "FS3", "FS4"):
         assert ("xgboost", fs, "M0") in p0_s1

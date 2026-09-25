@@ -1,4 +1,4 @@
-"""Interpretation of a selected configuration (spec §14), aggregate outputs only.
+"""Interpretation of a selected configuration (spec §14).
 
 The fold models of a logged run are rebuilt without re-tuning (:func:`refit_folds`): the same
 folds (same seed), the tuned hyperparameters logged for each fold, the same in-fold
@@ -11,7 +11,11 @@ each fold's *held-out* rows and summarised globally:
   (no beeswarm or dependence plots: those draw one point per woman);
 - the Robson recovery check (spec §14.3);
 - partial dependence (averaged predictions over a grid; no ICE curves, which are per woman);
-- per-Robson-group AUC against B1 (from the runs' suppressed subgroup tables, §11.4).
+- per-Robson-group AUC against B1 (from the runs' suppressed subgroup tables, §11.4);
+- the deployment model's per-facility log-odds offset (§14.6, aggregate).
+
+The one row-level output is :func:`local_explanations` (§14.2): the highest-error S1 cases
+with per-case contributions, for ``data/interim/`` only (``robson-ml explain-local``).
 
 SHAP values explain the model's score (log-odds for trees, calibrated probability for the
 agnostic explainer); importances describe what drives predicted CS under current practice,
@@ -34,7 +38,7 @@ from sklearn.metrics import roc_auc_score
 
 from robson_ml.calibration import CalibratedModel, calibrate
 from robson_ml.evaluate import ExperimentConfig, make_folds, metric_key
-from robson_ml.feature_sets import ROBSON_NO_ONSET, ModelData, feature_spec
+from robson_ml.feature_sets import FACILITY, ROBSON_NO_ONSET, ModelData, feature_spec
 from robson_ml.metrics import INSUFFICIENT
 from robson_ml.models import get_model
 from robson_ml.models.base import CLF, PREP
@@ -387,3 +391,104 @@ def subgroup_comparison(
     out = pd.concat([column(selected), column(baseline)], axis=1, keys=list(labels))
     out.index = out.index.astype(str)
     return out.fillna(INSUFFICIENT).rename_axis(by)
+
+
+LOCAL_N = 20
+CONTRIBUTION_PREFIX = "contribution__"
+
+
+def linear_contributions(model: CalibratedModel, x: pd.DataFrame) -> tuple[pd.DataFrame, float]:
+    """Per-row contributions of each input column to a logistic pipeline's raw log-odds.
+
+    For every transformed column: coefficient x transformed value (standardised numerics,
+    one-hot levels, missing indicators, spline terms), summed back to its input column
+    (:func:`input_feature`). Returns (one column per input column of ``x``, indexed like
+    ``x``; the intercept). Intercept plus the row sum equals the uncalibrated logit; the
+    calibrator is monotone, so the ranking of cases is unchanged by it.
+    """
+    pipe = model.estimator
+    clf = pipe.named_steps[CLF]
+    if not hasattr(clf, "coef_"):
+        raise ValueError("linear contributions need a fitted linear (logistic) classifier")
+    transformed = pipe.named_steps[PREP].transform(x)
+    columns = list(x.columns)
+    values = np.asarray(transformed, dtype=np.float64) * np.asarray(clf.coef_[0], dtype=float)
+    frame = pd.DataFrame(values, columns=list(transformed.columns), index=x.index)
+    grouped = frame.T.groupby([input_feature(c, columns) for c in frame.columns]).sum().T
+    return grouped.reindex(columns=columns, fill_value=0.0), float(clf.intercept_[0])
+
+
+def local_explanations(
+    data: ModelData,
+    config: ExperimentConfig,
+    fold_params: Mapping[str, Mapping[str, Any]],
+    n: int = LOCAL_N,
+) -> pd.DataFrame:
+    """Spec §14.2: the ``n`` highest-error S1 out-of-fold cases with per-case contributions.
+
+    The run's fold models are rebuilt (:func:`refit_folds`); each held-out row's error is
+    ``|y - p|`` (calibrated ``p``); the ``n`` largest (ties by row order) are explained by
+    :func:`linear_contributions` of their own fold's model. Row-level output: it holds
+    ``admission_id`` and must be written under ``data/interim/`` only, never ``reports/``.
+    Columns: ``admission_id``, ``fold``, ``y``, ``p``, ``abs_error``, ``intercept``,
+    ``raw_logit`` and ``contribution__<input column>``.
+    """
+    if config.split != "S1":
+        raise ValueError("local explanations are for S1 (LOHO) out-of-fold predictions")
+    if get_model(config.model).family not in ("linear", "baseline"):
+        raise ValueError("per-case linear contributions need a logistic model")
+    fitted = refit_folds(data, config, fold_params)
+    x = data.x[model_columns(data, config)]
+    pieces = []
+    for f in fitted:
+        p = f.model.predict_proba(x.iloc[f.test_idx])[:, 1]
+        pieces.append(pd.DataFrame({"row": f.test_idx, "fold": f.fold.name, "p": p}))
+    oof = pd.concat(pieces, ignore_index=True).sort_values("row", kind="mergesort")
+    oof["y"] = data.y[oof["row"].to_numpy()]
+    oof["abs_error"] = (oof["y"] - oof["p"]).abs()
+    top = oof.sort_values("abs_error", ascending=False, kind="mergesort").head(n)
+    by_fold = {f.fold.name: f for f in fitted}
+    out = []
+    for name, cases in top.groupby("fold", sort=False):
+        rows = cases["row"].to_numpy()
+        contributions, intercept = linear_contributions(by_fold[str(name)].model, x.iloc[rows])
+        table = pd.DataFrame(
+            {
+                "admission_id": data.meta["admission_id"].iloc[rows].to_numpy(),
+                "fold": name,
+                "y": cases["y"].to_numpy(),
+                "p": cases["p"].to_numpy(),
+                "abs_error": cases["abs_error"].to_numpy(),
+                "intercept": intercept,
+                "raw_logit": intercept + contributions.sum(axis=1).to_numpy(),
+            }
+        )
+        contributions.columns = [f"{CONTRIBUTION_PREFIX}{c}" for c in contributions.columns]
+        out.append(pd.concat([table, contributions.reset_index(drop=True)], axis=1))
+    result = pd.concat(out, ignore_index=True)
+    return result.sort_values("abs_error", ascending=False, kind="mergesort").reset_index(drop=True)
+
+
+def facility_contribution(model: CalibratedModel) -> pd.DataFrame:
+    """Spec §14.6: the deployment model's per-facility log-odds offset (aggregate).
+
+    For a logistic pipeline with one-hot ``facility_id``: each facility level's coefficient
+    (the offset on the uncalibrated logit, all else equal) and the same centred on the mean
+    over levels. Raises ValueError when the model has no facility term or no coefficients.
+    """
+    pipe = model.estimator
+    clf = pipe.named_steps[CLF]
+    if not hasattr(clf, "coef_"):
+        raise ValueError("facility contribution needs a fitted linear (logistic) classifier")
+    names = list(pipe.named_steps[PREP].get_feature_names_out())
+    prefix = f"{FACILITY}_"
+    rows = []
+    for name, coef in zip(names, np.asarray(clf.coef_[0], dtype=float), strict=True):
+        rest = name.split("__", 1)[1] if "__" in name else name
+        if rest.startswith(prefix):
+            rows.append({"facility_id": rest.removeprefix(prefix), "coefficient": float(coef)})
+    if not rows:
+        raise ValueError("the model has no facility_id term")
+    table = pd.DataFrame(rows)
+    table["centred"] = table["coefficient"] - table["coefficient"].mean()
+    return table.sort_values("facility_id").reset_index(drop=True)
