@@ -1,4 +1,4 @@
-"""Notebook 02: committed without outputs, executes in synthetic mode, and its outputs hold
+"""Notebook 02: committed outputs are PII-free, it executes in synthetic mode, and its outputs hold
 aggregates only (same leak scan as the pipeline notebook)."""
 
 import sys
@@ -17,9 +17,12 @@ from run_notebook import execute  # noqa: E402
 from strip_notebook import has_outputs  # noqa: E402
 
 
-def test_committed_notebook_has_no_outputs() -> None:
+def test_committed_notebook_outputs_are_pii_free() -> None:
+    """Committed notebooks may carry real-data outputs (private repo, decision 2026-09-26),
+    but only aggregates: no identifiers, no row-level tables, no errors."""
     nb = nbformat.read(NOTEBOOK, as_version=4)
-    assert not has_outputs(nb), "strip outputs: uv run python scripts/strip_notebook.py"
+    if has_outputs(nb):
+        assert scan_outputs(nb) == []
 
 
 @pytest.fixture(scope="module")

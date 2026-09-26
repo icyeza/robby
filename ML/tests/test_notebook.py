@@ -1,4 +1,4 @@
-"""The pipeline notebook: committed without outputs, executes end to end in synthetic mode,
+"""The pipeline notebook: committed outputs are PII-free, it executes end to end in synthetic mode,
 and its executed outputs hold aggregates only (no identifier, no row-level table)."""
 
 import re
@@ -66,9 +66,12 @@ def scan_outputs(nb: nbformat.NotebookNode) -> list[str]:
     return problems
 
 
-def test_committed_notebook_has_no_outputs() -> None:
+def test_committed_notebook_outputs_are_pii_free() -> None:
+    """Committed notebooks may carry real-data outputs (private repo, decision 2026-09-26),
+    but only aggregates: no identifiers, no row-level tables, no errors."""
     nb = nbformat.read(NOTEBOOK, as_version=4)
-    assert not has_outputs(nb), "strip outputs: uv run python scripts/strip_notebook.py"
+    if has_outputs(nb):
+        assert scan_outputs(nb) == []
 
 
 def test_strip_clears_outputs() -> None:
