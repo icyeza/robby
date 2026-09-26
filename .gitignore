@@ -1,6 +1,6 @@
 # data (only reference tables may be committed)
-data/*
-!data/reference/
+**/data/*
+!**/data/reference/
 # experiment tracking and build outputs
 mlruns/
 artefacts/
