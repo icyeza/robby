@@ -247,6 +247,42 @@ def range_plot(
     return _finish(fig, title, "Dot: mean across held-out facilities; line: min-max range.")
 
 
+def forest_plot(
+    table: pd.DataFrame,
+    label: str,
+    estimate: str,
+    low: str,
+    high: str,
+    title: str,
+    xlabel: str,
+    group: str | None = None,
+    reference: float = 1.0,
+    log_scale: bool = True,
+    note: str | None = None,
+) -> Figure:
+    """Aggregate estimates (e.g. odds ratios) with their 95% intervals, one row each,
+    coloured by ``group`` in palette order, with a vertical reference line (default 1)."""
+    data = table.reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH, max(3.0, 0.3 * len(data) + 1.4)))
+    positions = np.arange(len(data))[::-1]
+    groups = list(dict.fromkeys(data[group])) if group is not None else [None]
+    for y_pos, (_, row) in zip(positions, data.iterrows(), strict=True):
+        k = groups.index(row[group]) if group is not None else 0
+        color = PALETTE[k % len(PALETTE)]
+        ax.plot([row[low], row[high]], [y_pos, y_pos], color=color, linewidth=2)
+        ax.plot(row[estimate], y_pos, "o", color=color, markersize=6)
+    ax.axvline(reference, color=REFERENCE, linestyle="--", linewidth=1.2)
+    if group is not None:
+        for k, name in enumerate(groups):
+            ax.plot([], [], "o-", color=PALETTE[k % len(PALETTE)], label=str(name))
+        ax.legend(loc="best", fontsize=8)
+    if log_scale:
+        ax.set_xscale("log")
+    ax.set_yticks(positions, data[label], fontsize=8)
+    ax.set_xlabel(xlabel)
+    return _finish(fig, title, note or "Dot: estimate; line: 95% interval.")
+
+
 def scatter_groups(
     table: pd.DataFrame,
     x: str,

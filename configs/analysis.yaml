@@ -1,0 +1,26 @@
+# Phase G analyses (spec §15): `robson-ml casemix` and `robson-ml missingness`.
+# Settings only; no reference value lives here. Reference files are transcribed from the
+# cited sources into data/reference/ (schemas in src/robson_ml/references.py).
+references:
+  vogel: data/reference/vogel2015_v1.yaml
+  cmodel: data/reference/cmodel_v1.yaml
+  prevalence: data/reference/prevalence_v1.yaml
+casemix:
+  n_boot: 2000              # resamples within facility (spec §15.2)
+  reference_facility: null  # null = first facility in sorted order
+  bootstrap_models: true    # also bootstrap the |log OR| reductions (refits every model)
+missingness:
+  fields:                   # canonical fields, or feature-registry names built from the raw export
+    - gestational_age_weeks
+    - height_cm
+    - weight_kg
+    - anc_contacts
+    - maternal_age
+    - parity
+    - previous_cs_count
+    - fetal_presentation
+    - plurality
+    - living_children_band
+    - age_first_pregnancy
+  n_draws: 200              # reclassification draws per assumed prevalence
+  se_ratios: [1.0]          # se_vaginal / se_cs; 1 = non-differential under-recording
