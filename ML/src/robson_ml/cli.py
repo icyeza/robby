@@ -53,6 +53,9 @@ CANONICAL_ROBSON = "canonical_robson.parquet"
 COMPARISON_CSV = "model_comparison.csv"
 DEFAULT_SALT_PATH = Path("data/interim/mother_key.salt")
 DEFAULT_FEATURES_PATH = Path("configs/features_v1.yaml")
+DEFAULT_ANALYSIS_PATH = Path("configs/analysis.yaml")
+CASEMIX_SUBDIR = "casemix"
+MISSINGNESS_SUBDIR = "missingness"
 SALT_BYTES = 32
 # infer_kind results that a leakage screen cannot meaningfully run on.
 UNSCREENABLE_KINDS = frozenset({"empty", "text", "datetime"})
@@ -103,10 +106,12 @@ class ProjectConfig:
     seed: int
     salt_path: Path = DEFAULT_SALT_PATH
     features_path: Path = DEFAULT_FEATURES_PATH
+    analysis_path: Path = DEFAULT_ANALYSIS_PATH
 
 
 def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
-    """Read configs/project.yaml (``salt_path``, ``features_path`` are optional)."""
+    """Read configs/project.yaml (``salt_path``, ``features_path``, ``analysis_path`` are
+    optional)."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return ProjectConfig(
         raw_path=Path(data["raw_path"]),
@@ -118,6 +123,46 @@ def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
         seed=int(data["seed"]),
         salt_path=Path(data.get("salt_path") or DEFAULT_SALT_PATH),
         features_path=Path(data.get("features_path") or DEFAULT_FEATURES_PATH),
+        analysis_path=Path(data.get("analysis_path") or DEFAULT_ANALYSIS_PATH),
+    )
+
+
+@dataclass(frozen=True)
+class AnalysisConfig:
+    """Settings of the Phase G analyses (configs/analysis.yaml); no reference values."""
+
+    vogel_path: Path
+    cmodel_path: Path
+    prevalence_path: Path
+    n_boot: int
+    reference_facility: str | None
+    bootstrap_models: bool
+    fields: list[str]
+    n_draws: int
+    se_ratios: list[float]
+
+
+def load_analysis_config(path: Path = DEFAULT_ANALYSIS_PATH) -> AnalysisConfig:
+    """Read configs/analysis.yaml."""
+    from robson_ml.casemix import DEFAULT_N_BOOT
+    from robson_ml.missingness import DEFAULT_MISSINGNESS_FIELDS, DEFAULT_N_DRAWS
+    from robson_ml.references import CMODEL_PATH, PREVALENCE_PATH, VOGEL_PATH
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    refs = data.get("references") or {}
+    casemix_cfg = data.get("casemix") or {}
+    missing_cfg = data.get("missingness") or {}
+    reference = casemix_cfg.get("reference_facility")
+    return AnalysisConfig(
+        vogel_path=Path(refs.get("vogel") or VOGEL_PATH),
+        cmodel_path=Path(refs.get("cmodel") or CMODEL_PATH),
+        prevalence_path=Path(refs.get("prevalence") or PREVALENCE_PATH),
+        n_boot=int(casemix_cfg.get("n_boot", DEFAULT_N_BOOT)),
+        reference_facility=None if reference is None else str(reference),
+        bootstrap_models=bool(casemix_cfg.get("bootstrap_models", True)),
+        fields=[str(f) for f in missing_cfg.get("fields") or DEFAULT_MISSINGNESS_FIELDS],
+        n_draws=int(missing_cfg.get("n_draws", DEFAULT_N_DRAWS)),
+        se_ratios=[float(r) for r in missing_cfg.get("se_ratios") or [1.0]],
     )
 
 
@@ -494,6 +539,117 @@ def explain_local(run_id: str) -> None:
         f"local explanations: cases={len(table)}; input features={n_features}; "
         f"written to {out} (row level: keep under data/interim, never in reports/)"
     )
+
+
+R = TypeVar("R")
+
+
+def _load_reference(loader: Callable[[Path], R], path: Path) -> tuple[R | None, str]:
+    """``(reference, "")``, or ``(None, reason)`` when the file is absent. Nothing is ever
+    put in its place: the analyses report the comparison as not applicable."""
+    from robson_ml.references import ReferenceDataMissing
+
+    try:
+        return loader(path), ""
+    except ReferenceDataMissing:
+        return None, f"reference file absent: {path} (schema in robson_ml.references)"
+
+
+def _analysis_frames(cfg: ProjectConfig, columns: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The classified canonical frame and P_audit, with any of ``columns`` that are not
+    canonical but are feature-registry names built from the raw export (row-aligned)."""
+    classified = pd.read_parquet(cfg.processed_dir / CANONICAL_ROBSON)
+    wanted = [c for c in dict.fromkeys(columns) if c not in classified.columns]
+    if wanted and cfg.features_path.exists():
+        registry = load_feature_registry(cfg.features_path)
+        names = {entry.name for entry in registry.entries}
+        wanted = [c for c in wanted if c in names]
+        if wanted:
+            mapping = load_mapping(cfg.mapping_path)
+            raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
+            raw_features, _ = build_raw_features(raw, registry)
+            if len(raw_features) != len(classified):
+                raise ValueError("raw export and canonical data are not row-aligned")
+            classified = classified.join(raw_features[wanted].reset_index(drop=True))
+    audit, _ = audit_population(classified)
+    return classified, audit
+
+
+@app.command()
+@guarded
+def casemix() -> None:
+    """Robson audit table and RQ1 case-mix analysis (spec §15.1, §15.2) into
+    reports/casemix/. Vogel and C-Model comparisons run only when their reference files
+    exist (never invented). Prints aggregate statements only."""
+    from robson_ml.audit_offline import audit_markdown, published_audit_table
+    from robson_ml.casemix import SECTOR_CONFOUND_STATEMENT, casemix_analysis
+    from robson_ml.references import load_cmodel, load_vogel
+
+    cfg = load_project_config()
+    acfg = load_analysis_config(cfg.analysis_path)
+    vogel, vogel_reason = _load_reference(load_vogel, acfg.vogel_path)
+    cmodel, cmodel_reason = _load_reference(load_cmodel, acfg.cmodel_path)
+    classified, audit = _analysis_frames(cfg, cmodel.columns() if cmodel else [])
+    out = cfg.reports_dir / CASEMIX_SUBDIR
+    out.mkdir(parents=True, exist_ok=True)
+    table = published_audit_table(classified, vogel)
+    table.to_csv(out / "robson_audit_table.csv", index=False)
+    (out / "robson_audit_table.md").write_text(audit_markdown(table, vogel), encoding="utf-8")
+    result = casemix_analysis(
+        audit,
+        vogel,
+        cmodel,
+        n_boot=acfg.n_boot,
+        seed=cfg.seed,
+        reference_facility=acfg.reference_facility,
+        bootstrap_models=acfg.bootstrap_models,
+        vogel_absent_reason=vogel_reason or "reference file absent",
+        cmodel_absent_reason=cmodel_reason or "reference file absent",
+    )
+    result.write(out)
+    typer.echo(f"P_audit rows: {fmt_count(len(audit))}")
+    typer.echo(f"Vogel comparison: {result.vogel_status}")
+    typer.echo(f"C-Model: {result.cmodel_status}")
+    typer.echo(f"bootstrap: {result.n_boot} resamples ({result.n_boot_effective} fully fitted)")
+    typer.echo(SECTOR_CONFOUND_STATEMENT)
+    typer.echo(f"case-mix outputs written to {out}")
+
+
+@app.command()
+@guarded
+def missingness() -> None:
+    """RQ2 (spec §15.3, v1.2): missingness description and models, and the under-recording
+    sensitivity analysis when the prevalence reference exists, into reports/missingness/."""
+    from robson_ml.missingness import MAR_STATEMENT, missingness_report
+    from robson_ml.references import load_prevalence
+
+    cfg = load_project_config()
+    acfg = load_analysis_config(cfg.analysis_path)
+    prevalence, reason = _load_reference(load_prevalence, acfg.prevalence_path)
+    _, audit = _analysis_frames(cfg, acfg.fields)
+    priors = None
+    if prevalence is not None:
+        priors = {n: (c.field, c.grid_pct) for n, c in prevalence.conditions.items()}
+    report = missingness_report(
+        audit,
+        acfg.fields,
+        priors,
+        n_draws=acfg.n_draws,
+        seed=cfg.seed,
+        se_ratios=acfg.se_ratios,
+        priors_absent_reason=reason or "prevalence reference file absent",
+    )
+    out = cfg.reports_dir / MISSINGNESS_SUBDIR
+    report.write(out)
+    summary = report.model_summary
+    rejected = summary.loc[summary["mcar_rejected"].eq(True), "field"].tolist()
+    typer.echo(f"fields described: {len(report.fields)}; MCAR rejected for: {rejected}")
+    typer.echo(MAR_STATEMENT)
+    typer.echo(f"under-recording: {report.under_recording_status}")
+    for result in report.under_recording:
+        for row in result.tipping.itertuples(index=False):
+            typer.echo(f"  {result.condition} [{row.conclusion}]: {row.statement}")
+    typer.echo(f"missingness outputs written to {out}")
 
 
 if __name__ == "__main__":

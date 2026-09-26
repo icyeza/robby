@@ -56,15 +56,15 @@ def synthetic_mapping() -> dict[str, object]:
 def build_synthetic_project(root: Path, repo: Path, n: int = 1500, seed: int = 11) -> Path:
     """Write a synthetic project under ``root`` and return ``root``.
 
-    Inputs: ``repo`` is the repository root, whose ``configs/features_v1.yaml`` and
-    ``configs/selection_rule.yaml`` are copied (so the synthetic run uses the approved
-    registry and the pre-registered rule); ``n`` synthetic admissions from ``seed``. The raw
-    workbook holds the canonical columns (except ``admission_id``) followed by the raw
-    registry columns, row-aligned.
+    Inputs: ``repo`` is the repository root, whose ``configs/features_v1.yaml``,
+    ``configs/selection_rule.yaml`` and ``configs/analysis.yaml`` are copied (so the synthetic
+    run uses the approved registry, the pre-registered rule and the analysis settings); ``n``
+    synthetic admissions from ``seed``. The raw workbook holds the canonical columns (except
+    ``admission_id``) followed by the raw registry columns, row-aligned.
     """
     configs = root / "configs"
     configs.mkdir(parents=True, exist_ok=True)
-    for name in ("features_v1.yaml", "selection_rule.yaml"):
+    for name in ("features_v1.yaml", "selection_rule.yaml", "analysis.yaml"):
         shutil.copy(repo / "configs" / name, configs / name)
     (configs / "mapping_ur_cmhs.yaml").write_text(
         yaml.safe_dump(synthetic_mapping(), sort_keys=False), encoding="utf-8"
