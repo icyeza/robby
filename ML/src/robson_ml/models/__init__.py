@@ -5,8 +5,13 @@ from robson_ml.models import (  # noqa: F401  (imported to register their ModelS
     b1_robson_lookup,
     b2_robson_logistic,
     b3_spline_logistic,
+    cart,
+    elasticnet,
+    ft_transformer,
     logreg_l2,
     mlp,
+    random_forest,
+    svm,
     xgb,
 )
 from robson_ml.models.base import MODEL_REGISTRY, ModelSpec

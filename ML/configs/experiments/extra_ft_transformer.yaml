@@ -1,0 +1,10 @@
+# FT-Transformer on FS2/FS3 under M2 (the best strategy for every P0 model), S1.
+# 10 TPE trials per fold: CPU-only training takes about a minute per fit on this machine.
+model: [ft_transformer]
+feature_set: [FS2, FS3]
+missing_strategy: [M2]
+split: S1
+population: P_pred
+n_trials: 10
+seed: 20260923
+n_boot: 1000

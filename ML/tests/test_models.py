@@ -14,6 +14,7 @@ from tests.test_feature_sets import model_data
 
 P0 = ("logreg_l2", "xgboost", "mlp")
 BASELINES = ("B0", "B1", "B2", "B3")
+EXTRA = ("elasticnet", "cart", "random_forest", "svm_rbf", "ft_transformer")
 
 
 @pytest.fixture(scope="module")
@@ -39,6 +40,18 @@ def test_registry_holds_baselines_and_p0() -> None:
     assert ranks == {"logreg_l2": 1, "xgboost": 5, "mlp": 7}
     assert get_model("xgboost").strategies() == ("M0", "M1", "M2")
     assert get_model("mlp").strategies() == ("M1", "M2")
+
+
+def test_registry_holds_the_extra_models() -> None:
+    ranks = {n: MODEL_REGISTRY[n].complexity_rank for n in EXTRA}
+    assert ranks == {
+        "elasticnet": 2,
+        "cart": 3,
+        "random_forest": 4,
+        "svm_rbf": 6,
+        "ft_transformer": 8,
+    }
+    assert all(get_model(n).strategies() == ("M1", "M2") for n in EXTRA)
 
 
 def test_b1_lookup_on_toy_data() -> None:
@@ -94,15 +107,18 @@ def test_b2_uses_robson_inputs_without_onset() -> None:
     )
 
 
-@pytest.mark.parametrize("name", [*BASELINES, *P0])
+@pytest.mark.parametrize("name", [*BASELINES, *P0, *EXTRA])
 def test_models_fit_every_feature_set_and_strategy(data: ModelData, name: str) -> None:
     spec = get_model(name)
     rows = np.arange(600)
     new = np.arange(600, len(data.y))
     feature_sets = ["FS0"] if name in ("B0", "B1", "B2") else ["FS0", "FS2", "FS4"]
+    strategies = spec.strategies()
+    if name == "ft_transformer":  # slow on CPU: one feature set and strategy suffice
+        feature_sets, strategies = ["FS4"], ("M2",)
     for fs_name in feature_sets:
         fs: FeatureSpec = feature_spec(data, fs_name)
-        for strategy in spec.strategies():
+        for strategy in strategies:
             model = spec.build(_params(name, strategy), fs)
             x = data.x[list(fs.columns)]
             model.fit(x.iloc[rows], data.y[rows])

@@ -1,0 +1,12 @@
+# Additional model families requested after the main comparison: elastic-net logistic,
+# CART, random forest and RBF SVM on FS2/FS3 (FS4 equals FS3 under S1: the facility is
+# dropped leave-one-hospital-out) under M1/M2, leave-one-hospital-out (S1).
+# 25 TPE trials per fold (the machine is slow; 50 changed little for the P0 models).
+model: [elasticnet, cart, random_forest, svm_rbf]
+feature_set: [FS2, FS3]
+missing_strategy: [M1, M2]
+split: S1
+population: P_pred
+n_trials: 25
+seed: 20260923
+n_boot: 1000
