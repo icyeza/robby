@@ -33,8 +33,13 @@ def is_real_data(path: Path) -> bool:
 
 
 def selection_rule_commit(repo: Path, rule: Path = SELECTION_RULE_PATH) -> str:
-    """The hash of the last commit touching ``rule``, or ``not_committed``."""
-    result = _git(repo, "log", "-1", "--format=%H", "--", rule.as_posix())
+    """The hash of the last commit changing ``rule``'s content, or ``not_committed``.
+
+    Pure renames (moving the project into a subfolder) are followed, not counted.
+    """
+    result = _git(
+        repo, "log", "-1", "--follow", "--diff-filter=AM", "--format=%H", "--", rule.as_posix()
+    )
     commit = result.stdout.strip()
     return commit if result.returncode == 0 and commit else NOT_COMMITTED
 
@@ -46,7 +51,8 @@ def check_preregistration(repo: Path, rule: Path = SELECTION_RULE_PATH) -> str:
     is not a git repository, the rule is absent from ``HEAD``, or it has staged, unstaged
     or untracked changes.
     """
-    in_head = _git(repo, "cat-file", "-e", f"HEAD:{rule.as_posix()}")
+    # "HEAD:./path" is relative to ``repo`` (the project may sit below the git root).
+    in_head = _git(repo, "cat-file", "-e", f"HEAD:./{rule.as_posix()}")
     if in_head.returncode != 0:
         raise PreregistrationError(
             f"{rule.as_posix()} is not committed in HEAD; commit the selection rule before "
