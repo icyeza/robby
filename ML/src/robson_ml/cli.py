@@ -386,7 +386,13 @@ def run(config: Path) -> None:
         load_experiments,
         run_experiment,
     )
-    from robson_ml.feature_sets import build_model_data
+    from robson_ml.feature_sets import (
+        P_PRED_COMPLETE,
+        ModelData,
+        build_model_data,
+        complete_cases,
+    )
+    from robson_ml.populations import P_PRED
 
     cfg = load_project_config()
     experiments = load_experiments(config)
@@ -405,17 +411,29 @@ def run(config: Path) -> None:
         f"configurations: {len(experiments)}; selection rule commit: {rule_commit}; "
         f"population version: {POPULATION_VERSION}"
     )
-    populations = {}
+    populations: dict[str | tuple[str, str], ModelData] = {}
     for experiment in experiments:
         done = find_completed_run(experiment, ctx)
         if done is not None:
             typer.echo(f"{experiment.name} already completed (run_id={done}); skipped")
             continue
-        if experiment.population not in populations:
-            populations[experiment.population] = build_model_data(
-                canonical, registry, raw_features, experiment.population
-            )
-        result = run_experiment(experiment, populations[experiment.population], ctx)
+        key: str | tuple[str, str]
+        if experiment.population == P_PRED_COMPLETE:
+            # Complete cases depend on the feature set: one population per set.
+            key = (experiment.population, experiment.feature_set)
+            if key not in populations:
+                if P_PRED not in populations:
+                    populations[P_PRED] = build_model_data(
+                        canonical, registry, raw_features, P_PRED
+                    )
+                populations[key] = complete_cases(populations[P_PRED], experiment.feature_set)
+        else:
+            key = experiment.population
+            if key not in populations:
+                populations[key] = build_model_data(
+                    canonical, registry, raw_features, experiment.population
+                )
+        result = run_experiment(experiment, populations[key], ctx)
         s = result.summary
         typer.echo(
             f"{experiment.name} run_id={result.run_id} "

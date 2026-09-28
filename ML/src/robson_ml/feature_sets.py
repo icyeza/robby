@@ -43,7 +43,11 @@ from robson_ml.robson_run import inputs_from_record
 from robson_ml.schema import GA_BAND_FIELDS
 
 FACILITY = "facility_id"
-POPULATIONS = (P_PRED, P_PRED_ONSET_CODED)
+# Complete-case analysis: P_pred restricted to rows with no missing input in the feature set
+# (:func:`complete_cases`); never built directly by :func:`build_model_data`.
+P_PRED_COMPLETE = "P_pred_complete"
+BASE_POPULATIONS = (P_PRED, P_PRED_ONSET_CODED)
+POPULATIONS = (*BASE_POPULATIONS, P_PRED_COMPLETE)
 ROBSON_NO_ONSET = "robson_group_no_onset"
 # Outcome-contaminated (spec v1.3): in model data only for P_pred_onset_coded (legacy_onset).
 LEGACY_ONSET_COLUMNS = ("onset_of_labour", "robson_group")
@@ -206,8 +210,11 @@ def _category_row(
 def _population(
     frame: pd.DataFrame, population: str
 ) -> tuple[pd.DataFrame, list[ExclusionLog], pd.DataFrame]:
-    if population not in POPULATIONS:
-        raise ValueError(f"unsupported population {population!r}; expected one of {POPULATIONS}")
+    if population not in BASE_POPULATIONS:
+        raise ValueError(
+            f"unsupported population {population!r}; expected one of {BASE_POPULATIONS} "
+            f"({P_PRED_COMPLETE} comes from complete_cases)"
+        )
     audit, audit_log = audit_population(frame)
     cs = audit["cs"].astype(int)
     if population == P_PRED:
@@ -354,6 +361,41 @@ def _derived(name: str, meta: pd.DataFrame) -> pd.Series:
             raise ValueError(f"{name}: source field {field!r} is not in the frame")
         return meta[field].isna().astype(np.float64)
     raise ValueError(f"no derivation defined for derived feature {name!r}")
+
+
+def complete_cases(data: ModelData, feature_set: str) -> ModelData:
+    """``data`` (P_pred) restricted to the rows with every ``feature_set`` input recorded.
+
+    The complete-case analysis: instead of imputing, drop each admission that has any
+    missing input in the feature set (``facility_id`` excepted: it is never missing and never
+    a feature under S1). The dropped rows and their CS count are appended to
+    ``exclusion_table``. The result's population is ``P_pred_complete``.
+    """
+    if data.population != P_PRED:
+        raise ValueError(f"complete cases are taken from {P_PRED}, not {data.population!r}")
+    fs = feature_spec(data, feature_set)
+    columns = [c for c in fs.columns if c != FACILITY]
+    keep = data.x[columns].notna().all(axis=1).to_numpy()
+    dropped = {
+        "category": f"any missing {feature_set} input (complete-case analysis)",
+        "n_excluded": int((~keep).sum()),
+        "n_cs_excluded": int(data.y[~keep].sum()),
+        "n_kept": 0,
+        "n_cs_audit": int(data.exclusion_table["n_cs_audit"].iloc[0])
+        if len(data.exclusion_table)
+        else int(data.y.sum()),
+    }
+    return ModelData(
+        P_PRED_COMPLETE,
+        data.meta.loc[keep].reset_index(drop=True),
+        data.x.loc[keep].reset_index(drop=True),
+        data.y[keep],
+        data.exclusions,
+        data.kinds,
+        data.groups,
+        pd.concat([data.exclusion_table, pd.DataFrame([dropped])], ignore_index=True),
+        data.legacy_onset,
+    )
 
 
 def feature_spec(data: ModelData, name: str) -> FeatureSpec:

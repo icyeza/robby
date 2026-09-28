@@ -286,7 +286,21 @@ def test_committed_experiment_configs() -> None:
     assert {(c.feature_set, c.split) for c in sensitivity} == {("FS4", "S1")}
     assert {c.model for c in sensitivity} == {"B1", "logreg_l2", "xgboost", "mlp"}
     assert sum(c.model == "B1" for c in sensitivity) == 1
-    main = [c for c in configs if c not in sensitivity]
+    # Added after the main comparison: extra model families and the complete-case analysis.
+    extra = [c for path in sorted(EXPERIMENTS.glob("extra_*.yaml")) for c in load_experiments(path)]
+    assert {c.model for c in extra} >= {
+        "elasticnet",
+        "cart",
+        "random_forest",
+        "svm_rbf",
+        "ft_transformer",
+    }
+    assert all(c.population == "P_pred" and c.split in ("S1", "S4") for c in extra)
+    complete = load_experiments(EXPERIMENTS / "complete_case.yaml")
+    assert {c.population for c in complete} == {"P_pred_complete"}
+    assert {c.feature_set for c in complete} == {"FS0", "FS1", "FS2"}
+    assert {c.feature_set for c in complete if c.model == "B1"} == {"FS0", "FS1", "FS2"}
+    main = [c for c in configs if c not in sensitivity and c not in extra and c not in complete]
     assert all(c.population == "P_pred" for c in main)
     configs = main
     assert all(c.n_trials == 50 and c.n_boot == 1000 for c in configs)

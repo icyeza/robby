@@ -1,0 +1,42 @@
+# Complete-case analysis: instead of imputing, drop every admission with any missing input in
+# the feature set (P_pred_complete; one population per feature set), then train and evaluate
+# leave-one-hospital-out exactly as for the imputed models. With nothing left to impute, M1
+# only standardises/encodes (XGBoost and B1: M0). FS3 is left out: its missing-value flags are
+# constant (all 0) on complete cases, so it equals FS2.
+# 1. B1 on the same rows as every complete-case model (comparator per feature set).
+model: B1
+feature_set: [FS0, FS1, FS2]
+missing_strategy: M0
+split: S1
+population: P_pred_complete
+n_trials: 25
+seed: 20260923
+n_boot: 1000
+---
+model: xgboost
+feature_set: [FS0, FS1, FS2]
+missing_strategy: M0
+split: S1
+population: P_pred_complete
+n_trials: 25
+seed: 20260923
+n_boot: 1000
+---
+model: [logreg_l2, elasticnet, random_forest, mlp, cart, svm_rbf]
+feature_set: [FS0, FS1, FS2]
+missing_strategy: M1
+split: S1
+population: P_pred_complete
+n_trials: 25
+seed: 20260923
+n_boot: 1000
+---
+# FT-Transformer on FS2 only (the selected specification's feature set): CPU training is slow.
+model: ft_transformer
+feature_set: FS2
+missing_strategy: M1
+split: S1
+population: P_pred_complete
+n_trials: 10
+seed: 20260923
+n_boot: 1000

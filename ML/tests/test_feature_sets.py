@@ -10,9 +10,11 @@ from robson_ml.feature_sets import (
     FACILITY,
     FEATURE_SETS,
     LEGACY_ONSET_COLUMNS,
+    P_PRED_COMPLETE,
     ModelData,
     allowed_columns,
     build_model_data,
+    complete_cases,
     feature_spec,
     robson_group_no_onset,
 )
@@ -57,6 +59,30 @@ def test_population_filter(data: ModelData) -> None:
     assert table.loc["planned-CS onset, vaginal birth", "n_excluded"] > 0
     untyped = table.loc["CS with no recorded type (kept)"]
     assert untyped["n_excluded"] == 0 and untyped["n_kept"] > 0
+
+
+@pytest.mark.parametrize("fs_name", ["FS0", "FS2"])
+def test_complete_cases_keep_only_fully_recorded_rows(data: ModelData, fs_name: str) -> None:
+    complete = complete_cases(data, fs_name)
+    columns = [c for c in feature_spec(data, fs_name).columns if c != FACILITY]
+    expected = data.x[columns].notna().all(axis=1)
+    assert complete.population == P_PRED_COMPLETE
+    assert len(complete.y) == len(complete.x) == len(complete.meta) == int(expected.sum())
+    assert not complete.x[columns].isna().any().any()
+    assert list(complete.meta.index) == list(range(len(complete.y)))
+    np.testing.assert_array_equal(complete.y, data.y[expected.to_numpy()])
+    last = complete.exclusion_table.iloc[-1]
+    assert fs_name in last["category"]
+    assert last["n_excluded"] == int((~expected).sum())
+    assert last["n_cs_excluded"] == int(data.y[~expected.to_numpy()].sum())
+
+
+def test_complete_cases_only_from_p_pred(registry: FeatureRegistry) -> None:
+    onset = model_data(registry, n=400, population="P_pred_onset_coded")
+    with pytest.raises(ValueError, match="complete cases"):
+        complete_cases(onset, "FS0")
+    with pytest.raises(ValueError, match="complete_cases"):
+        model_data(registry, n=400, population=P_PRED_COMPLETE)
 
 
 def test_onset_never_a_feature_in_p_pred(data: ModelData) -> None:
