@@ -493,7 +493,7 @@ def fit_deploy(config: Path) -> None:
         )
         use_facility = bool(decision["use_facility"])
         typer.echo(
-            f"facility decision (spec §13.4): S3 mean log loss {decision['feature_set']}="
+            f"facility decision: S3 mean log loss {decision['feature_set']}="
             f"{decision['s3_mean_log_loss']:.4f}, {decision['deploy_feature_set']}="
             f"{decision['s3_mean_log_loss_deploy']:.4f}; use_facility={use_facility}"
         )

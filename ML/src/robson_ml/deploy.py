@@ -184,7 +184,7 @@ def deployment_feature_choice(
     deploy_loss = float(found[deploy]["mean_log_loss"])
     use = deploy_loss < base_loss
     return {
-        "rule": "spec §13.4: facility used only if the deploy variant's S3 mean log loss is lower",
+        "rule": "facility used only if the deploy variant's S3 mean log loss is lower",
         "model": model,
         "missing_strategy": missing_strategy,
         "population": population,
