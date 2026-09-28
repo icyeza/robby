@@ -14,20 +14,21 @@ on binary cross-entropy, early stopping on a 10% stratified validation split of 
 from __future__ import annotations
 
 import os
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 import numpy.typing as npt
 import optuna
 import pandas as pd
-import torch
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from torch import nn
 
 from robson_ml.feature_sets import FeatureSpec
 from robson_ml.models.base import ModelSpec, make_preprocessor, pipeline, register, split_params
+
+if TYPE_CHECKING:  # torch is imported lazily (see _ft_network)
+    import torch
 
 CATEGORICAL_PREFIX = "cat__"
 MAX_EPOCHS = 60
@@ -35,38 +36,7 @@ PATIENCE = 6
 BATCH_SIZE = 512
 VALIDATION_SHARE = 0.1
 N_THREADS = min(4, os.cpu_count() or 1)
-HEADS = {16: 2, 32: 4}  # small widths: CPU-only training on a slow machine
-
-
-class _FTTransformer(nn.Module):
-    def __init__(
-        self, n_numeric: int, cardinalities: list[int], d: int, n_blocks: int, dropout: float
-    ) -> None:
-        super().__init__()
-        self.num_weight = nn.Parameter(torch.randn(n_numeric, d) * d**-0.5)
-        self.num_bias = nn.Parameter(torch.zeros(n_numeric, d))
-        self.cat_embeddings = nn.ModuleList(nn.Embedding(c, d) for c in cardinalities)
-        self.cls = nn.Parameter(torch.randn(1, 1, d) * d**-0.5)
-        block = nn.TransformerEncoderLayer(
-            d,
-            HEADS[d],
-            dim_feedforward=2 * d,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(block, n_blocks, enable_nested_tensor=False)
-        self.head = nn.Sequential(nn.LayerNorm(d), nn.ReLU(), nn.Linear(d, 1))
-
-    def forward(self, x_num: torch.Tensor, x_cat: torch.Tensor) -> torch.Tensor:
-        tokens = [x_num.unsqueeze(-1) * self.num_weight + self.num_bias]
-        if self.cat_embeddings:
-            tokens.append(
-                torch.stack([e(x_cat[:, i]) for i, e in enumerate(self.cat_embeddings)], dim=1)
-            )
-        seq = torch.cat([self.cls.expand(x_num.shape[0], -1, -1), *tokens], dim=1)
-        return self.head(self.encoder(seq)[:, 0]).squeeze(-1)
+WIDTHS = (16, 32)  # small token widths: CPU-only training on a slow machine
 
 
 class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
@@ -89,6 +59,8 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
         self.seed = seed
 
     def _tensors(self, x: Any) -> tuple[torch.Tensor, torch.Tensor]:
+        import torch
+
         frame = pd.DataFrame(x)
         x_num = frame[self.numeric_].to_numpy(dtype=np.float32)
         # Ordinal codes are 0..k-1 with -1 for an unseen level: shift so unseen is 0.
@@ -98,6 +70,11 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
 
     def fit(self, x: Any, y: npt.ArrayLike) -> Self:
         """Train with early stopping on a stratified 10% validation split of the rows."""
+        import torch
+        from torch import nn
+
+        from robson_ml.models._ft_network import FTNetwork
+
         torch.manual_seed(self.seed)
         torch.set_num_threads(N_THREADS)
         frame = pd.DataFrame(x)
@@ -117,7 +94,7 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
             stratify=y_arr,
             random_state=self.seed,
         )
-        self.model_ = _FTTransformer(
+        self.model_ = FTNetwork(
             len(self.numeric_), self.cardinalities_, self.d_token, self.n_blocks, self.dropout
         )
         optimiser = torch.optim.AdamW(
@@ -152,6 +129,8 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
 
     def predict_proba(self, x: Any) -> npt.NDArray[np.float64]:
         """Probabilities of (no CS, CS)."""
+        import torch
+
         x_num, x_cat = self._tensors(x)
         with torch.no_grad():
             p = torch.sigmoid(self.model_(x_num, x_cat)).numpy().astype(np.float64)
@@ -165,7 +144,7 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
 def search_space(trial: optuna.Trial) -> dict[str, Any]:
     """Token width, depth, dropout, learning rate and weight decay."""
     return {
-        "d_token": trial.suggest_categorical("d_token", sorted(HEADS)),
+        "d_token": trial.suggest_categorical("d_token", list(WIDTHS)),
         "n_blocks": trial.suggest_int("n_blocks", 1, 2),
         "dropout": trial.suggest_float("dropout", 0.0, 0.3),
         "lr": trial.suggest_float("lr", 3e-4, 5e-3, log=True),
