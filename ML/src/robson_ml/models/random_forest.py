@@ -15,7 +15,7 @@ from robson_ml.feature_sets import FeatureSpec
 from robson_ml.models.base import ModelSpec, make_preprocessor, pipeline, register, split_params
 
 N_TREES = 300
-N_JOBS = 2  # the machine has little memory; parallel trees copy the data
+N_JOBS = 1  # the machine has little memory: a worker thread ran out of it with 2 (seeded, so same trees)
 
 
 def search_space(trial: optuna.Trial) -> dict[str, Any]:
