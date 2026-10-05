@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring · v1.0 active · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a href="models.html">Models</a><a class="on" href="monitoring.html">Monitoring</a><a href="audit-log.html">Approval log</a></nav>
+  <div class="who"><b>All facilities</b>Model custodian · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <h1>Monitoring · v1.0 active</h1>
+  <p class="lede">How the active model is doing on recent admissions with recorded outcomes. Alerts appear when performance or inputs move past set limits.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Admissions scored (30 days)</div><div class="v">1,240</div><div class="s">All facilities</div></div>
+    <div class="tile"><div class="k">Outcomes recorded</div><div class="v">1,031</div><div class="s">83%</div></div>
+    <div class="tile"><div class="k">Calibration-in-the-large</div><div class="v">−0.06</div><div class="s">limit ±0.10</div></div>
+    <div class="tile"><div class="k">Open alerts</div><div class="v">2</div><div class="s">Waiting to be acknowledged</div></div>
+  </div>
+
+  <h2 style="font-size:19px;margin:0 0 10px">Alerts</h2>
+  <div class="alert"><span aria-hidden="true">⚠</span><div class="a-t">Facility B: observed cesarean rate has been 6 points above predicted for 4 weeks.<div class="a-d">03 Oct 2026</div></div><a class="btn btn-s btn-sm" href="#">Acknowledge</a></div>
+  <div class="alert"><span aria-hidden="true">⚠</span><div class="a-t">Input drift: antenatal visits distribution has shifted (PSI 0.27, limit 0.20).<div class="a-d">30 Sep 2026</div></div><a class="btn btn-s btn-sm" href="#">Acknowledge</a></div>
+  <div class="alert resolved" style="margin-bottom:20px"><span aria-hidden="true">✓</span><div class="a-t">Facility D: outcomes recorded fell below 70% (resolved 22 Sep).</div></div>
+
+  <section class="tablecard">
+    <div class="tc-h">
+      <h2>Input drift (PSI, last 30 days vs training)</h2>
+      <div class="lg"><span><i class="sw"></i>PSI</span><span><i class="tk"></i>Limit 0.20</span></div>
+    </div>
+    <table class="wide">
+      <thead><tr><th>Input</th><th>PSI (axis 0–0.4)</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Antenatal visits</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.27<br>Limit: 0.20"><div class="fill" style="width:67.5%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.27</span></div></td><td><span class="chip warn">⚠ Above limit</span></td></tr>
+        <tr><td><b>Maternal age</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.04<br>Limit: 0.20"><div class="fill" style="width:10%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.04</span></div></td><td>Within limit</td></tr>
+        <tr><td><b>Gestational age</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.06<br>Limit: 0.20"><div class="fill" style="width:15%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.06</span></div></td><td>Within limit</td></tr>
+        <tr><td><b>Parity</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.03<br>Limit: 0.20"><div class="fill" style="width:7.5%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.03</span></div></td><td>Within limit</td></tr>
+        <tr><td><b>BMI</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.11<br>Limit: 0.20"><div class="fill" style="width:27.5%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.11</span></div></td><td>Within limit</td></tr>
+        <tr><td><b>Previous cesareans</b></td><td><div class="cell"><div class="bar" data-tip="PSI: 0.02<br>Limit: 0.20"><div class="fill" style="width:5%"></div><div class="ref" style="left:calc(50% - 1px)"></div></div><span class="num">0.02</span></div></td><td>Within limit</td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">PSI (population stability index) compares the spread of an input over the last 30 days with the data the model was trained on. Higher means a bigger shift.</div>
+  </section>
+
+  <section class="tablecard">
+    <div class="tc-h"><h2>Calibration by facility (last 30 days)</h2></div>
+    <table>
+      <thead><tr><th>Facility</th><th class="r">Admissions with outcome</th><th class="r">Observed</th><th class="r">Mean predicted</th><th class="r">Difference</th></tr></thead>
+      <tbody>
+        <tr><td><b>Facility A</b></td><td class="r num">290</td><td class="r num">34%</td><td class="r num">32%</td><td class="r num">+2 pts</td></tr>
+        <tr><td><b>Facility B</b></td><td class="r num">248</td><td class="r num">43%</td><td class="r num">37%</td><td class="r num">+6 pts <span class="chip warn">⚠</span></td></tr>
+        <tr><td><b>Facility C</b></td><td class="r num">211</td><td class="r num">27%</td><td class="r num">28%</td><td class="r num">−1 pts</td></tr>
+        <tr><td><b>Facility D</b></td><td class="r num">282</td><td class="r num">37%</td><td class="r num">36%</td><td class="r num">+1 pts</td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Observed: share of these admissions that ended in a cesarean. Mean predicted: the model's average predicted probability for the same admissions. Difference in percentage points.</div>
+  </section>
+</main>
+</body>
+</html>
