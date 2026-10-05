@@ -287,7 +287,7 @@ def test_committed_experiment_configs() -> None:
     assert {c.model for c in sensitivity} == {"B1", "logreg_l2", "xgboost", "mlp"}
     assert sum(c.model == "B1" for c in sensitivity) == 1
     # Added after the main comparison: extra model families and the complete-case analysis.
-    extra = [c for path in sorted(EXPERIMENTS.glob("extra_*.yaml")) for c in load_experiments(path)]
+    extra = [c for path in [EXPERIMENTS / "additional_models.yaml"] for c in load_experiments(path)]
     assert {c.model for c in extra} >= {
         "elasticnet",
         "cart",
@@ -306,7 +306,7 @@ def test_committed_experiment_configs() -> None:
     assert all(c.n_trials == 50 and c.n_boot == 1000 for c in configs)
     baselines = {(c.model, c.split) for c in configs if c.model.startswith("B")}
     expected = {(m, s) for m in ("B0", "B1", "B2", "B3") for s in ("S1", "S2", "S3")}
-    assert baselines == expected | {("B1", "S4")}  # B1 is the S4 comparator (phase_f.yaml)
+    assert baselines == expected | {("B1", "S4")}  # B1 is the S4 comparator (deployment_check.yaml)
     p0_s1 = {(c.model, c.feature_set, c.missing_strategy) for c in configs if c.split == "S1"}
     for fs in ("FS0", "FS1", "FS2", "FS3", "FS4"):
         assert ("xgboost", fs, "M0") in p0_s1

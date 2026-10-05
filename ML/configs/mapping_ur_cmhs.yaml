@@ -1,6 +1,6 @@
 source: "UR-CMHS delivery records export (labels), 2026-08-31"
 # Single-sheet export. Raw column names are copied exactly, including trailing spaces.
-# status: review = meaning or coding needs human confirmation (see Checkpoint 1 review list).
+# status: review = meaning or coding needs human confirmation.
 sheet: ~
 fields:
   admission_id:
@@ -12,7 +12,7 @@ fields:
     raw: "Patient UPI"
     kind: hash_key
     status: confirmed
-    note: "Salted one-way hash; the raw identifier never enters canonical data (spec v1.2)."
+    note: "Salted one-way hash; the raw identifier never enters canonical data."
 
   facility_id:
     raw: "Hospital Name"
@@ -24,7 +24,7 @@ fields:
     kind: datetime
     date_only: true
     status: confirmed
-    note: "Proxy time axis; the export has no admission timestamp (spec v1.2)."
+    note: "Proxy time axis; the export has no admission timestamp."
 
   parity:
     raw: ["Number of previous Vaginal delivery", "Number of Previous C-Sections "]
@@ -32,7 +32,7 @@ fields:
     levels: {"4 and above": 4, "4 or more": 4}
     range: [0, 25]
     status: review
-    note: "Previous births = previous vaginal + previous CS; register Parity includes the current birth (user decision 2026-09-23). Top-codes counted as 4."
+    note: "Previous births = previous vaginal + previous CS; register Parity includes the current birth (project decision). Top-codes counted as 4."
 
   previous_cs_count:
     raw: "Number of Previous C-Sections "
@@ -82,7 +82,7 @@ fields:
     kind: category
     levels: {"Spontaneous": "spontaneous", "Induced": "induced", "Planned C-section": "prelabour_cs"}
     status: review
-    note: "'Planned C-section' onset includes emergency CS types and a few vaginal births; flagged, not excluded (spec v1.2)."
+    note: "'Planned C-section' onset includes emergency CS types and a few vaginal births; flagged, not excluded."
 
   prelabour_cs_type:
     raw: "If C-Section"

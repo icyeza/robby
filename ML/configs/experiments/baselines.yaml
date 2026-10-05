@@ -1,0 +1,33 @@
+# Baselines: the reference points every model has to beat. Evaluated leave-one-hospital-out
+# (S1), with local recalibration (S2) and with internal cross-validation (S3).
+#
+# B0 predicts the training CS rate for everyone; B1 predicts the CS rate of the woman's
+# Robson group (computed without onset of labour). Neither is tuned or imputes (M0).
+model: [B0, B1]
+feature_set: FS0
+missing_strategy: M0
+split: [S1, S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# B2: logistic regression on the Robson inputs, with a spline on gestational age.
+model: B2
+feature_set: FS0
+missing_strategy: M1
+split: [S1, S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# B3: logistic regression with age and gestational-age splines on the full feature set FS4.
+model: B3
+feature_set: FS4
+missing_strategy: M1
+split: [S1, S2, S3]
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

@@ -1,0 +1,35 @@
+# Runs needed before fitting the deployment model (configs/deployment.yaml).
+#
+# 1. Should the deployed model know which hospital the woman is in? The selected model
+#    (logistic regression, FS2, M2) is compared on FS2 and on FS2_deploy (FS2 + facility_id)
+#    with internal cross-validation (S3). facility_id is only allowed in S3, because
+#    leave-one-hospital-out evaluation cannot score a hospital the model has never seen.
+model: logreg_l2
+feature_set: [FS2, FS2_deploy]
+missing_strategy: M2
+split: S3
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# 2. The selected model under temporal validation (S4: train November-January, test
+#    February-March).
+model: logreg_l2
+feature_set: FS2
+missing_strategy: M2
+split: S4
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000
+---
+# 3. The Robson-group baseline (B1) under the same temporal split, for comparison.
+model: B1
+feature_set: FS0
+missing_strategy: M0
+split: S4
+population: P_pred
+n_trials: 50
+seed: 20260923
+n_boot: 1000

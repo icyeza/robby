@@ -1,0 +1,41 @@
+# Additional model families, compared with the main models leave-one-hospital-out (S1):
+# elastic-net logistic regression, a decision tree (CART), random forest and an RBF SVM.
+# 25 Optuna trials per fold (50 changed little for the main models).
+model: [elasticnet, cart, random_forest, svm_rbf]
+feature_set: [FS2, FS3]
+missing_strategy: [M1, M2]
+split: S1
+population: P_pred
+n_trials: 25
+seed: 20260923
+n_boot: 1000
+---
+# FT-Transformer (a transformer for tabular data). Trained on CPU, so 10 trials per fold.
+model: [ft_transformer]
+feature_set: [FS2, FS3]
+missing_strategy: [M2]
+split: S1
+population: P_pred
+n_trials: 10
+seed: 20260923
+n_boot: 1000
+---
+# Temporal validation (S4: train November-January, test February-March) of every family on
+# FS2 with iterative imputation (M2), the selected model's settings.
+model: [xgboost, mlp, elasticnet, cart, random_forest, svm_rbf]
+feature_set: FS2
+missing_strategy: M2
+split: S4
+population: P_pred
+n_trials: 25
+seed: 20260923
+n_boot: 1000
+---
+model: ft_transformer
+feature_set: FS2
+missing_strategy: M2
+split: S4
+population: P_pred
+n_trials: 10
+seed: 20260923
+n_boot: 1000

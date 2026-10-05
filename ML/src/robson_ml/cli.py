@@ -99,7 +99,6 @@ class ProjectConfig:
 
     raw_path: Path
     mapping_path: Path
-    answers_path: Path
     interim_dir: Path
     processed_dir: Path
     reports_dir: Path
@@ -107,22 +106,23 @@ class ProjectConfig:
     salt_path: Path = DEFAULT_SALT_PATH
     features_path: Path = DEFAULT_FEATURES_PATH
     analysis_path: Path = DEFAULT_ANALYSIS_PATH
+    answers_path: Path | None = None
 
 
 def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
-    """Read configs/project.yaml (``salt_path``, ``features_path``, ``analysis_path`` are
-    optional)."""
+    """Read configs/project.yaml (``salt_path``, ``features_path``, ``analysis_path`` and
+    ``answers_path`` are optional)."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return ProjectConfig(
         raw_path=Path(data["raw_path"]),
         mapping_path=Path(data["mapping_path"]),
-        answers_path=Path(data["answers_path"]),
         interim_dir=Path(data["interim_dir"]),
         processed_dir=Path(data["processed_dir"]),
         reports_dir=Path(data["reports_dir"]),
         seed=int(data["seed"]),
         salt_path=Path(data.get("salt_path") or DEFAULT_SALT_PATH),
         features_path=Path(data.get("features_path") or DEFAULT_FEATURES_PATH),
+        answers_path=Path(data["answers_path"]) if data.get("answers_path") else None,
         analysis_path=Path(data.get("analysis_path") or DEFAULT_ANALYSIS_PATH),
     )
 
@@ -267,7 +267,7 @@ def profile() -> None:
     raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet)
     classified = pd.read_parquet(cfg.processed_dir / "canonical_robson.parquet")
     manual: dict[str, str] = {}
-    if cfg.answers_path.exists():
+    if cfg.answers_path is not None and cfg.answers_path.exists():
         loaded = yaml.safe_load(cfg.answers_path.read_text(encoding="utf-8")) or {}
         manual = {str(k): str(v) for k, v in loaded.items()}
     out_dir = cfg.reports_dir / "profile"

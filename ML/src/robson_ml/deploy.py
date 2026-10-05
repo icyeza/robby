@@ -177,7 +177,7 @@ def deployment_feature_choice(
             raise LookupError(
                 f"no finished S3 run of {model} {name} {missing_strategy} on {population} "
                 f"(population version {POPULATION_VERSION}); run configs/experiments/"
-                "phase_f.yaml first"
+                "deployment_check.yaml first"
             )
         found[name] = rows.iloc[0]
     base_loss = float(found[feature_set]["mean_log_loss"])

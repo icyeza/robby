@@ -63,8 +63,8 @@ def test_deploy_variants_validated() -> None:
         expand_experiments(doc)
 
 
-def test_phase_f_config() -> None:
-    configs = load_experiments(EXPERIMENTS / "phase_f.yaml")
+def test_deployment_check_config() -> None:
+    configs = load_experiments(EXPERIMENTS / "deployment_check.yaml")
     assert {c.name for c in configs} == {
         "logreg_l2|FS2|M2|S3|P_pred",
         "logreg_l2|FS2_deploy|M2|S3|P_pred",

@@ -1,11 +1,8 @@
-# Sensitivity analysis (spec v1.3 item 4): the v1.2 onset-coded population P_pred_onset_coded
-# (onset spontaneous/induced only), under S1 on FS4. Its model data is built with
-# legacy_onset (automatic for this population, refused for any other): the onset-free
-# robson_group_no_onset is replaced by the v1.2 onset_of_labour and onset-based robson_group,
-# so this reproduces the pre-v1.3 analysis for comparison only. Onset is outcome-contaminated
-# (coded retrospectively), so none of these runs is eligible for model selection (the
-# pre-registered rule reads population P_pred only).
-# Two documents so B1 (untuned, reads one column) runs once rather than once per strategy.
+# Sensitivity analysis: the older population definition that used the onset-of-labour field
+# (P_pred_onset_coded: spontaneous or induced onset only). Onset is often recorded after
+# delivery, so it leaks the outcome; these runs are for comparison only and can never be
+# selected (the selection rule reads population P_pred only).
+# B1 is untuned and reads one column, so it gets its own document and runs once.
 model: B1
 feature_set: FS4
 missing_strategy: M0
