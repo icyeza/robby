@@ -28,6 +28,8 @@ PAGES = [
     "audit-report.html",
     "models.html",
     "model-detail.html",
+    "national-overview.html",
+    "national-facility.html",
 ]
 
 # Copy rules (spec section 7) apply inside any element with class "signal" or "signal-cell".

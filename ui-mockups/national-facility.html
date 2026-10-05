@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facility B · Robson report · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a class="on" href="national-overview.html">National overview</a></nav>
+  <div class="who"><b>All facilities · National</b>National reviewer · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data. Reference values are not Vogel or C-Model figures.</div>
+  <div class="crumbs"><a href="national-overview.html">National overview</a> / Facility B</div>
+  <h1>Facility B · Robson report</h1>
+  <p class="lede">Who gives birth here, and how often each group has a cesarean, compared with a reference population.</p>
+
+  <div class="notice"><b>Read-only view for national reviewers.</b> Figures are aggregates; individual admissions are not available.</div>
+
+  <div class="filters">
+    <div class="f"><label>Facility</label><div style="height:40px;display:flex;align-items:center;font-size:14px;font-weight:600">Facility B</div></div>
+    <div class="f"><label for="from">From</label><input id="from" type="text" value="01 Jan 2026"></div>
+    <div class="f"><label for="to">To</label><input id="to" type="text" value="30 Sep 2026"></div>
+    <div class="f"><label>Compare with</label><div class="seg" role="group" aria-label="Compare with"><button type="button" class="on" aria-pressed="true">Vogel et al. 2015</button><button type="button" aria-pressed="false">WHO C-Model</button></div></div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Births in period</div><div class="v">1,180</div><div class="s">All recorded deliveries</div></div>
+    <div class="tile"><div class="k">Cesarean rate</div><div class="v">41.2%</div><div class="s">486 cesareans</div></div>
+    <div class="tile"><div class="k">Largest contributor</div><div class="v">Group 5</div><div class="s">Largest share of cesareans</div></div>
+    <div class="tile"><div class="k">Could not be classified</div><div class="v">80</div><div class="s">6.8% of births</div></div>
+  </div>
+
+  <section class="key">
+    <h2>What stands out</h2>
+    <ul>
+      <li><b>Groups 1 and 2 have cesarean rates well above the reference;</b> group sizes are close to the reference.</li>
+      <li><b>6.8% of births could not be classified;</b> check data completeness before drawing conclusions.</li>
+    </ul>
+  </section>
+
+  <section class="tablecard">
+    <div class="tc-h">
+      <h2>By Robson group</h2>
+      <div class="lg"><span><i class="sw"></i>This facility</span><span><i class="tk"></i>Reference (Vogel et al. 2015)</span></div>
+    </div>
+    <table class="wide">
+      <thead><tr><th>Group</th><th></th><th>Group size · % of births</th><th>Cesarean rate in group</th><th class="r">Share of all cesareans</th><th class="r">Absolute contribution</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td><span class="gnum">1</span></td><td class="gdef">Nulliparous, single cephalic, ≥37 wk, spontaneous labour</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 22.0%<br>Reference: 30%"><div class="fill" style="width:48.89%"></div><div class="ref" style="left:calc(66.67% - 1px)"></div></div><span class="num">22.0%</span><span class="diff">−8.0 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 24%<br>Reference: 10%"><div class="fill" style="width:24%"></div><div class="ref" style="left:calc(10% - 1px)"></div></div><span class="num">24%</span><span class="diff">+14.0 pts</span></div></td>
+          <td class="r num">15.9%</td><td class="r num">5.3%</td><td><span class="flag rate">▲ Higher rate</span></td></tr>
+        <tr><td><span class="gnum">2</span></td><td class="gdef">Nulliparous, single cephalic, ≥37 wk, induced or pre-labour CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 4.1%<br>Reference: 9%"><div class="fill" style="width:9.11%"></div><div class="ref" style="left:calc(20% - 1px)"></div></div><span class="num">4.1%</span><span class="diff">−4.9 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 52%<br>Reference: 30%"><div class="fill" style="width:52%"></div><div class="ref" style="left:calc(30% - 1px)"></div></div><span class="num">52%</span><span class="diff">+22.0 pts</span></div></td>
+          <td class="r num">6.4%</td><td class="r num">2.1%</td><td><span class="flag rate">▲ Higher rate</span></td></tr>
+        <tr><td><span class="gnum">3</span></td><td class="gdef">Multiparous, no previous CS, single cephalic, ≥37 wk, spontaneous labour</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 38.6%<br>Reference: 30%"><div class="fill" style="width:85.78%"></div><div class="ref" style="left:calc(66.67% - 1px)"></div></div><span class="num">38.6%</span><span class="diff">+8.6 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 9%<br>Reference: 3%"><div class="fill" style="width:9%"></div><div class="ref" style="left:calc(3% - 1px)"></div></div><span class="num">9%</span><span class="diff">+6.0 pts</span></div></td>
+          <td class="r num">10.4%</td><td class="r num">3.5%</td><td><span class="flag size">▲ Larger group</span></td></tr>
+        <tr><td><span class="gnum">4</span></td><td class="gdef">Multiparous, no previous CS, single cephalic, ≥37 wk, induced or pre-labour CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 2.0%<br>Reference: 6%"><div class="fill" style="width:4.44%"></div><div class="ref" style="left:calc(13.33% - 1px)"></div></div><span class="num">2.0%</span><span class="diff">−4.0 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 31%<br>Reference: 15%"><div class="fill" style="width:31%"></div><div class="ref" style="left:calc(15% - 1px)"></div></div><span class="num">31%</span><span class="diff">+16.0 pts</span></div></td>
+          <td class="r num">1.9%</td><td class="r num">0.6%</td><td><span class="flag rate">▲ Higher rate</span></td></tr>
+        <tr><td><span class="gnum">5</span></td><td class="gdef">Multiparous with at least one previous CS, single cephalic, ≥37 wk</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 14.6%<br>Reference: 11%"><div class="fill" style="width:32.44%"></div><div class="ref" style="left:calc(24.44% - 1px)"></div></div><span class="num">14.6%</span><span class="diff">+3.6 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 82%<br>Reference: 70%"><div class="fill" style="width:82%"></div><div class="ref" style="left:calc(70% - 1px)"></div></div><span class="num">82%</span><span class="diff">+12.0 pts</span></div></td>
+          <td class="r num">36.0%</td><td class="r num">12.0%</td><td><span class="flag size">▲ Larger group</span><br><span class="flag rate">▲ Higher rate</span></td></tr>
+        <tr><td><span class="gnum">6</span></td><td class="gdef">Nulliparous, single breech</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 1.6%<br>Reference: 2%"><div class="fill" style="width:3.56%"></div><div class="ref" style="left:calc(4.44% - 1px)"></div></div><span class="num">1.6%</span><span class="diff">−0.4 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 90%<br>Reference: 90%"><div class="fill" style="width:90%"></div><div class="ref" style="left:calc(90% - 1px)"></div></div><span class="num">90%</span><span class="diff">+0.0 pts</span></div></td>
+          <td class="r num">4.3%</td><td class="r num">1.4%</td><td><span class="muted">Close to reference</span></td></tr>
+        <tr><td><span class="gnum">7</span></td><td class="gdef">Multiparous, single breech, including previous CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 2.1%<br>Reference: 2%"><div class="fill" style="width:4.67%"></div><div class="ref" style="left:calc(4.44% - 1px)"></div></div><span class="num">2.1%</span><span class="diff">+0.1 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 78%<br>Reference: 80%"><div class="fill" style="width:78%"></div><div class="ref" style="left:calc(80% - 1px)"></div></div><span class="num">78%</span><span class="diff">−2.0 pts</span></div></td>
+          <td class="r num">4.9%</td><td class="r num">1.6%</td><td><span class="muted">Close to reference</span></td></tr>
+        <tr><td><span class="gnum">8</span></td><td class="gdef">Multiple pregnancy, including previous CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 2.3%<br>Reference: 1.5%"><div class="fill" style="width:5.11%"></div><div class="ref" style="left:calc(3.33% - 1px)"></div></div><span class="num">2.3%</span><span class="diff">+0.8 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 64%<br>Reference: 60%"><div class="fill" style="width:64%"></div><div class="ref" style="left:calc(60% - 1px)"></div></div><span class="num">64%</span><span class="diff">+4.0 pts</span></div></td>
+          <td class="r num">4.4%</td><td class="r num">1.5%</td><td><span class="muted">Close to reference</span></td></tr>
+        <tr><td><span class="gnum">9</span></td><td class="gdef">Single transverse or oblique, including previous CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 0.4%<br>Reference: 0.3%"><div class="fill" style="width:0.89%"></div><div class="ref" style="left:calc(0.67% - 1px)"></div></div><span class="num">0.4%</span><span class="diff">+0.1 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 100%<br>Reference: 100%"><div class="fill" style="width:100%"></div><div class="ref" style="left:calc(100% - 1px)"></div></div><span class="num">100%</span><span class="diff">+0.0 pts</span></div></td>
+          <td class="r num">1.2%</td><td class="r num">0.4%</td><td><span class="muted">Close to reference</span></td></tr>
+        <tr><td><span class="gnum">10</span></td><td class="gdef">Single cephalic, &lt;37 wk, including previous CS</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 8.9%<br>Reference: 7%"><div class="fill" style="width:19.78%"></div><div class="ref" style="left:calc(15.56% - 1px)"></div></div><span class="num">8.9%</span><span class="diff">+1.9 pts</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 41%<br>Reference: 35%"><div class="fill" style="width:41%"></div><div class="ref" style="left:calc(35% - 1px)"></div></div><span class="num">41%</span><span class="diff">+6.0 pts</span></div></td>
+          <td class="r num">11.0%</td><td class="r num">3.6%</td><td><span class="muted">Close to reference</span></td></tr>
+        <tr class="unc" id="unc"><td><span class="gnum">Unclassified</span></td><td class="gdef">Missing or conflicting Robson fields</td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 3.4%<br>No reference"><div class="fill" style="width:7.56%"></div></div><span class="num">3.4%</span><span class="diff">no ref.</span></div></td>
+          <td><div class="cell"><div class="bar" data-tip="This facility: 35%<br>No reference"><div class="fill" style="width:35%"></div></div><span class="num">35%</span><span class="diff">no ref.</span></div></td>
+          <td class="r num">3.6%</td><td class="r num">1.2%</td><td><span class="muted">Check data quality</span></td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Group size: the facility's share of births in the group; the black tick is the reference share (axis 0–45%). Cesarean rate: cesareans ÷ births in the group (axis 0–100%). Share of all cesareans: the group's cesareans ÷ all cesareans. Absolute contribution: the group's cesareans ÷ all births. Flags: group size at least 3 points above the reference, or rate at least 10 points above. Unclassified records are counted and never dropped.</div>
+  </section>
+</main>
+</body>
+</html>

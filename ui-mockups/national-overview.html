@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>National overview · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a class="on" href="national-overview.html">National overview</a></nav>
+  <div class="who"><b>All facilities · National</b>National reviewer · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data. Expected rates are placeholders, not C-Model output.</div>
+  <h1>National overview</h1>
+  <p class="lede">Robson profile and cesarean rates for every participating facility, compared with the reference population and with the rate expected for each facility's case mix.</p>
+
+  <div class="filters">
+    <div class="f"><label for="from">From</label><input id="from" type="text" value="01 Jan 2026"></div>
+    <div class="f"><label for="to">To</label><input id="to" type="text" value="30 Sep 2026"></div>
+    <div class="f"><label>Compare with</label><div class="seg" role="group" aria-label="Compare with"><button type="button" class="on" aria-pressed="true">Vogel et al. 2015</button><button type="button" aria-pressed="false">WHO C-Model</button></div></div>
+    <a class="btn btn-s btn-sm push" href="#" style="height:40px">Export national report (CSV)</a>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Facilities reporting</div><div class="v">4 of 4</div><div class="s">All facilities taking part</div></div>
+    <div class="tile"><div class="k">Births in period</div><div class="v">5,082</div><div class="s">All recorded deliveries</div></div>
+    <div class="tile"><div class="k">Cesarean rate</div><div class="v">35.1%</div><div class="s">1,783 cesareans</div></div>
+    <div class="tile"><div class="k">Could not be classified</div><div class="v">5.8%</div><div class="s">293 records · above 5% at 2 facilities</div></div>
+  </div>
+
+  <section class="key">
+    <h2>What stands out</h2>
+    <ul>
+      <li><b>Facility B's cesarean rate is 25% higher than expected for its case mix;</b> the excess is concentrated in groups 1 and 2.</li>
+      <li><b>Facilities B and D could not classify more than 5% of births,</b> so their comparisons are less reliable.</li>
+      <li><b>Facility C is close to its expected rate</b> in every group shown.</li>
+    </ul>
+  </section>
+
+  <section class="tablecard">
+    <div class="tc-h">
+      <h2>Observed vs expected cesarean rate</h2>
+      <div class="lg"><span><i class="sw"></i>Observed</span><span><i class="tk"></i>Expected for case mix</span></div>
+    </div>
+    <table class="wide">
+      <thead><tr><th>Facility</th><th class="r">Births</th><th>Cesarean rate</th><th>Observed ÷ expected</th><th>Unclassified</th><th>Monthly report</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>Facility A</b></td><td class="r num">1,412</td>
+          <td><div class="cell"><div class="bar" data-tip="Observed: 33.3%<br>Expected for case mix: 30.1%"><div class="fill" style="width:66.6%"></div><div class="ref" style="left:calc(60.2% - 1px)"></div></div><span class="num">33.3%</span><span class="diff">+3.2 pts</span></div></td>
+          <td class="num" style="text-align:left">1.11</td><td>3.4%</td><td><span class="st done">Sep submitted</span></td><td class="r"><a href="national-facility.html">Robson report</a></td></tr>
+        <tr><td><b>Facility B</b></td><td class="r num">1,180</td>
+          <td><div class="cell"><div class="bar" data-tip="Observed: 41.2%<br>Expected for case mix: 33.0%"><div class="fill" style="width:82.4%"></div><div class="ref" style="left:calc(66.0% - 1px)"></div></div><span class="num">41.2%</span><span class="diff">+8.2 pts</span></div></td>
+          <td class="num" style="text-align:left">1.25</td><td><span class="chip warn">⚠ 6.8%</span></td><td><span class="st done">Sep submitted</span></td><td class="r"><a href="national-facility.html">Robson report</a></td></tr>
+        <tr><td><b>Facility C</b></td><td class="r num">960</td>
+          <td><div class="cell"><div class="bar" data-tip="Observed: 27.5%<br>Expected for case mix: 28.4%"><div class="fill" style="width:55.0%"></div><div class="ref" style="left:calc(56.8% - 1px)"></div></div><span class="num">27.5%</span><span class="diff">−0.9 pts</span></div></td>
+          <td class="num" style="text-align:left">0.97</td><td>2.1%</td><td><span class="st awaiting">Sep late (due 10 Oct)</span></td><td class="r"><a href="national-facility.html">Robson report</a></td></tr>
+        <tr><td><b>Facility D</b></td><td class="r num">1,530</td>
+          <td><div class="cell"><div class="bar" data-tip="Observed: 36.8%<br>Expected for case mix: 35.9%"><div class="fill" style="width:73.6%"></div><div class="ref" style="left:calc(71.8% - 1px)"></div></div><span class="num">36.8%</span><span class="diff">+0.9 pts</span></div></td>
+          <td class="num" style="text-align:left">1.03</td><td><span class="chip warn">⚠ 9.5%</span></td><td><span class="st awaiting">Aug missing</span></td><td class="r"><a href="national-facility.html">Robson report</a></td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Bar: observed cesarean rate (axis 0–50%). Black tick: the rate expected for the facility's case mix; expected rates here are placeholders, not C-Model output. Observed ÷ expected above 1 means more cesareans than expected. Unclassified above 5% is flagged because comparisons are less reliable.</div>
+  </section>
+
+  <section class="tablecard">
+    <div class="tc-h"><h2>Cesarean rate difference from reference, key groups (points)</h2></div>
+    <table class="heat">
+      <thead><tr><th>Facility</th><th class="c">Group 1</th><th class="c">Group 2</th><th class="c">Group 5</th><th class="c">Group 10</th></tr></thead>
+      <tbody>
+        <tr><td><b>Facility A</b></td><td class="h-mid">+14</td><td class="h-hi">+22</td><td class="h-mid">+12</td><td class="h-mid">+6</td></tr>
+        <tr><td><b>Facility B</b></td><td class="h-hi">+21</td><td class="h-hi">+25</td><td class="h-hi">+16</td><td class="h-mid">+9</td></tr>
+        <tr><td><b>Facility C</b></td><td class="h-lo">+3</td><td class="h-mid">+8</td><td class="h-mid">+5</td><td class="h-neg">−2</td></tr>
+        <tr><td><b>Facility D</b></td><td class="h-mid">+9</td><td class="h-hi">+15</td><td class="h-mid">+7</td><td class="h-mid">+12</td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Positive: rate above the reference for that group. Colour shows size only; the sign is always printed.</div>
+  </section>
+  <p class="muted">Aggregates only. Individual admissions are never shown to national reviewers.</p>
+</main>
+</body>
+</html>

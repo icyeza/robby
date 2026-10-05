@@ -269,6 +269,22 @@ table.wide th{white-space:normal;vertical-align:bottom}
 .toc .card-b a{display:block;padding:6px 0;font-weight:600;text-decoration:none}
 .toc .card-b span{display:block;font-size:12.5px;color:var(--ink-3);margin-top:-4px;margin-bottom:4px}
 
+/* ---------- extension: offline, alerts, heat cells, warn chip ---------- */
+.live.off{color:var(--warn)}
+.live.off i{background:#9a9297}
+.alert{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:var(--radius);padding:14px 18px;display:flex;gap:14px;align-items:center;margin-bottom:10px}
+.alert .a-t{flex:1}
+.alert .a-d{font-size:12.5px;color:var(--ink-3)}
+.alert.resolved{color:var(--ink-3);border-left-color:var(--line)}
+table.heat td{text-align:center;font-variant-numeric:tabular-nums}
+table.heat th.c{text-align:center}
+table.heat td:first-child,table.heat th:first-child{text-align:left}
+td.h-hi{background:#e9c4cf}
+td.h-mid{background:#f3dde3}
+td.h-lo{background:#faf0f3}
+td.h-neg{background:#e6edf3}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+
 /* ---------- tooltip ---------- */
 #tip{position:fixed;pointer-events:none;background:var(--ink);color:#fff;font-size:12.5px;padding:7px 10px;border-radius:4px;line-height:1.4;display:none;z-index:30}
 
