@@ -60,7 +60,7 @@ def _spy_factories(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_calibration_cv_selection(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Spec §22 / §13.1 v1.1: chosen on out-of-fold Brier, never on the rows it was fitted to."""
+    """Chosen on out-of-fold Brier, never on the rows it was fitted to."""
     y, p = _platt_family(300, seed=2)
     # In-sample, isotonic always wins (it is the best monotone fit to the rows it saw) ...
     in_sample_iso = _brier(y, IsotonicCalibrator().fit(p, y).transform(p))
@@ -107,7 +107,7 @@ class _RecordingModel:
 
 
 def test_calibrator_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Spec §22: the calibrator is fitted only on calibration-split indices."""
+    """The calibrator is fitted only on calibration-split indices."""
     n = 600
     y, p = _platt_family(n, seed=4)
     x = pd.DataFrame({"row": np.arange(n), "score": p})

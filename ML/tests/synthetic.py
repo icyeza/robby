@@ -1,4 +1,4 @@
-"""Synthetic canonical admissions for tests and golden files (spec §3.5).
+"""Synthetic canonical admissions for tests and golden files.
 
 Nothing here is derived from real records. Every rate below is invented so that tests see
 realistic structure; none is a reference value and none may ever be reported as a finding.
@@ -53,7 +53,7 @@ PRECISE_NON_CEPHALIC_RATE = 0.2
 SHARED_KEY_PAIR_RATE = 0.015
 SHARED_KEY_SAME_DATE_RATE = 0.85
 CONTRADICTION_RATE = 0.005
-# Spec v1.3: the CS-type field is filled for every CS, not only pre-labour CS. CS after a
+# The CS-type field is filled for every CS, not only pre-labour CS. CS after a
 # labour onset are typed emergency / planned / not typed at these rates; a few
 # planned-CS-onset admissions deliver vaginally (and so carry no CS type).
 IN_LABOUR_CS_TYPE_SHARE = {"emergency": 0.90, "planned": 0.04, "": 0.06}
@@ -99,7 +99,7 @@ def _mother_keys(n: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarr
 
 
 def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
-    """Generate ``n`` synthetic canonical admissions (spec §5 columns, canonical dtypes)."""
+    """Generate ``n`` synthetic canonical admissions (canonical columns and dtypes)."""
     rng = np.random.default_rng(seed)
     facility = rng.choice(FACILITIES, size=n, p=FACILITY_SHARE)
     day = rng.integers(0, PERIOD_DAYS, size=n)
@@ -209,7 +209,7 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
     return df[list(CANONICAL_BASE_COLUMNS)]
 
 
-# Invented labels for the raw text features the registry includes (spec §8.1); only their
+# Invented labels for the raw text features the registry includes; only their
 # structure matters. A text feature takes one of these, or is blank.
 RAW_TEXT_LEVELS = ("level_a", "level_b", "level_c", "level_d")
 RAW_TEXT_MISSING_RATE = 0.25

@@ -1,4 +1,4 @@
-"""Model interface, registry and the shared in-Pipeline preprocessing (spec §9.3, §10, §12.1).
+"""Model interface, registry and the shared in-Pipeline preprocessing.
 
 Every model is a :class:`ModelSpec` registered in ``MODEL_REGISTRY`` by its own module under
 ``robson_ml.models``. ``build(params, feature_spec)`` returns an unfitted Pipeline whose
@@ -38,12 +38,12 @@ CLF = "clf"
 
 @dataclass(frozen=True)
 class ModelSpec:
-    """One model of the zoo (spec §12.1).
+    """One model of the zoo.
 
     ``grid`` set to a mapping means the model is tuned over that small grid exhaustively
     instead of by TPE (``{}`` = not tuned at all; the baselines). ``early_stopping_rounds``
     set means the harness fits the final step with early stopping on each inner validation
-    fold during tuning and refits with the mean best number of rounds (boosting, §11.2).
+    fold during tuning and refits with the mean best number of rounds (boosting).
     """
 
     name: str
@@ -58,7 +58,7 @@ class ModelSpec:
     early_stopping_rounds: int | None = None
 
     def strategies(self) -> tuple[str, ...]:
-        """The §10 missing-data strategies that apply: M0 only for native-NaN models."""
+        """The missing-data strategies that apply: M0 only for native-NaN models."""
         return MISSING_STRATEGIES if self.handles_nan else MISSING_STRATEGIES[1:]
 
 
@@ -136,7 +136,7 @@ def make_preprocessor(
     spline_columns: Sequence[str] = (),
     columns: Sequence[str] | None = None,
 ) -> ColumnTransformer:
-    """The in-fold preprocessing ColumnTransformer for one model (spec §9.3, §10).
+    """The in-fold preprocessing ColumnTransformer for one model.
 
     Numerics: M0 raw (NaN passed through); M1 median; M2 ``IterativeImputer`` over the
     numeric columns (single imputation). Categoricals: M0 kept missing; M1/M2 mode. Both

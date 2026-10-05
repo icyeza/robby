@@ -41,7 +41,7 @@ def commit_rule(repo: Path, text: str = "version: 1\n") -> str:
 
 
 def test_preregistration_guard(tmp_path: Path) -> None:
-    """Spec §22: a real-data run refuses when the rule is absent from HEAD or modified."""
+    """A real-data run refuses when the rule is absent from HEAD or modified."""
     init_repo(tmp_path)
     with pytest.raises(PreregistrationError, match="not committed"):
         check_preregistration(tmp_path)

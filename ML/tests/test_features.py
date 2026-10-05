@@ -168,7 +168,7 @@ def test_build_raw_features_maps_raw_columns(tmp_path: Path) -> None:
 
 
 def test_committed_registry_drops_onset_features_v13() -> None:
-    """Spec v1.3: onset is excluded (outcome-contaminated); Robson group is onset-free."""
+    """Onset is excluded (outcome-contaminated); Robson group is onset-free."""
     registry = load_feature_registry(Path("configs/features_v1.yaml"))
     entries = {e.name: e for e in registry.entries}
     onset = entries["onset_of_labour"]

@@ -69,7 +69,7 @@ def _models(result: RunResult) -> list[object]:
 
 
 def test_no_facility_in_loho(runs: dict[str, RunResult], data: ModelData) -> None:
-    """Spec §22: facility_id is absent from the features of every S1/S2 run."""
+    """facility_id is absent from the features of every S1/S2 run."""
     for split in ("S1", "S2"):
         for pipe in _models(runs[split]):
             assert FACILITY not in list(pipe.feature_names_in_)  # type: ignore[attr-defined]
@@ -80,7 +80,7 @@ def test_no_facility_in_loho(runs: dict[str, RunResult], data: ModelData) -> Non
 
 
 def test_pipeline_fit_in_fold(runs: dict[str, RunResult], data: ModelData) -> None:
-    """Spec §22: imputers, scalers and encoders hold statistics of the fit rows only."""
+    """Imputers, scalers and encoders hold statistics of the fit rows only."""
     fs = feature_spec(data, "FS4")
     numeric, categorical = list(fs.numeric), list(fs.categorical)
     for fold in runs["S1"].folds:
@@ -109,7 +109,7 @@ def test_pipeline_fit_in_fold(runs: dict[str, RunResult], data: ModelData) -> No
 
 
 def test_excluded_features_never_reach_a_model(runs: dict[str, RunResult], data: ModelData) -> None:
-    """Spec §22: only include features (never facility under S1/S2) reach a fitted model."""
+    """Only include features (never facility under S1/S2) reach a fitted model."""
     allowed = allowed_columns(load_feature_registry(REGISTRY))
     for result in runs.values():
         for pipe in _models(result):
@@ -186,7 +186,7 @@ def test_run_outputs(runs: dict[str, RunResult], ctx: RunContext) -> None:
 
 
 def test_determinism(data: ModelData, ctx: RunContext) -> None:
-    """Spec §22: the same config and seed produce identical metrics."""
+    """The same config and seed produce identical metrics."""
     config = replace(BASE, model="xgboost", feature_set="FS1", missing_strategy="M0")
     first = run_experiment(config, data, ctx)
     second = run_experiment(config, data, ctx)
@@ -217,7 +217,7 @@ def test_compare_has_no_counts(runs: dict[str, RunResult], ctx: RunContext, tmp_
 def test_compare_keeps_only_current_population_version(
     runs: dict[str, RunResult], tmp_path: Path
 ) -> None:
-    """Spec v1.3: runs without the tag (pre-v1.3) or with another version are left out."""
+    """Runs without the tag (pre-v1.3) or with another version are left out."""
     import mlflow
 
     from robson_ml.evaluate import EXPERIMENT_NAME

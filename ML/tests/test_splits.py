@@ -35,7 +35,7 @@ def _keys(df: pd.DataFrame, idx: np.ndarray) -> set[str]:
 
 
 def test_splits_no_leak(df: pd.DataFrame) -> None:
-    """Spec §22: for S1 and S2 no held-out-facility row is in fit, tuning or calibration."""
+    """For S1 and S2 no held-out-facility row is in fit, tuning or calibration."""
     folds = loho_folds(df, SEED)
     assert sorted(f.name for f in folds) == [
         f"loho_{h}" for h in ["FAC_A", "FAC_B", "FAC_C", "FAC_D"]

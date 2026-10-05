@@ -1,4 +1,4 @@
-"""A complete synthetic project directory, laid out like the real one (spec §3.5, §20).
+"""A complete synthetic project directory, laid out like the real one.
 
 Used by the pipeline notebook in synthetic mode and by its tests. Nothing here is derived
 from real records: the raw export is built from :func:`tests.synthetic.make_admissions`

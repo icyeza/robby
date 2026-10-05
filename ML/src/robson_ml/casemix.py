@@ -1,4 +1,4 @@
-"""Case-mix adjustment of facility CS rates (spec §15.2, RQ1).
+"""Case-mix adjustment of facility CS rates (RQ1).
 
 Run on ``P_audit`` with statsmodels ``Logit``:
 
@@ -8,7 +8,7 @@ Run on ``P_audit`` with statsmodels ``Logit``:
   data (only when the C-Model reference file lists them; never guessed).
 
 The Robson term uses the full classification (groups 1-10, the 6/7/9 non-cephalic row and the
-residual as their own levels). Because onset is often coded retrospectively (spec v1.3), the
+residual as their own levels). Because onset is often coded retrospectively, the
 models are repeated with groups 1+2 and 3+4 merged as a sensitivity analysis.
 
 A Robson level with no outcome variation (every woman had a CS, or none did) is perfectly
@@ -63,7 +63,7 @@ DEFAULT_N_BOOT = 2000
 AGE_COLUMN = "maternal_age"
 SPLINE_KNOTS = 4
 MISSING_LEVEL = "(missing)"
-# Never adjusted for: outcome-side, outcome-contaminated (onset, spec v1.3) or the exposure.
+# Never adjusted for: outcome-side, outcome-contaminated (onset) or the exposure.
 EXCLUDED_COVARIATES = frozenset(
     {
         "cs",
@@ -353,7 +353,7 @@ class CaseMixResult:
     def to_markdown(self) -> str:
         tables = self.published()
         lines = [
-            "# Case-mix adjustment of facility CS rates (RQ1, spec §15.2)",
+            "# Case-mix adjustment of facility CS rates (RQ1)",
             "",
             f"> {self.statement}",
             "",
@@ -364,7 +364,7 @@ class CaseMixResult:
             "",
             f"- Robson classifications: `{FULL}` (primary: groups 1-10, the 6/7/9 non-cephalic "
             f"row and the residual as levels) and `{MERGED}` (sensitivity: groups 1+2 and 3+4 "
-            "merged, since onset is often coded retrospectively, spec v1.3).",
+            "merged, since onset is often coded retrospectively).",
             "- Levels with no outcome variation (left out of adjusted models): "
             + "; ".join(f"{k}: {v or 'none'}" for k, v in self.separated.items()),
             f"- M_adj2 covariates beyond age: {self.covariates or 'none'}.",

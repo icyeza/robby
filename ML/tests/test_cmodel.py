@@ -1,4 +1,4 @@
-"""WHO C-Model (spec §15.4, §22): no fallback, not applicable when a variable is absent,
+"""WHO C-Model: no fallback, not applicable when a variable is absent,
 exact arithmetic on toy data. Coefficients here are FAKE fixtures."""
 
 import math

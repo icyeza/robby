@@ -1,4 +1,4 @@
-"""B0: predict the training prevalence (spec §12.2; the Brier reference). Not tuned."""
+"""B0: predict the training prevalence (the Brier reference). Not tuned."""
 
 from __future__ import annotations
 

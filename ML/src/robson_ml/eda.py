@@ -1,4 +1,4 @@
-"""Aggregate exploratory-data-analysis helpers with small-cell protection (spec §3, §7).
+"""Aggregate exploratory-data-analysis helpers with small-cell protection.
 
 Every function returns an aggregate table safe to display: counts of 1-4 never appear.
 Histograms merge sparse bins instead of hiding them (so nothing is recoverable by
@@ -337,7 +337,7 @@ def calibration_bins(
 
 def prelabour_onset_share(audit: pd.DataFrame, period: str = "M") -> pd.DataFrame:
     """Among CS in ``P_audit``: the share coded with onset "pre-labour CS", by facility and
-    delivery period (spec v1.3 evidence that onset is coded retrospectively), suppressed.
+    delivery period (evidence that onset is coded retrospectively), suppressed.
 
     ``period`` is a pandas period alias for ``delivery_date`` (``"M"``: month). Rows with a
     missing onset are left out of the denominator.

@@ -35,7 +35,7 @@ def _subgroup(
 
 
 def classify(inputs: RobsonInputs, rule_set: RuleSet) -> ClassificationResult:
-    """Classify one admission (spec §6.2).
+    """Classify one admission.
 
     A condition over a missing input is ``unknown``; over a coarse input (a presentation set
     or a GA interval) it is ``true`` if it holds for every allowed value, ``false`` if for none,

@@ -15,7 +15,7 @@ InputValue = int | float | str | None
 CoarseValue = frozenset[str] | tuple[float, float]
 
 PRESENTATIONS: frozenset[str] = frozenset({"cephalic", "breech", "transverse", "oblique"})
-# Coarse presentation codes (spec v1.2 §6.2): each stands for a set of precise presentations.
+# Coarse presentation codes: each stands for a set of precise presentations.
 # Rule sets may only reference precise values; inputs may carry either.
 COARSE_PRESENTATIONS: Mapping[str, frozenset[str]] = MappingProxyType(
     {"non_cephalic": frozenset({"breech", "transverse", "oblique"})}
@@ -55,7 +55,7 @@ def _validated_ga_range(raw: object) -> tuple[float, float]:
 class RobsonInputs:
     """The six Robson inputs for one admission; ``None`` means not recorded.
 
-    Two inputs may be recorded *coarsely* (spec v1.2 §6.2):
+    Two inputs may be recorded *coarsely*:
 
     * ``fetal_presentation`` may be a key of :data:`COARSE_PRESENTATIONS` (``"non_cephalic"``)
       instead of a precise value; it then stands for every presentation in that set.
@@ -162,7 +162,7 @@ class ConditionTrace:
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    """Engine output (spec §6.1). Sequences are tuples so the result is immutable."""
+    """Engine output. Sequences are tuples so the result is immutable."""
 
     status: Status
     group: int | None

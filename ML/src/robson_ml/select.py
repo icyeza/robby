@@ -1,4 +1,4 @@
-"""Pre-registered model selection (spec §13.3) and read-only access to tracked runs.
+"""Pre-registered model selection and read-only access to tracked runs.
 
 :func:`load_runs` reads the harness runs of the current population version from the local
 MLflow store (params, tags and metrics; never artefacts with rows). :func:`select_configuration`
@@ -62,7 +62,7 @@ def load_runs(
     configuration params, provenance tags and every logged metric (by metric name).
 
     With ``latest_only`` a configuration run more than once keeps only its latest run.
-    Runs without the population-version tag predate spec v1.3 and are left out.
+    Runs without the population-version tag predate v1.3 and are left out.
     """
     import mlflow
 
@@ -149,7 +149,7 @@ def run_artifact_table(tracking_uri: str, run_id: str, name: str) -> pd.DataFram
 
 @dataclass(frozen=True)
 class SelectionRule:
-    """``configs/selection_rule.yaml`` (spec §13.3), parsed."""
+    """``configs/selection_rule.yaml``, parsed."""
 
     version: int
     split: str

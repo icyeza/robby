@@ -1,4 +1,4 @@
-"""Analysis populations (spec §4.4, redefined in spec v1.3).
+"""Analysis populations (population definition v1.3).
 
 ``P_pred`` (v1.3) is ``P_audit`` minus the admissions with a CS already planned at admission:
 CS typed elective/planned, and "Planned C-section"-onset admissions that delivered vaginally.
@@ -16,7 +16,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Tagged on every harness run; comparisons use only runs of the current version (spec v1.3).
+# Tagged on every harness run; comparisons use only runs of the current version.
 POPULATION_VERSION = "v1.3"
 P_PRED = "P_pred"
 P_PRED_ONSET_CODED = "P_pred_onset_coded"
@@ -36,7 +36,7 @@ class ExclusionLog:
 
 
 def audit_population(df: pd.DataFrame) -> tuple[pd.DataFrame, ExclusionLog]:
-    """P_audit: all rows with a non-missing outcome (spec §4.2, §4.4)."""
+    """P_audit: all rows with a non-missing outcome."""
     keep = df["cs"].notna()
     log = ExclusionLog(REASON_MISSING_OUTCOME, int((~keep).sum()), int(keep.sum()))
     return df[keep].copy(), log
@@ -59,7 +59,7 @@ def untyped_cs_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def prediction_population(df: pd.DataFrame) -> tuple[pd.DataFrame, list[ExclusionLog]]:
-    """P_pred (spec v1.3): ``P_audit`` minus admissions with a CS planned at admission.
+    """P_pred (v1.3): ``P_audit`` minus admissions with a CS planned at admission.
 
     Removes rows with a missing outcome, CS typed planned (whatever their onset) and
     "Planned C-section"-onset admissions that delivered vaginally. CS with no recorded type
@@ -88,7 +88,7 @@ def prediction_population(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Exclusio
 def onset_coded_population(df: pd.DataFrame) -> tuple[pd.DataFrame, list[ExclusionLog]]:
     """P_pred_onset_coded: the v1.2 ``P_pred``, ``onset_of_labour`` in {spontaneous, induced}.
 
-    Sensitivity population only (spec v1.3 item 4): onset is often coded retrospectively,
+    Sensitivity population only: onset is often coded retrospectively,
     so this definition silently drops most in-labour CS. ``df`` is assumed to already be
     ``P_audit``. Excluded rows are split out by reason: planned pre-labour CS, emergency
     pre-labour CS, pre-labour CS of unknown type, and a missing onset altogether.
@@ -112,14 +112,14 @@ def onset_coded_population(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Exclusi
 
 
 def sensitivity_population(df: pd.DataFrame) -> tuple[pd.DataFrame, list[ExclusionLog]]:
-    """P_pred_sens: ``P_pred_onset_coded`` union emergency pre-labour CS rows (spec §4.4).
+    """P_pred_sens: ``P_pred_onset_coded`` union emergency pre-labour CS rows.
 
     Superseded by the v1.3 ``P_pred``, which already keeps emergency pre-labour CS; kept for
     existing callers and built on the v1.2 onset-coded population it was defined against.
 
     Onset is not recorded as "what was known at admission" anywhere in the export, so for
     the added emergency-pre-labour-CS rows ``onset_of_labour`` is set to missing (NA) rather
-    than guessed; this is a deliberate simplification of the spec's wording, since the data
+    than guessed; this is a deliberate simplification of the original definition, since the data
     cannot support recoding to a specific admission-time onset. ``onset_of_labour`` must
     therefore be dropped from any feature set built on ``P_pred_sens`` in the analysis (it
     would otherwise be missing for exactly the added rows, which is itself leakage).

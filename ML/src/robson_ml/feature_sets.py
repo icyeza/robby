@@ -1,6 +1,6 @@
-"""Model input frames, the FS0-FS4 feature sets and their ``_deploy`` variants (spec §9, §4.5).
+"""Model input frames, the FS0-FS4 feature sets and their ``_deploy`` variants.
 
-Only registry ``status: include`` features reach a model (spec §8.1): the input frame holds
+Only registry ``status: include`` features reach a model: the input frame holds
 the included canonical columns, the included derived columns (``bmi``,
 ``robson_group_no_onset``, ``is_missing_<field>``) and the included raw extra features, plus
 ``facility_id``, which is used only by the deploy variants (``FS<k>_deploy`` = ``FS<k>`` plus
@@ -8,13 +8,13 @@ the included canonical columns, the included derived columns (``bmi``,
 row-wise and stateless (dtype normalisation and derivations); every fitted transformation
 (imputation, encoding, scaling) happens inside the model Pipeline, within folds.
 
-Spec v1.3: the onset field is outcome-contaminated (coded retrospectively), so
+The onset field is outcome-contaminated (coded retrospectively), so
 ``onset_of_labour`` and the onset-based ``robson_group`` never reach a model built on
 ``P_pred``. The Robson feature is ``robson_group_no_onset``: the engine run with onset
 forced to missing, groups 1+2 merged to ``"1_2"`` and 3+4 to ``"3_4"``. The only exception
 is the sensitivity population ``P_pred_onset_coded``, whose model data is built with
 ``legacy_onset=True``: ``robson_group_no_onset`` is then replaced by the v1.2 pair
-``onset_of_labour`` + ``robson_group`` (the onset-coded analysis of spec v1.3 item 4).
+``onset_of_labour`` + ``robson_group`` (the onset-coded sensitivity analysis).
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ P_PRED_COMPLETE = "P_pred_complete"
 BASE_POPULATIONS = (P_PRED, P_PRED_ONSET_CODED)
 POPULATIONS = (*BASE_POPULATIONS, P_PRED_COMPLETE)
 ROBSON_NO_ONSET = "robson_group_no_onset"
-# Outcome-contaminated (spec v1.3): in model data only for P_pred_onset_coded (legacy_onset).
+# Outcome-contaminated: in model data only for P_pred_onset_coded (legacy_onset).
 LEGACY_ONSET_COLUMNS = ("onset_of_labour", "robson_group")
 NO_ONSET_MERGES: dict[frozenset[int], str] = {
     frozenset({1, 2}): "1_2",
@@ -76,7 +76,7 @@ BASE_FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "FS4": GROUP_ORDER[:5],
 }
 DEPLOY_SUFFIX = "_deploy"
-# Every base set has a deploy variant: the same groups plus facility_id (spec §9.2, §13.4).
+# Every base set has a deploy variant: the same groups plus facility_id.
 FEATURE_SETS: dict[str, tuple[str, ...]] = {
     **BASE_FEATURE_SETS,
     **{f"{name}{DEPLOY_SUFFIX}": groups for name, groups in BASE_FEATURE_SETS.items()},
@@ -103,7 +103,7 @@ class FeatureSpec:
     """The columns a model may read for one feature set, partitioned by encoding type.
 
     ``ordinal`` holds numerically coded ordered categories (none in features_v1: the only
-    one the spec names, proteinuria, is absent from the export, v1.2).
+    candidate, proteinuria, is absent from the export).
     """
 
     name: str
@@ -123,8 +123,8 @@ class ModelData:
     (categorical or numeric) and ``groups`` each column's feature group.
     ``exclusion_table`` holds, per category excluded from (or kept but counted in) the
     population, the rows and CS rows removed, the rows kept, and the CS total of ``P_audit``
-    (raw counts: suppress before any export; spec §4.4 reporting obligation).
-    ``legacy_onset`` marks the onset-coded sensitivity features (spec v1.3).
+    (raw counts: suppress before any export; exclusions must be reported).
+    ``legacy_onset`` marks the onset-coded sensitivity features.
     """
 
     population: str
@@ -176,7 +176,7 @@ def _no_onset_label(result: ClassificationResult) -> str:
 
 
 def robson_group_no_onset(frame: pd.DataFrame, rule_set: RuleSet | None = None) -> pd.Series:
-    """The Robson group computed without onset (spec v1.3 item 3), as a string category.
+    """The Robson group computed without onset, as a string category.
 
     Each row is classified by the engine with ``onset_of_labour`` forced to missing (the GA
     band is used when the exact GA is missing, as in :func:`inputs_from_record`). Resolved
@@ -257,7 +257,7 @@ def build_model_data(
     legacy_onset: bool | None = None,
     rule_set: RuleSet | None = None,
 ) -> ModelData:
-    """Assemble the model input frame for ``population`` (spec §4.4, §9, v1.3).
+    """Assemble the model input frame for ``population``.
 
     Inputs: the canonical frame with the Robson engine's columns (``canonical_robson``);
     the registry; ``raw_features`` from :func:`build_raw_features`, aligned with
@@ -282,7 +282,8 @@ def build_model_data(
     if contaminated:
         raise ValueError(
             f"{contaminated} must not be include features: onset is outcome-contaminated "
-            "(spec v1.3); the onset-coded sensitivity analysis adds them via legacy_onset"
+            "(coded retrospectively); the onset-coded sensitivity analysis adds them via "
+            "legacy_onset"
         )
     raw_entries = [e for e in included if e.source == "raw"]
     absent = [e.name for e in raw_entries if e.name not in raw_features.columns]
@@ -399,10 +400,10 @@ def complete_cases(data: ModelData, feature_set: str) -> ModelData:
 
 
 def feature_spec(data: ModelData, name: str) -> FeatureSpec:
-    """The FeatureSpec for feature set ``name`` over ``data`` (spec §9.2).
+    """The FeatureSpec for feature set ``name`` over ``data``.
 
-    FS0-FS4 never contain ``facility_id`` (spec §4.5); each ``FS<k>_deploy`` is ``FS<k>``
-    plus it. In v1.2 G_context holds no feature other than facility, so FS4 equals FS3.
+    FS0-FS4 never contain ``facility_id``; each ``FS<k>_deploy`` is ``FS<k>``
+    plus it. G_context currently holds no feature other than facility, so FS4 equals FS3.
     """
     if name not in FEATURE_SETS:
         raise ValueError(f"unknown feature set {name!r}; expected one of {list(FEATURE_SETS)}")

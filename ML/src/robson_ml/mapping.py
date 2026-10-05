@@ -1,4 +1,4 @@
-"""Map raw export columns to the canonical schema (spec §5) via configs/mapping_ur_cmhs.yaml.
+"""Map raw export columns to the canonical schema via configs/mapping_ur_cmhs.yaml.
 
 Nothing is guessed. Every present raw value ends up in exactly one bucket, and every bucket
 is counted in the report: mapped, explicitly recorded as missing (a level mapped to ``~``),
@@ -7,7 +7,7 @@ unparsed (cannot be converted without guessing, including category labels absent
 are listed for human decision. Reports and error messages never contain cell values.
 
 The raw patient identifier never enters canonical data: ``mother_key`` can only be produced
-by the ``hash_key`` kind, a salted one-way hash (spec v1.2 §5).
+by the ``hash_key`` kind, a salted one-way hash.
 """
 
 from __future__ import annotations
@@ -662,7 +662,7 @@ def _map_category(labels: pd.Series, spec: FieldMapping, report: FieldReport) ->
 def _map_integer_sum(
     columns: list[pd.Series], spec: FieldMapping, report: FieldReport, present: pd.Series
 ) -> pd.Series:
-    """Sum >=2 raw columns (spec §derived counts): each cell is parsed like ``integer`` after
+    """Sum >=2 raw columns (derived counts): each cell is parsed like ``integer`` after
     applying ``levels`` (a top-code label -> non-negative int, or ``~`` for explicit missing).
 
     Per row: unparseable present cell -> unparsed (wins over blank/missing-level cells in the
@@ -783,11 +783,11 @@ def _map_one(
 def map_field(
     raw: pd.DataFrame, spec: FieldMapping, *, salt: bytes | None = None
 ) -> tuple[pd.Series, FieldReport]:
-    """Map one field from ``raw`` per ``spec``, with its :class:`FieldReport` (spec §8.1).
+    """Map one field from ``raw`` per ``spec``, with its :class:`FieldReport`.
 
     Public entry point to the same per-field mapping machinery :func:`apply_mapping` uses,
     for building feature columns that are not part of the canonical schema (the feature
-    registry, spec §8.1). Keeps the same counting guarantees as :func:`apply_mapping`.
+    registry). Keeps the same counting guarantees as :func:`apply_mapping`.
     """
     report = FieldReport(spec.canonical, list(spec.raw), spec.kind, spec.status, spec.note)
     series = _map_one(raw, spec, report, salt)

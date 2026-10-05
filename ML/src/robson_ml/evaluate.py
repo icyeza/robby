@@ -1,11 +1,11 @@
-"""The evaluation harness (spec §11): tune, fit, calibrate and evaluate one configuration.
+"""The evaluation harness: tune, fit, calibrate and evaluate one configuration.
 
 One configuration = (model, feature set, missing strategy, split scheme, population, seed,
 Optuna trials). For every fold of the split scheme:
 
 1. tune by Optuna TPE (seeded; ``n_trials``) on the inner-CV mean log loss over
    ``fold.tuning`` (grid-tuned baselines use their tiny grid; B0/B1 are not tuned; boosting
-   early-stops on each inner validation fold, §11.2);
+   early-stops on each inner validation fold);
 2. refit on ``fold.fit_idx`` with the best parameters (all preprocessing inside the
    Pipeline, so it is fitted on those rows only);
 3. calibrate on ``fold.calib_idx`` only (:func:`robson_ml.calibration.calibrate`);
@@ -13,10 +13,10 @@ Optuna trials). For every fold of the split scheme:
    refits the intercept on the first 150 rows (logit(p) as a fixed offset) and evaluates the
    rest; intercept-plus-slope recalibration is reported as a secondary variant.
 
-Metrics per fold, their mean and range, pooled out-of-fold metrics (spec §11.6), and pooled
-subgroups (facility, onset-free Robson group, nulliparous vs multiparous; §11.4) are logged
-to a local MLflow file store with the plots and tags of spec §19, including the population
-version (spec v1.3); :func:`comparison_table` keeps only runs of the current version.
+Metrics per fold, their mean and range, pooled out-of-fold metrics, and pooled
+subgroups (facility, onset-free Robson group, nulliparous vs multiparous) are logged
+to a local MLflow file store with the plots and provenance tags, including the population
+version; :func:`comparison_table` keeps only runs of the current version.
 Out-of-fold predictions (row ids, y, p, fold) go to ``<oof_dir>/<run_id>.parquet``, never to
 MLflow. Nothing here recommends a mode of delivery: outputs are probabilities of CS under
 current practice.
@@ -94,7 +94,7 @@ OPTIONAL_KEYS = frozenset({"n_boot", "name"})
 
 @dataclass(frozen=True)
 class ExperimentConfig:
-    """One harness run, as declared in ``configs/experiments/*.yaml`` (spec §19)."""
+    """One harness run, as declared in ``configs/experiments/*.yaml``."""
 
     model: str
     feature_set: str
@@ -121,7 +121,7 @@ def expand_experiments(doc: Mapping[str, Any]) -> list[ExperimentConfig]:
     """Expand one experiment document: any key may hold a list (a grid; cartesian product).
 
     Combinations whose missing strategy does not apply to the model (M0 without native NaN
-    handling, spec §10) are skipped. Raises ValueError on unknown keys, unknown values, or a
+    handling) are skipped. Raises ValueError on unknown keys, unknown values, or a
     grid that expands to nothing.
     """
     unknown = set(doc) - CONFIG_KEYS - OPTIONAL_KEYS
@@ -158,7 +158,7 @@ def load_experiments(path: Path) -> list[ExperimentConfig]:
     """Read and expand a ``configs/experiments/*.yaml`` file.
 
     The file may hold several YAML documents (separated by ``---``); each is expanded on its
-    own, so a file can pair grids that must not be crossed (e.g. B1 once, P0 per strategy).
+    own, so a file can pair grids that must not be crossed (e.g. B1 once, main models per strategy).
     """
     docs = [d for d in yaml.safe_load_all(path.read_text(encoding="utf-8")) if d is not None]
     if not docs or not all(isinstance(doc, dict) for doc in docs):
@@ -167,7 +167,7 @@ def load_experiments(path: Path) -> list[ExperimentConfig]:
 
 
 def validate_config(config: ExperimentConfig) -> None:
-    """Reject unknown values and ``facility_id`` (a ``*_deploy`` set) under S1/S2/S4 (§4.5)."""
+    """Reject unknown values and ``facility_id`` (a ``*_deploy`` set) under S1/S2/S4."""
     get_model(config.model)
     if config.population not in POPULATIONS:
         raise ValueError(f"unknown population {config.population!r}; expected one of {POPULATIONS}")
@@ -178,7 +178,7 @@ def validate_config(config: ExperimentConfig) -> None:
     if is_deploy_set(config.feature_set) and config.split not in DEPLOY_EVAL_SPLITS:
         raise ValueError(
             f"facility_id ({config.feature_set}) is a feature only under S3 (evaluation) or "
-            "S5 (deployment fit, robson-ml fit-deploy); never under S1/S2/S4 (spec §4.5)"
+            "S5 (deployment fit, robson-ml fit-deploy); never under S1/S2/S4"
         )
     if config.n_trials < 1 or config.n_boot < 1:
         raise ValueError("n_trials and n_boot must be positive")
@@ -186,7 +186,7 @@ def validate_config(config: ExperimentConfig) -> None:
 
 @dataclass(frozen=True)
 class RunContext:
-    """Where a run is tracked and the provenance tags it carries (spec §19)."""
+    """Where a run is tracked and the provenance tags it carries."""
 
     tracking_uri: str
     oof_dir: Path
@@ -268,7 +268,7 @@ def tune(
     y: npt.NDArray[np.int64],
     tuning: Sequence[tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]],
 ) -> dict[str, Any]:
-    """Best hyperparameters by inner-CV mean log loss over ``tuning`` (spec §11.2).
+    """Best hyperparameters by inner-CV mean log loss over ``tuning``.
 
     TPE with a fixed seed and ``config.n_trials`` trials; a model with a ``grid`` is tuned
     exhaustively over it (``{}``: nothing to tune). For early-stopped models the returned
@@ -314,7 +314,7 @@ def _sigmoid(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
 def recalibrate(
     p_recal: npt.ArrayLike, y_recal: npt.ArrayLike, p_eval: npt.ArrayLike
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    """S2 local recalibration (spec §11.1): (intercept-only, intercept-plus-slope) updates.
+    """S2 local recalibration: (intercept-only, intercept-plus-slope) updates.
 
     Intercept only: ``logit q = a + logit(p)`` with ``a`` fitted on the recalibration rows
     (logit(p) as a fixed offset). Secondary: ``logit q = a + b * logit(p)``.
@@ -359,7 +359,7 @@ def metric_key(name: str) -> str:
 def _summarise(
     per_fold: Mapping[str, Mapping[str, Any]], pooled: Mapping[str, Any], prefix: str = ""
 ) -> dict[str, float]:
-    """Per-fold, mean, min/max (range) and pooled scalar metrics (spec §11.6)."""
+    """Per-fold, mean, min/max (range) and pooled scalar metrics."""
     out: dict[str, float] = {}
     for metric in SUMMARY_METRICS:
         values = np.array([float(m[metric]) for m in per_fold.values()])
@@ -386,9 +386,9 @@ def _subgroups(
     p: npt.NDArray[np.float64],
     config: ExperimentConfig,
 ) -> dict[str, dict[str, Any]]:
-    """Pooled out-of-fold metrics per facility, Robson group and parity (spec §11.4).
+    """Pooled out-of-fold metrics per facility, Robson group and parity.
 
-    The Robson subgroup is the onset-free group (spec v1.3), whatever the population.
+    The Robson subgroup is the onset-free group, whatever the population.
     """
     frame = pd.DataFrame(
         {
@@ -404,7 +404,7 @@ def _subgroups(
 
 
 def _subgroup_table(subgroups: Mapping[str, Mapping[str, Any]]) -> pd.DataFrame:
-    """Subgroup metrics as a table: levels below the §11.4 thresholds say ``insufficient``."""
+    """Subgroup metrics as a table: levels below the minimum counts say ``insufficient``."""
     rows = []
     for by, levels in subgroups.items():
         for level, metrics in levels.items():
@@ -418,7 +418,7 @@ def _subgroup_table(subgroups: Mapping[str, Mapping[str, Any]]) -> pd.DataFrame:
 
 
 def _exclusion_report(table: pd.DataFrame) -> list[dict[str, Any]]:
-    """§4.4 exclusion (and kept-but-counted) counts, small cells suppressed, share of all CS."""
+    """Population exclusion (and kept-but-counted) counts, small cells suppressed, share of CS."""
     out = []
     for row in table.to_dict("records"):
         n_cs, n_cs_audit = int(row["n_cs_excluded"]), int(row["n_cs_audit"])
@@ -457,10 +457,10 @@ def run_experiment(config: ExperimentConfig, data: ModelData, ctx: RunContext) -
         raise ValueError(f"{config.model} does not support {config.missing_strategy}")
     fs = feature_spec(data, config.feature_set)
     if config.split not in DEPLOY_EVAL_SPLITS and FACILITY in fs.columns:
-        raise AssertionError("facility_id must never be a feature under S1/S2/S4 (spec §4.5)")
+        raise AssertionError("facility_id must never be a feature under S1/S2/S4")
     x = data.x[list(fs.columns)]
     random.seed(config.seed)
-    np.random.seed(config.seed)  # legacy global seed, fixed per run (spec §19)
+    np.random.seed(config.seed)  # legacy global seed, fixed per run
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     groups = mother_groups(data.meta)
@@ -623,9 +623,9 @@ def find_completed_run(config: ExperimentConfig, ctx: RunContext) -> str | None:
 def comparison_table(tracking_uri: str) -> pd.DataFrame:
     """One row per finished harness run of the current population version: metrics only.
 
-    Spec v1.3: only runs tagged ``population_version`` equal to :data:`POPULATION_VERSION`
+    Only runs tagged ``population_version`` equal to :data:`POPULATION_VERSION`
     are compared; runs without the tag predate v1.3 (onset-defined ``P_pred``) and are left
-    out, as are runs of any other version. No counts (spec §11.5).
+    out, as are runs of any other version. No counts.
     """
     import mlflow
 

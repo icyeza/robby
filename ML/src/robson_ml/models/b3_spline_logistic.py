@@ -1,6 +1,6 @@
-"""B3: L2 logistic regression with splines on FS4 (spec §12.2; clinical-prediction baseline).
+"""B3: L2 logistic regression with splines on FS4 (clinical-prediction baseline).
 
-C from the tiny ``BASELINE_C_GRID``; maternal age and GA get 4-knot spline terms (§9.3).
+C from the tiny ``BASELINE_C_GRID``; maternal age and GA get 4-knot spline terms.
 """
 
 from __future__ import annotations

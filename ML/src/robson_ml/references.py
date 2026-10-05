@@ -1,10 +1,10 @@
 """Published reference values: Vogel 2015 Robson set, WHO C-Model, prevalence priors.
 
-Spec §15.4, §15.5 and §15.3 (v1.2). **No reference value is ever estimated, approximated
+**No reference value is ever estimated, approximated
 or invented in this repository.** Each file below is transcribed by hand from the cited
 source, with the exact table, supplement or calculator page of every value. When a file is
 absent the loader raises :class:`ReferenceDataMissing`, naming the expected path and schema;
-there is no fallback (spec §22, ``test_cmodel_no_fallback``). Tests build their own files in
+there is no fallback (``test_cmodel_no_fallback``). Tests build their own files in
 temporary directories, labelled as fake.
 
 Files live under ``data/reference/`` (the only part of ``data/`` that may be committed).
@@ -33,7 +33,7 @@ SIZE_SUM_TOLERANCE_PCT = 2.0
 TERM_KINDS = ("indicator", "linear")
 
 VOGEL_SCHEMA = """\
-# data/reference/vogel2015_v1.yaml (spec §15.5): transcribe, never estimate.
+# data/reference/vogel2015_v1.yaml: transcribe, never estimate.
 citation: <full citation: Vogel JP et al. 2015, Lancet Glob Health 3(5):e260-e270>
 version: v1
 source_table: <table number in the paper, e.g. "Table N">
@@ -47,7 +47,7 @@ groups:                           # all ten Robson groups, percentages (0-100)
 """
 
 CMODEL_SCHEMA = """\
-# data/reference/cmodel_v1.yaml (spec §15.4): transcribe, never estimate or approximate.
+# data/reference/cmodel_v1.yaml: transcribe, never estimate or approximate.
 citation: <full citation: Souza JP et al. 2016, BJOG 123(3):427-436>
 version: v1
 link: logit
@@ -67,7 +67,7 @@ terms:                # one entry per coefficient
 """
 
 PREVALENCE_SCHEMA = """\
-# data/reference/prevalence_v1.yaml (spec §15.3 v1.2): assumed TRUE prevalence grid for the
+# data/reference/prevalence_v1.yaml: assumed TRUE prevalence grid for the
 # under-recording sensitivity analysis, anchored on published (regional) prevalence.
 version: v1
 conditions:
@@ -90,8 +90,8 @@ SCHEMAS = {
 }
 
 
-class ReferenceDataMissing(FileNotFoundError):  # noqa: N818 (name fixed by the task spec)
-    """A reference file is absent. Nothing is estimated in its place (spec §15.4)."""
+class ReferenceDataMissing(FileNotFoundError):  # noqa: N818 (established public name)
+    """A reference file is absent. Nothing is estimated in its place."""
 
 
 class ReferenceSchemaError(ValueError):
@@ -159,7 +159,7 @@ class VogelGroup:
 
 @dataclass(frozen=True)
 class VogelReference:
-    """The Vogel et al. (2015) reference set (spec §15.5)."""
+    """The Vogel et al. (2015) reference set."""
 
     citation: str
     version: str
@@ -243,7 +243,7 @@ class CModelTerm:
 
 @dataclass(frozen=True)
 class CModelReference:
-    """WHO C-Model coefficients (spec §15.4). ``variables`` maps each C-Model variable to
+    """WHO C-Model coefficients. ``variables`` maps each C-Model variable to
     the analysis-frame column holding it, or ``None`` when the data has no such column."""
 
     citation: str
@@ -357,7 +357,7 @@ class ConditionPrior:
 
 @dataclass(frozen=True)
 class PrevalenceReference:
-    """Prevalence grids for the under-recording sensitivity analysis (spec §15.3 v1.2)."""
+    """Prevalence grids for the under-recording sensitivity analysis."""
 
     version: str
     conditions: Mapping[str, ConditionPrior]

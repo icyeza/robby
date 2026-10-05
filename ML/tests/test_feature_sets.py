@@ -45,7 +45,7 @@ def data(registry: FeatureRegistry) -> ModelData:
 
 
 def test_population_filter(data: ModelData) -> None:
-    """Spec v1.3: P_pred drops planned CS and planned-onset vaginal births, keeps the rest."""
+    """P_pred drops planned CS and planned-onset vaginal births, keeps the rest."""
     meta = data.meta
     assert not ((meta["cs"] == 1) & (meta["prelabour_cs_type"] == "planned")).any()
     assert not ((meta["onset_of_labour"] == "prelabour_cs") & (meta["cs"] == 0)).any()
@@ -86,7 +86,7 @@ def test_complete_cases_only_from_p_pred(registry: FeatureRegistry) -> None:
 
 
 def test_onset_never_a_feature_in_p_pred(data: ModelData) -> None:
-    """Spec v1.3: onset_of_labour and the onset-based robson_group never reach a model."""
+    """onset_of_labour and the onset-based robson_group never reach a model."""
     for column in LEGACY_ONSET_COLUMNS:
         assert column not in data.x.columns
         for name in FEATURE_SETS:
@@ -186,7 +186,7 @@ def test_robson_group_no_onset_ignores_onset(data: ModelData) -> None:
 
 
 def test_no_facility_in_loho_feature_sets(data: ModelData) -> None:
-    """Spec §4.5: facility_id is in no FS0-FS4 set, only in FS4_deploy."""
+    """facility_id is in no FS0-FS4 set, only in FS4_deploy."""
     for name in LOHO_SETS:
         assert FACILITY not in feature_spec(data, name).columns
     assert set(FEATURE_SETS) == {*LOHO_SETS, *(f"{name}_deploy" for name in LOHO_SETS)}
@@ -214,7 +214,7 @@ def test_feature_sets_nest_and_partition(data: ModelData) -> None:
 
 
 def test_excluded_features(data: ModelData, registry: FeatureRegistry) -> None:
-    """Spec §22: every model column is an include feature (facility only in FS4_deploy)."""
+    """Every model column is an include feature (facility only in FS4_deploy)."""
     allowed = allowed_columns(registry)
     for name in LOHO_SETS:
         assert set(feature_spec(data, name).columns) <= allowed

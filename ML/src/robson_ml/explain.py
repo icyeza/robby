@@ -1,4 +1,4 @@
-"""Interpretation of a selected configuration (spec §14).
+"""Interpretation of a selected configuration.
 
 The fold models of a logged run are rebuilt without re-tuning (:func:`refit_folds`): the same
 folds (same seed), the tuned hyperparameters logged for each fold, the same in-fold
@@ -9,12 +9,12 @@ each fold's *held-out* rows and summarised globally:
 - SHAP: ``TreeExplainer`` for tree models, otherwise a model-agnostic permutation explainer
   on a sample of at most 500 held-out rows; reported only as mean |SHAP| per input feature
   (no beeswarm or dependence plots: those draw one point per woman);
-- the Robson recovery check (spec §14.3);
+- the Robson recovery check;
 - partial dependence (averaged predictions over a grid; no ICE curves, which are per woman);
-- per-Robson-group AUC against B1 (from the runs' suppressed subgroup tables, §11.4);
-- the deployment model's per-facility log-odds offset (§14.6, aggregate).
+- per-Robson-group AUC against B1 (from the runs' suppressed subgroup tables);
+- the deployment model's per-facility log-odds offset (aggregate).
 
-The one row-level output is :func:`local_explanations` (§14.2): the highest-error S1 cases
+The one row-level output is :func:`local_explanations`: the highest-error S1 cases
 with per-case contributions, for ``data/interim/`` only (``robson-ml explain-local``).
 
 SHAP values explain the model's score (log-odds for trees, calibrated probability for the
@@ -304,7 +304,7 @@ def shap_importance(
 
 @dataclass(frozen=True)
 class RecoveryCheck:
-    """Spec §14.3: does a Robson feature rank in the top ``k`` by importance?"""
+    """Robson recovery check: does a Robson feature rank in the top ``k`` by importance?"""
 
     passed: bool
     top: tuple[str, ...]
@@ -318,7 +318,7 @@ def robson_recovery(
 ) -> RecoveryCheck:
     """Whether ``previous_cs_count`` or ``robson_group_no_onset`` is among the top ``k`` of
     ``importance`` (a Series indexed by input feature). A failure opens a leakage
-    investigation (spec §14.3)."""
+    investigation."""
     top = tuple(importance.sort_values(ascending=False).index[:k])
     found = tuple(f for f in features if f in top)
     return RecoveryCheck(bool(found), top, found)
@@ -382,7 +382,7 @@ def subgroup_comparison(
     labels: tuple[str, str] = ("selected", "B1"),
 ) -> pd.DataFrame:
     """Per-level ``metric`` of two runs' subgroup tables (``subgroups.csv`` artefacts),
-    side by side; levels below the §11.4 minimum counts stay ``"insufficient"``."""
+    side by side; levels below the minimum counts stay ``"insufficient"``."""
 
     def column(table: pd.DataFrame) -> pd.Series:
         rows = table[table["subgroup"] == by].set_index("level")[metric]
@@ -424,7 +424,7 @@ def local_explanations(
     fold_params: Mapping[str, Mapping[str, Any]],
     n: int = LOCAL_N,
 ) -> pd.DataFrame:
-    """Spec §14.2: the ``n`` highest-error S1 out-of-fold cases with per-case contributions.
+    """The ``n`` highest-error S1 out-of-fold cases with per-case contributions.
 
     The run's fold models are rebuilt (:func:`refit_folds`); each held-out row's error is
     ``|y - p|`` (calibrated ``p``); the ``n`` largest (ties by row order) are explained by
@@ -470,7 +470,7 @@ def local_explanations(
 
 
 def facility_contribution(model: CalibratedModel) -> pd.DataFrame:
-    """Spec §14.6: the deployment model's per-facility log-odds offset (aggregate).
+    """The deployment model's per-facility log-odds offset (aggregate).
 
     For a logistic pipeline with one-hot ``facility_id``: each facility level's coefficient
     (the offset on the uncalibrated logit, all else equal) and the same centred on the mean

@@ -16,7 +16,7 @@ from robson_ml.schema import GA_BAND_FIELDS
 
 
 class RobsonValidationError(AssertionError):
-    """The dataset-level engine checks of spec §6.5 failed (message holds counts only)."""
+    """The dataset-level engine checks failed (message holds counts only)."""
 
 
 def _clean(value: object) -> object:
@@ -58,7 +58,7 @@ def inputs_from_record(record: Mapping[str, object]) -> RobsonInputs:
     """Build engine inputs from one canonical record; NaN/NA/None all mean not recorded.
 
     When the exact gestational age is missing and both GA band bounds are recorded, the band
-    is passed as ``gestational_age_range`` (coarse input, spec v1.2 §6.2). A presentation of
+    is passed as ``gestational_age_range`` (coarse input). A presentation of
     ``non_cephalic`` is passed through as the engine's coarse code.
     """
     ga = _as_float(record.get("gestational_age_weeks"))
@@ -80,7 +80,7 @@ def inputs_from_record(record: Mapping[str, object]) -> RobsonInputs:
 
 
 def classify_frame(df: pd.DataFrame, rule_set: RuleSet) -> pd.DataFrame:
-    """Return a copy of ``df`` with the engine's output columns appended (spec §5).
+    """Return a copy of ``df`` with the engine's output columns appended.
 
     The six inputs are required; the GA band columns are used when present.
     """
@@ -108,11 +108,11 @@ def classify_frame(df: pd.DataFrame, rule_set: RuleSet) -> pd.DataFrame:
 
 @dataclass(frozen=True)
 class RobsonValidation:
-    """Dataset-level engine checks (spec §6.5, acceptance criterion 3).
+    """Dataset-level engine checks.
 
     "Complete inputs" means all six inputs recorded *precisely*: a presentation type (not a
     coarse code such as ``non_cephalic``) and an exact gestational age (not only a band). A
-    record with a coarse input may legitimately stay partial (spec v1.2 §6.2), so only
+    record with a coarse input may legitimately stay partial, so only
     complete, precise records must resolve.
 
     Attributes:
@@ -162,7 +162,7 @@ def _coarse_masks(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 
 
 def validate_classification(df: pd.DataFrame) -> RobsonValidation:
-    """Compute the §6.5 checks on a frame returned by :func:`classify_frame`."""
+    """Compute the dataset-level checks on a frame returned by :func:`classify_frame`."""
     status = df["robson_status"]
     resolved = status == "resolved"
     coarse_presentation, band_only = _coarse_masks(df)
@@ -201,7 +201,7 @@ HANDCHECK_COLUMNS = [
 
 
 def handcheck_sample(df: pd.DataFrame, seed: int) -> pd.DataFrame:
-    """Draw the hand-check list of spec §6.5 item 4. The code never adjudicates it.
+    """Draw the list of records to classify by hand. The code never adjudicates it.
 
     Strata: up to 15 random resolved records per group; up to 50 records with GA between
     36+0 and 37+6 weeks; every conflict record. A record in several strata appears once,

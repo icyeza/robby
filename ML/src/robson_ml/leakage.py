@@ -1,4 +1,4 @@
-"""Leakage screens (spec §8.2). These flag variables for human review; they never
+"""Leakage screens. These flag variables for human review; they never
 auto-exclude anything -- exclusion only ever happens by hand in ``features_v1.yaml``.
 """
 
@@ -21,7 +21,7 @@ COMPLETENESS_SHARE_THRESHOLD = 0.9
 TARGET_RATE_PRIOR_STRENGTH = 10.0
 MISSING_LEVEL = "__missing__"
 
-# Case-insensitive substrings (spec §8.2) suggesting post-admission or outcome-side
+# Case-insensitive substrings suggesting post-admission or outcome-side
 # information, plus patterns specific to this export. Matched against names normalised to
 # lowercase with '_' and '-' turned into spaces, so "birth_weight", "birth-weight" and
 # "Birth Weight" are all caught by one entry.
@@ -72,7 +72,7 @@ def _normalize(name: str) -> str:
 
 @dataclass(frozen=True)
 class AucResult:
-    """Leave-one-hospital-out single-feature AUC (spec §8.2 screen 1)."""
+    """Leave-one-hospital-out single-feature AUC (screen 1)."""
 
     mean_auc: float
     """Mean AUC across held-out facilities; NaN if no facility fold could be scored."""
@@ -82,7 +82,7 @@ class AucResult:
 
 @dataclass(frozen=True)
 class CompletenessResult:
-    """Completeness-vs-outcome pattern (spec §8.2 screen 3)."""
+    """Completeness-vs-outcome pattern (screen 3)."""
 
     n_nonmissing_cs1: int
     n_cs1: int
@@ -130,7 +130,7 @@ def _categorical_fold_scores(
 
 
 def loho_single_feature_auc(values: pd.Series, cs: pd.Series, facility: pd.Series) -> AucResult:
-    """Mean leave-one-hospital-out AUC of one candidate variable alone (spec §8.2).
+    """Mean leave-one-hospital-out AUC of one candidate variable alone.
 
     Numeric ``values`` are scored with a logistic model on the value plus a missing
     indicator (median-imputed inside each training fold). Non-numeric ``values`` are
@@ -160,7 +160,7 @@ def loho_single_feature_auc(values: pd.Series, cs: pd.Series, facility: pd.Serie
 
 
 def name_pattern_flags(names: Sequence[str]) -> dict[str, bool]:
-    """Flag variable names matching a post-admission/outcome-side pattern (spec §8.2)."""
+    """Flag variable names matching a post-admission/outcome-side pattern."""
     flags: dict[str, bool] = {}
     for name in names:
         normalized = _normalize(name)
@@ -169,7 +169,7 @@ def name_pattern_flags(names: Sequence[str]) -> dict[str, bool]:
 
 
 def completeness_pattern_flags(values: pd.Series, cs: pd.Series) -> CompletenessResult:
-    """Flag a variable recorded only, or far more often, when ``cs = 1`` (spec §8.2)."""
+    """Flag a variable recorded only, or far more often, when ``cs = 1``."""
     is_cs1 = cs == 1
     is_cs0 = cs == 0
     nonmissing = values.notna()

@@ -29,7 +29,7 @@ def _invoke(project: Path, *args: str) -> str:
 
 @pytest.fixture(scope="module")
 def project(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = build_synthetic_project(tmp_path_factory.mktemp("phase_g"), REPO, n=500, seed=13)
+    root = build_synthetic_project(tmp_path_factory.mktemp("analyses"), REPO, n=500, seed=13)
     path = root / "configs" / "analysis.yaml"
     settings = yaml.safe_load(path.read_text(encoding="utf-8"))
     settings["casemix"]["n_boot"] = 5

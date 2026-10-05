@@ -56,7 +56,7 @@ def test_audit_population_keeps_non_missing_outcome() -> None:
 
 
 def test_prediction_population_v13_on_toy_rows(caplog: pytest.LogCaptureFixture) -> None:
-    """Spec v1.3: drop planned CS and planned-onset vaginal births; keep untyped CS."""
+    """Drop planned CS and planned-onset vaginal births; keep untyped CS."""
     df = _toy()
     with caplog.at_level(logging.INFO, logger="robson_ml.populations"):
         pred, logs = prediction_population(df)

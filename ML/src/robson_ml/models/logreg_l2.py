@@ -1,4 +1,4 @@
-"""P0 L2 logistic regression (spec §12.3; complexity rank 1). Tuned: C (log scale)."""
+"""Main model: L2 logistic regression (complexity rank 1). Tuned: C (log scale)."""
 
 from __future__ import annotations
 

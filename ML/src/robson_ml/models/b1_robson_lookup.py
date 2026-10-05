@@ -1,6 +1,6 @@
-"""B1: Robson-group lookup (spec §12.2; the bar the ML must beat). Not tuned.
+"""B1: Robson-group lookup (the bar the ML must beat). Not tuned.
 
-Spec v1.3: the lookup reads ``robson_group_no_onset`` (the group computed without the
+The lookup reads ``robson_group_no_onset`` (the group computed without the
 outcome-contaminated onset field: 1+2 and 3+4 merged, unresolved as ``"partial"``). Only the
 onset-coded sensitivity population (``P_pred_onset_coded``, legacy onset features) has the
 v1.2 onset-based ``robson_group`` instead, and B1 then reads that.

@@ -29,7 +29,7 @@ def _grouped(rates: dict[float, int], n: int = 10) -> tuple[np.ndarray, np.ndarr
 
 
 def test_metrics_reference() -> None:
-    """Spec §22: metrics match values computed by hand on fixed toy data."""
+    """Metrics match values computed by hand on fixed toy data."""
     # AUC: 3 of the 4 (positive, negative) pairs are ordered correctly.
     auc = auc_with_ci(np.array([0, 0, 1, 1]), np.array([0.1, 0.4, 0.35, 0.8]), n_boot=50, seed=1)
     assert auc.auc == pytest.approx(0.75)

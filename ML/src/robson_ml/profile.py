@@ -1,4 +1,4 @@
-"""Data profile (spec §7). Every output is aggregate and small-cell suppressed."""
+"""Data profile. Every output is aggregate and small-cell suppressed."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ from robson_ml.schema import GA_BAND_FIELDS
 
 MIN_CLASS_COUNT = 10
 # A quantile is released only with at least this many values at or below it and at or
-# above it (DECISIONS.md 2026-09-23), so it never pins a few extreme values.
+# above it, so it never pins a few extreme values.
 QUANTILE_MIN_SIDE = 5
 RARE_LEVEL = "(rare)"
 MISSING_LABEL = "(missing)"
@@ -64,8 +64,8 @@ QUESTIONS = (
     "Are any records duplicated (for example twins recorded as two rows)? How is "
     "plurality represented?",
 )
-NOT_ANSWERED = "Not yet answered: needs human review at Checkpoint 1."
-# The completeness row after the six inputs (spec v1.2): GA recorded as a band. It counts
+NOT_ANSWERED = "Not yet answered: needs human review."
+# The completeness row after the six inputs: GA recorded as a band. It counts
 # the band alone, not "exact or band": a row nested in another publishes their difference
 # (records with GA only as a band) by subtraction, and the raw columns' missingness in the
 # variable profile bounds both rows, so the difference could be pinned.
@@ -318,7 +318,7 @@ def variable_profile(
     config: MappingConfig,
     hide: Mapping[str, Mapping[str, str]] | None = None,
 ) -> pd.DataFrame:
-    """One row per raw variable (spec §7): position, names, kind, missingness overall and per
+    """One row per raw variable: position, names, kind, missingness overall and per
     facility, distinct values, quantiles, univariate association with ``cs``, proposed
     status.
 
@@ -551,7 +551,7 @@ def input_completeness(
     then :data:`GA_BAND_RECORDED` (from :func:`canonical_counts`).
 
     Each row gets primary and secondary suppression across its facility cells. No row is
-    nested in another (spec v1.2 coarse inputs are not published as "exact or band" or
+    nested in another (coarse inputs are not published as "exact or band" or
     "precise type" rows): the difference of nested rows is a count published by
     subtraction, which the raw columns' missingness in the variable profile can bound until
     it is pinned. The GA band row instead counts the band alone and, like the inputs, is
@@ -781,7 +781,7 @@ def robson_inputs_markdown(
             "## Robson report table (P_audit)",
             "",
             f"{log.n_excluded} rows excluded for missing outcome (reported exactly; "
-            "data-quality count, spec §4.2).",
+            "data-quality count).",
             "",
             "pct_of_deliveries, abs_contribution and rel_contribution are given to 2 decimals.",
             "",
@@ -866,7 +866,7 @@ def _plurality_evidence(canonical: pd.DataFrame, counts: CanonicalCounts | None 
         + _table(counts.levels["plurality"])
         + f"\n\nRows sharing a mother_key with another row: {shown_shared}. "
         f"Of these, plurality >= 2: {shown_multiple}. Rows sharing a key are kept, flagged "
-        "and grouped by mother_key in every split (spec v1.2); shared rows with plurality "
+        "and grouped by mother_key in every split; shared rows with plurality "
         ">= 2 may be one row per baby."
     )
     if SECONDARY in (shown_shared, shown_multiple):
@@ -933,14 +933,14 @@ def _evidence(
                 raise DisclosureError("delivery_date: a small recorded count left shown")
         return (
             "The export has no admission timestamp (no admitted_at); delivery_date (date "
-            "only) is the proxy time axis (spec §5, v1.2).\n\n"
+            "only) is the proxy time axis.\n\n"
             f"delivery_date recorded: {recorded}%.\n\nBy month:\n\n"
             + _table(counts.levels["delivery_date"])
         )
     if number == 7:
         return (
             "Not determinable until the C-Model variable list is transcribed into "
-            "data/reference/cmodel_v1.yaml (spec §15.4)."
+            "data/reference/cmodel_v1.yaml."
         )
     if number == 8:
         return "Not determinable from the data."
@@ -954,13 +954,13 @@ def open_questions_markdown(
     hide: Mapping[str, Mapping[str, str]] | None = None,
     counts: CanonicalCounts | None = None,
 ) -> str:
-    """Answers to spec §25: automatic evidence plus the human answer (or a flag if none).
+    """Open data questions: automatic evidence plus the human answer (or a flag if none).
 
     Q1, Q2, Q3, Q6 and Q9 publish counts from ``counts``, else :func:`canonical_counts`
     with ``hide``.
     """
     counts = counts if counts is not None else canonical_counts(canonical, hide)
-    parts = ["# Open questions (spec §25)", ""]
+    parts = ["# Open questions", ""]
     for number, question in enumerate(QUESTIONS, start=1):
         answer = manual.get(f"q{number}", NOT_ANSWERED)
         parts += [
@@ -1046,7 +1046,7 @@ def write_profile(
     manual: Mapping[str, str],
     out_dir: Path,
 ) -> None:
-    """Write the three §7 outputs under ``out_dir`` (reports/profile).
+    """Write the three profile outputs under ``out_dir`` (reports/profile).
 
     The tables are those of :func:`published_profile` (linked suppression across files).
     """

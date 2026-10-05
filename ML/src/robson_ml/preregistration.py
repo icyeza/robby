@@ -1,4 +1,4 @@
-"""Pre-registration guard (spec §13.2, v1.1 item 2).
+"""Pre-registration guard.
 
 No model, baselines included, may run on real data unless ``configs/selection_rule.yaml``
 is committed in git ``HEAD`` with no uncommitted (staged, unstaged or untracked) changes.
@@ -56,13 +56,13 @@ def check_preregistration(repo: Path, rule: Path = SELECTION_RULE_PATH) -> str:
     if in_head.returncode != 0:
         raise PreregistrationError(
             f"{rule.as_posix()} is not committed in HEAD; commit the selection rule before "
-            "running any model on real data (spec §13.2)"
+            "running any model on real data"
         )
     status = _git(repo, "status", "--porcelain", "--", rule.as_posix())
     if status.returncode != 0 or status.stdout.strip():
         raise PreregistrationError(
             f"{rule.as_posix()} has uncommitted changes; commit or revert them before running "
-            "any model on real data (spec §13.2)"
+            "any model on real data"
         )
     return selection_rule_commit(repo, rule)
 

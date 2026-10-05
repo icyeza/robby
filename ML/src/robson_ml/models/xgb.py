@@ -1,9 +1,9 @@
-"""P0 XGBoost (spec §12.3; complexity rank 5).
+"""Main model: XGBoost (complexity rank 5).
 
 Native categorical support (pandas ``category`` columns, ``enable_categorical``), raw
 unscaled numerics, native NaN handling under M0. Tuned by TPE over learning rate, depth,
 subsampling and L2 strength. The number of trees is not searched: during tuning the harness
-fits with early stopping on each inner validation fold (spec §11.2), and the final refit
+fits with early stopping on each inner validation fold, and the final refit
 uses the mean best number of rounds across the inner folds.
 """
 

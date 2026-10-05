@@ -54,7 +54,7 @@ def test_boolean_counts_are_rejected(kwargs: dict[str, object]) -> None:
         RobsonInputs(**kwargs)  # type: ignore[arg-type]
 
 
-# Coarse inputs (spec v1.2 §6.2).
+# Coarse inputs.
 
 
 def test_coarse_presentations_are_keys_over_precise_values() -> None:

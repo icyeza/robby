@@ -1,4 +1,4 @@
-"""Per-run evaluation plots (spec §11.5): calibration with histogram, ROC, decision curve.
+"""Per-run evaluation plots: calibration with histogram, ROC, decision curve.
 
 Every plot is drawn from pooled out-of-fold predictions and shows aggregates only (binned
 means, curve points); it is written as a PNG to be logged as an MLflow artifact.

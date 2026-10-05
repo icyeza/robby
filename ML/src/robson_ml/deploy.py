@@ -1,11 +1,11 @@
-"""Deployment fit (spec §11.1 S5, §13.1, §13.4): the registered model's single fitted artefact.
+"""Deployment fit (split scheme S5): the registered model's single fitted artefact.
 
 :func:`fit_deployment` fits one configuration on the whole prediction population, following
 S5 (not an evaluation, so no metric of discrimination is produced here):
 
 1. :func:`robson_ml.splits.deployment_split`: 80/20 fit/calibration (stratified cs x
    facility, grouped by ``mother_key``), tuning folds GroupKFold(4) by facility;
-2. Optuna TPE tuning (seeded, ``n_trials``) on the inner-CV mean log loss (spec §11.2);
+2. Optuna TPE tuning (seeded, ``n_trials``) on the inner-CV mean log loss;
 3. refit on the fit rows with the best hyperparameters (preprocessing inside the Pipeline);
 4. calibration on the calibration rows only (:func:`robson_ml.calibration.calibrate`).
 
@@ -13,10 +13,9 @@ It writes ``artefacts/<version_label>/model.joblib`` (one fitted
 :class:`~robson_ml.calibration.CalibratedModel`, preprocessing included) and
 ``fit_summary.json`` (provenance and aggregate facts only: no row, no identifier; counts via
 ``fmt_count``), and logs an MLflow run tagged ``split_scheme = S5`` in its own experiment so
-it never enters the evaluation comparison. The full manifest, feature schema and serving
-contract belong to Phase H (spec §17).
+it never enters the evaluation comparison. A full serving manifest is out of scope here.
 
-:func:`deployment_feature_choice` applies spec §13.4: the deploy variant (base set plus
+:func:`deployment_feature_choice` applies the facility rule: the deploy variant (base set plus
 ``facility_id``) is used only if its S3 mean log loss is lower than the base set's.
 
 Outputs are probabilities of CS under current practice; nothing here recommends a mode of
@@ -83,7 +82,7 @@ class DeploymentConfig:
     """``configs/deployment.yaml``: the specification to fit under S5.
 
     ``feature_set`` is a base set (FS0-FS4); ``use_facility`` true fits its ``_deploy``
-    variant, false the base set, ``"auto"`` decides by spec §13.4
+    variant, false the base set, ``"auto"`` decides by the facility rule
     (:func:`deployment_feature_choice`).
     """
 
@@ -150,7 +149,7 @@ def deployment_feature_choice(
     population: str = P_PRED,
     data_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Spec §13.4: use facility only if the deploy variant improves S3 internal log loss.
+    """Facility rule: use facility only if the deploy variant improves S3 internal log loss.
 
     Reads the finished S3 runs (current population version, latest run per configuration;
     optionally only runs on ``data_hash``) of ``model``/``missing_strategy``/``population``
@@ -202,7 +201,7 @@ def deployment_feature_choice(
 
 @dataclass(frozen=True)
 class Provenance:
-    """Where the deployment run is tracked and the provenance it records (spec §17.3, §19)."""
+    """Where the deployment run is tracked and the provenance it records."""
 
     tracking_uri: str
     data_hash: str
@@ -273,7 +272,7 @@ def fit_deployment(
     x = data.x[list(fs.columns)]
     y = data.y
     random.seed(config.seed)
-    np.random.seed(config.seed)  # legacy global seed, fixed per run (spec §19)
+    np.random.seed(config.seed)  # legacy global seed, fixed per run
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     # tune() reads only the seed, trial budget and missing strategy of the config.
     tuning_config = ExperimentConfig(

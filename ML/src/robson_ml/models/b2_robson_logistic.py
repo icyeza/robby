@@ -1,9 +1,9 @@
-"""B2: logistic regression on the Robson inputs except onset (spec §12.2, v1.3).
+"""B2: logistic regression on the Robson inputs except onset.
 
 The linear version of B1. Onset is left out: it is outcome-contaminated (coded
-retrospectively, spec v1.3), so B2 reads parity, previous CS count, presentation, plurality
+retrospectively), so B2 reads parity, previous CS count, presentation, plurality
 and gestational age (exact value plus band bounds). L2 penalty with C from the tiny
-``BASELINE_C_GRID``; gestational age also gets 4-knot spline terms (spec §9.3, logistic
+``BASELINE_C_GRID``; gestational age also gets 4-knot spline terms (as in all logistic
 baselines).
 """
 
@@ -27,7 +27,7 @@ from robson_ml.models.base import (
     split_params,
 )
 
-# The Robson inputs (spec §6.1) except onset (v1.3); GA is the exact value plus its band.
+# The Robson inputs except onset; GA is the exact value plus its band.
 ROBSON_INPUTS = (
     "parity",
     "previous_cs_count",

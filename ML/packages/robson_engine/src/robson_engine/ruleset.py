@@ -1,4 +1,4 @@
-"""Loading, validating and checksumming Robson rule sets stored as YAML data (spec §6.2)."""
+"""Loading, validating and checksumming Robson rule sets stored as YAML data."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class Condition:
     value: InputValue | tuple[InputValue, ...]
 
     def evaluate(self, inputs: RobsonInputs) -> Outcome:
-        """Evaluate against one admission's inputs (spec v1.2 §6.2).
+        """Evaluate against one admission's inputs.
 
         A missing input gives ``unknown``. A coarse input (a set of presentations, or a GA
         interval when the exact GA is missing) gives ``true`` if the condition holds for every

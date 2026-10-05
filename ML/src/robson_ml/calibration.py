@@ -1,4 +1,4 @@
-"""Calibration method selection and the calibrated model wrapper (spec §13.1, v1.1 item 3).
+"""Calibration method selection and the calibrated model wrapper.
 
 The calibrator only ever sees calibration-split rows. Three options are compared by
 5-fold stratified cross-validated Brier score within the calibration split (each option is
@@ -24,7 +24,7 @@ FloatArray = npt.NDArray[np.float64]
 
 CV_SPLITS = 5
 BRIER_TIE = 0.001
-# Tie preference (spec §13.1): Platt first, then none, then isotonic.
+# Tie preference: Platt first, then none, then isotonic.
 TIE_ORDER = ("platt", "none", "isotonic")
 PREDICT_THRESHOLD = 0.5
 

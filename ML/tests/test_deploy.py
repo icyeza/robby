@@ -1,5 +1,5 @@
-"""Phase F: deploy variants, phase_f.yaml, the S5 deployment fit, the §13.4 facility
-decision and local explanations (spec §9.2, §11.1, §13.4, §14.2, §14.6). Synthetic only."""
+"""Deploy variants, the S5 deployment fit, the facility decision, local explanations and
+the facility contribution. Synthetic only."""
 
 import json
 import re

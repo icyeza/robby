@@ -18,7 +18,7 @@ from strip_notebook import has_outputs  # noqa: E402
 
 
 def test_committed_notebook_outputs_are_pii_free() -> None:
-    """Committed notebooks may carry real-data outputs (private repo, decision 2026-09-26),
+    """Committed notebooks may carry real-data outputs (the repository is private),
     but only aggregates: no identifiers, no row-level tables, no errors."""
     nb = nbformat.read(NOTEBOOK, as_version=4)
     if has_outputs(nb):

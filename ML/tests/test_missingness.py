@@ -1,4 +1,4 @@
-"""Missingness and under-recording (spec §15.3 v1.2) on toy and synthetic data. Every
+"""Missingness and under-recording on toy and synthetic data. Every
 prevalence value here is FAKE."""
 
 import numpy as np

@@ -129,7 +129,8 @@ def load_project_config(path: Path = PROJECT_CONFIG) -> ProjectConfig:
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """Settings of the Phase G analyses (configs/analysis.yaml); no reference values."""
+    """Settings of the case-mix and missingness analyses (configs/analysis.yaml); no reference
+    values."""
 
     vogel_path: Path
     cmodel_path: Path
@@ -261,7 +262,7 @@ def robson() -> None:
 @app.command()
 @guarded
 def profile() -> None:
-    """Write the spec §7 profile outputs under reports/profile/."""
+    """Write the data profile outputs under reports/profile/."""
     cfg = load_project_config()
     mapping = load_mapping(cfg.mapping_path)
     raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet)
@@ -278,7 +279,7 @@ def profile() -> None:
 @app.command()
 @guarded
 def leakage() -> None:
-    """Run the leakage screens (spec §8.2) over every raw column, within P_audit."""
+    """Run the leakage screens over every raw column, within P_audit."""
     cfg = load_project_config()
     mapping = load_mapping(cfg.mapping_path)
     raw = select_sheet(read_workbook(cfg.raw_path), mapping.sheet).reset_index(drop=True)
@@ -350,7 +351,7 @@ class ModelInputs:
 
 
 def _model_inputs(cfg: ProjectConfig) -> ModelInputs:
-    """Guard (spec §13.2), then load the canonical data, registry and raw features.
+    """Pre-registration guard, then load the canonical data, registry and raw features.
 
     Real data (anything under data/processed) is refused unless configs/selection_rule.yaml
     is committed and unmodified.
@@ -374,10 +375,10 @@ def _model_inputs(cfg: ProjectConfig) -> ModelInputs:
 @app.command()
 @guarded
 def run(config: Path) -> None:
-    """Run every configuration declared in an experiment YAML (spec §11, §19).
+    """Run every configuration declared in an experiment YAML.
 
     Refuses to touch real data (anything under data/processed) unless
-    configs/selection_rule.yaml is committed and unmodified (spec §13.2). Prints aggregate
+    configs/selection_rule.yaml is committed and unmodified. Prints aggregate
     metrics only.
     """
     from robson_ml.evaluate import (
@@ -447,7 +448,7 @@ def run(config: Path) -> None:
 @app.command()
 @guarded
 def compare() -> None:
-    """Aggregate the harness runs of the current population version (spec v1.3) into
+    """Aggregate the harness runs of the current population version into
     reports/model_comparison.csv (metrics only); older runs are left out."""
     from robson_ml.evaluate import comparison_table
 
@@ -462,10 +463,10 @@ def compare() -> None:
 @app.command("fit-deploy")
 @guarded
 def fit_deploy(config: Path) -> None:
-    """Fit the deployment model under S5 (spec §11.1, §13.4) into artefacts/<version_label>/.
+    """Fit the deployment model under S5 into artefacts/<version_label>/.
 
-    Reads a deployment YAML (configs/deployment.yaml). ``use_facility: auto`` applies spec
-    §13.4 from the finished S3 runs of the base set and its _deploy variant on the same
+    Reads a deployment YAML (configs/deployment.yaml). ``use_facility: auto`` applies the
+    facility rule to the finished S3 runs of the base set and its _deploy variant on the same
     data. The pre-registration guard applies. Prints aggregate facts only.
     """
     from robson_ml.deploy import (
@@ -499,7 +500,7 @@ def fit_deploy(config: Path) -> None:
         )
     else:
         use_facility = bool(dcfg.use_facility)
-        typer.echo(f"use_facility={use_facility} (set in the config, not by the §13.4 rule)")
+        typer.echo(f"use_facility={use_facility} (set in the config, not by the facility rule)")
     data = build_model_data(inputs.canonical, inputs.registry, inputs.raw_features, dcfg.population)
     provenance = Provenance(
         tracking_uri=tracking_uri,
@@ -521,13 +522,13 @@ def fit_deploy(config: Path) -> None:
         out = cfg.reports_dir / FACILITY_CONTRIBUTION_CSV
         out.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(s["facility_contribution"]).to_csv(out, index=False)
-        typer.echo(f"facility contribution (spec §14.6) written to {out}")
+        typer.echo(f"facility contribution written to {out}")
 
 
 @app.command("explain-local")
 @guarded
 def explain_local(run_id: str) -> None:
-    """Local explanations (spec §14.2) for the 20 highest-error S1 out-of-fold cases of a run.
+    """Local explanations for the 20 highest-error S1 out-of-fold cases of a run.
 
     Written only to data/interim/explanations/<run_id>_local.parquet (row level; never to
     reports/). The pre-registration guard applies. Prints counts only.
@@ -596,7 +597,7 @@ def _analysis_frames(cfg: ProjectConfig, columns: list[str]) -> tuple[pd.DataFra
 @app.command()
 @guarded
 def casemix() -> None:
-    """Robson audit table and RQ1 case-mix analysis (spec §15.1, §15.2) into
+    """Robson audit table and RQ1 case-mix analysis into
     reports/casemix/. Vogel and C-Model comparisons run only when their reference files
     exist (never invented). Prints aggregate statements only."""
     from robson_ml.audit_offline import audit_markdown, published_audit_table
@@ -636,7 +637,7 @@ def casemix() -> None:
 @app.command()
 @guarded
 def missingness() -> None:
-    """RQ2 (spec §15.3, v1.2): missingness description and models, and the under-recording
+    """RQ2: missingness description and models, and the under-recording
     sensitivity analysis when the prevalence reference exists, into reports/missingness/."""
     from robson_ml.missingness import MAR_STATEMENT, missingness_report
     from robson_ml.references import load_prevalence

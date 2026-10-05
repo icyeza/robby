@@ -1,4 +1,4 @@
-"""Phase G additions to the audit table: the 6/7/9 non-cephalic row, the onset caveat, the
+"""Audit table additions: the 6/7/9 non-cephalic row, the onset caveat, the
 Vogel columns (FAKE reference) and consistency with the published profile rows."""
 
 from pathlib import Path

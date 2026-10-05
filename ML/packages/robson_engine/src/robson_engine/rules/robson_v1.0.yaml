@@ -1,6 +1,6 @@
 # WHO Robson Ten-Group Classification, rule set v1.0.
-# Source: WHO Robson Classification Implementation Manual (2017); spec.md v1.1 §6.3.
-# Every condition must be verified against the manual (hand-check, spec §6.5) before freezing.
+# Source: WHO Robson Classification Implementation Manual (2017).
+# Every condition must be verified against the manual (by hand) before freezing.
 # Edit the content, then re-stamp:  uv run python -m robson_engine.ruleset <this file>
 version_label: "robson-v1.0"
 checksum: "7a8d290d430aff3c757a802b3b3d11c3760b9847f4a073b0a27a2243b3724411"

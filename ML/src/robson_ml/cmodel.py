@@ -1,4 +1,4 @@
-"""WHO C-Model expected CS probability (spec §15.4).
+"""WHO C-Model expected CS probability.
 
 Coefficients come only from ``data/reference/cmodel_v1.yaml`` (:func:`references.load_cmodel`),
 transcribed from Souza et al. (2016). They are never estimated from local data, approximated
@@ -20,7 +20,7 @@ NOT_APPLICABLE = "not applicable"
 
 
 class CModelNotApplicableError(ValueError):
-    """A variable the C-Model needs is absent from the data (spec §15.4)."""
+    """A variable the C-Model needs is absent from the data."""
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class CModelApplicability:
             return "WHO C-Model applicable: every required variable is present in the data."
         return (
             f"WHO C-Model {NOT_APPLICABLE}: required variables absent from the data: "
-            f"{', '.join(self.absent_variables)}. It is not approximated (spec §15.4)."
+            f"{', '.join(self.absent_variables)}. It is not approximated."
         )
 
 

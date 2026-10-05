@@ -1,7 +1,7 @@
-"""P0 neural model: a multilayer perceptron (spec §12.3; complexity rank 7).
+"""Main neural model: a multilayer perceptron (complexity rank 7).
 
 scikit-learn's ``MLPClassifier`` is used instead of torch, to avoid a GPU/torch dependency;
-the spec allows "one neural model (MLP or FT-Transformer)". One-hot categoricals and
+one neural model (MLP or FT-Transformer) is enough. One-hot categoricals and
 standardised numerics; internal early stopping on a 10% validation split of the fit rows.
 """
 

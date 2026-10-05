@@ -1,4 +1,4 @@
-"""Case-mix adjustment (spec §15.2) on synthetic data; references are FAKE fixtures."""
+"""Case-mix adjustment on synthetic data; references are FAKE fixtures."""
 
 from pathlib import Path
 

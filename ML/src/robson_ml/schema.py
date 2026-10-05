@@ -1,4 +1,4 @@
-"""Canonical admission schema (spec §5) as a pandera DataFrameSchema."""
+"""Canonical admission schema as a pandera DataFrameSchema."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pandera.pandas as pa
 from pandera.errors import SchemaErrors
 
 PRECISE_PRESENTATION_LEVELS = ("cephalic", "breech", "transverse", "oblique")
-# Coarse codes (spec v1.2 §5, §6.2): "non_cephalic" = known not cephalic, type unknown. Must
+# Coarse codes: "non_cephalic" = known not cephalic, type unknown. Must
 # match the engine's COARSE_PRESENTATIONS keys (checked by tests/test_schema.py).
 COARSE_PRESENTATION_LEVELS = ("non_cephalic",)
 PRESENTATION_LEVELS = PRECISE_PRESENTATION_LEVELS + COARSE_PRESENTATION_LEVELS
@@ -21,7 +21,7 @@ STATUS_LEVELS = ("resolved", "partial", "conflict")
 
 GA_RANGE = (20.0, 45.0)
 MATERNAL_AGE_RANGE = (12.0, 55.0)
-# Plausibility ranges not fixed by the spec; recorded in DECISIONS.md.
+# Plausibility ranges chosen for this project (not clinical standards).
 HEIGHT_CM_RANGE = (120.0, 200.0)
 WEIGHT_KG_RANGE = (30.0, 200.0)
 GA_BAND_FIELDS = ("ga_band_lower", "ga_band_upper")
@@ -115,7 +115,7 @@ CANONICAL_SCHEMA = pa.DataFrameSchema(
         # Salted one-way hash of the raw patient identifier: groups rows of one woman only.
         "mother_key": _col(None),
         "facility_id": _col(None, nullable=False),
-        # Date only (spec v1.2 §5): a proxy time axis, never a feature.
+        # Date only: a proxy time axis, never a feature.
         "delivery_date": _col("datetime64[ns]", pa.Check(_date_only, name="date_only")),
         "parity": _col("Int64", pa.Check.ge(0)),
         "previous_cs_count": _col("Int64", pa.Check.ge(0)),
@@ -132,8 +132,8 @@ CANONICAL_SCHEMA = pa.DataFrameSchema(
         "anc_contacts": _col("Int64", pa.Check.ge(0)),
         "preeclampsia_recorded": _col(None, _levels(YES_NO)),
         "gdm_recorded": _col(None, _levels(YES_NO)),
-        "mode_of_delivery": _col(None),  # nullable by design (spec §4.2)
-        "cs": _col("Int64", pa.Check.isin([0, 1])),  # nullable by design (spec §4.2)
+        "mode_of_delivery": _col(None),  # nullable by design
+        "cs": _col("Int64", pa.Check.isin([0, 1])),  # nullable by design
         "recorded_indication": _col(None),
         "robson_group": _col("Int64", pa.Check.in_range(1, 10), required=False),
         "robson_subgroup": _col(None, _levels(SUBGROUP_LEVELS), required=False),
@@ -153,7 +153,7 @@ CANONICAL_SCHEMA = pa.DataFrameSchema(
 
 
 def validate_canonical(df: pd.DataFrame) -> pd.DataFrame:
-    """Validate a canonical frame (spec §5).
+    """Validate a canonical frame.
 
     Raises:
         CanonicalSchemaError: with per-(column, check) failure counts. The original pandera

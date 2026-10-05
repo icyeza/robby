@@ -1,4 +1,4 @@
-"""Missingness and under-recording (spec §15.3, RQ2, reframed in spec v1.2).
+"""Missingness and under-recording (RQ2).
 
 Part A, fields that do have missingness (exact gestational age, anthropometry, parity and
 the other inputs, raw-register fields such as living children): the missingness rate per
@@ -674,7 +674,7 @@ class MissingnessReport:
 
     def to_markdown(self) -> str:
         lines = [
-            "# Missingness and under-recording (RQ2, spec §15.3 v1.2)",
+            "# Missingness and under-recording (RQ2)",
             "",
             "## A. Fields with missing values",
             "",

@@ -1,10 +1,10 @@
-"""Feature registry loader (spec §8.1): configs/features_v1.yaml.
+"""Feature registry loader: configs/features_v1.yaml.
 
 Every raw or canonical variable considered for modelling is listed once, with a status
 (include/exclude/review), a human reason, whether it is knowable at admission, and a
 feature group. Model code must read only ``status: include`` features
 (:meth:`FeatureRegistry.included`). The registry file's hash is exposed as
-``FeatureRegistry.sha256`` so it can be logged with every run (spec §8.3, §19).
+``FeatureRegistry.sha256`` so it can be logged with every run.
 
 Reports and error messages never contain cell values.
 """
@@ -33,7 +33,7 @@ from robson_ml.mapping import _parse_levels as _levels
 from robson_ml.mapping import _parse_range as _range
 
 # Kinds only meaningful when built from a raw export column (row_key/hash_key are
-# canonical-only, spec §5, and never apply to an arbitrary feature).
+# canonical-only and never apply to an arbitrary feature).
 FEATURE_KINDS = KINDS - {"row_key", "hash_key"}
 SOURCES = frozenset({"canonical", "raw", "derived"})
 STATUSES = frozenset({"include", "exclude", "review"})
@@ -261,7 +261,7 @@ def _parse_entry(spec: object, seen_names: set[str], seen_raw: dict[str, str]) -
 
 
 def load_feature_registry(path: Path) -> FeatureRegistry:
-    """Parse and strictly validate ``configs/features_v1.yaml`` (spec §8.1)."""
+    """Parse and strictly validate ``configs/features_v1.yaml``."""
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
@@ -281,7 +281,7 @@ def load_feature_registry(path: Path) -> FeatureRegistry:
 def check_coverage(
     registry: FeatureRegistry, raw_columns: list[str]
 ) -> tuple[list[str], list[str]]:
-    """Compare the registry's raw columns against the actual export (spec §8.1).
+    """Compare the registry's raw columns against the actual export.
 
     Returns:
         ``(missing, extra)``: raw columns present in the export but not listed in the

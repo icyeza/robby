@@ -1,4 +1,4 @@
-"""Small-cell suppression and aggregate-only inspection helpers (spec §3)."""
+"""Small-cell suppression and aggregate-only inspection helpers."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def suppress_small_cells(
             reveal the complement.
     Returns:
         A copy; every touched column becomes object dtype. Zero counts are kept (they
-        disclose no individual; DECISIONS.md 2026-09-23).
+        disclose no individual).
     """
     out = df.copy()
     links = dict(linked or {})
@@ -242,7 +242,7 @@ def protect_cells(
     marked: Iterable[Hashable] = (),
 ) -> Protection:
     """Secondary (complementary) suppression: the cells to hide so none of ``suppressed``
-    can be recovered from published totals (DECISIONS.md 2026-09-23).
+    can be recovered from published totals.
 
     Args:
         values: the true value of every cell, published or not.
@@ -685,7 +685,7 @@ def safe_pct(mask: pd.Series) -> float | str:
 def safe_describe(df: pd.DataFrame) -> pd.DataFrame:
     """Per-column dtype, non-null count, % missing and number of distinct values. No values.
 
-    ``n_nonnull`` is suppressed (spec §3.3) whenever it itself is 1-4, and also when its
+    ``n_nonnull`` is suppressed whenever it itself is 1-4, and also when its
     complement ``n_missing`` is 1-4 (revealing a near-complete or near-empty column would
     otherwise disclose the complement's small count). ``pct_missing`` and ``n_unique`` are
     suppressed on the same rows, since either would reveal the same small count.

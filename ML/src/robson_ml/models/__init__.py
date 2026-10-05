@@ -1,4 +1,4 @@
-"""The model zoo (spec §12): one module per ModelSpec, registered on import."""
+"""The model zoo: one module per ModelSpec, registered on import."""
 
 from robson_ml.models import (  # noqa: F401  (imported to register their ModelSpec)
     b0_prevalence,

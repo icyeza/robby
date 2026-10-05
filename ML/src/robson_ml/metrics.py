@@ -1,4 +1,4 @@
-"""Evaluation metrics for the readiness model (spec §11.3, §11.4).
+"""Evaluation metrics for the readiness model.
 
 Every function takes binary outcomes ``y`` (0/1) and predicted probabilities ``p`` of
 ``y = 1`` as equal-length array-likes with no missing values. Probabilities are clipped to
@@ -57,7 +57,7 @@ def _validate(y: npt.ArrayLike, p: npt.ArrayLike) -> tuple[FloatArray, FloatArra
 
 
 def clip_probabilities(p: npt.ArrayLike) -> FloatArray:
-    """Clip probabilities to [PROB_CLIP, 1 - PROB_CLIP] (spec §11.3)."""
+    """Clip probabilities to [PROB_CLIP, 1 - PROB_CLIP]."""
     return np.clip(np.asarray(p, dtype=np.float64), PROB_CLIP, 1 - PROB_CLIP)
 
 
@@ -100,7 +100,7 @@ def _auc(y: FloatArray, p: FloatArray) -> float:
 def auc_with_ci(
     y: npt.ArrayLike, p: npt.ArrayLike, n_boot: int = AUC_BOOTSTRAP, seed: int = 0
 ) -> AucCI:
-    """ROC AUC with a 95% percentile CI from a stratified bootstrap (spec §11.3).
+    """ROC AUC with a 95% percentile CI from a stratified bootstrap.
 
     Each resample draws positives and negatives separately with replacement, keeping both
     class counts fixed. Raises ValueError unless both classes are present.
@@ -166,7 +166,7 @@ def brier_decomposition(
 def net_benefit(
     y: npt.ArrayLike, p: npt.ArrayLike, thresholds: npt.ArrayLike | None = None
 ) -> pd.DataFrame:
-    """Decision-curve net benefit ``TP/n - FP/n * pt/(1 - pt)`` (spec §11.3).
+    """Decision-curve net benefit ``TP/n - FP/n * pt/(1 - pt)``.
 
     A row is treated when ``p >= pt``. Returns one row per threshold (default 0.10 to 0.90
     by 0.05) with columns ``threshold``, ``model``, ``treat_all`` and ``treat_none`` (0).
@@ -208,7 +208,7 @@ def accuracy_at_05(y: npt.ArrayLike, p: npt.ArrayLike) -> float:
 def evaluate(
     y: npt.ArrayLike, p: npt.ArrayLike, seed: int, n_boot: int = AUC_BOOTSTRAP
 ) -> dict[str, Any]:
-    """Every §11.3 metric in one JSON-serialisable dict.
+    """Every evaluation metric in one JSON-serialisable dict.
 
     Keys: n, n_events, prevalence, auc, auc_ci_low, auc_ci_high, calibration_slope,
     calibration_in_the_large, brier, reliability, resolution, uncertainty, log_loss,
@@ -242,7 +242,7 @@ def subgroup_metrics(
     seed: int = 0,
     n_boot: int = AUC_BOOTSTRAP,
 ) -> dict[str, dict[str, Any] | str]:
-    """``evaluate`` per level of ``df[by]`` (spec §11.4); ``y`` and ``p`` align with rows.
+    """``evaluate`` per level of ``df[by]``; ``y`` and ``p`` align with rows.
 
     A level with fewer than ``min_n`` rows, or fewer than ``min_events`` rows in either
     outcome class, maps to ``"insufficient"``. Missing levels are grouped as ``"missing"``.

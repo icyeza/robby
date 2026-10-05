@@ -233,8 +233,8 @@ def test_excluded_for_missing_outcome_is_reported_exactly() -> None:
     excluded = int(classified["cs"].isna().sum())
     text = robson_inputs_markdown(classified)
     assert (
-        f"{excluded} rows excluded for missing outcome (reported exactly; data-quality count,"
-        " spec §4.2)" in text
+        f"{excluded} rows excluded for missing outcome (reported exactly; data-quality count)"
+        in text
     )
 
 
@@ -529,7 +529,7 @@ def test_q6_uses_delivery_date_as_proxy() -> None:
     canonical = _classified()
     text = open_questions_markdown(canonical, pd.DataFrame(index=canonical.index), {})
     q6 = text.split("## Q6.", 1)[1].split("## Q7.", 1)[0]
-    assert "admitted_at" in q6.splitlines()[0]  # the question keeps the spec wording
+    assert "admitted_at" in q6.splitlines()[0]  # the question keeps its original wording
     assert "delivery_date recorded" in q6
     assert "no admission timestamp" in q6
     months = markdown_tables(q6)[0]

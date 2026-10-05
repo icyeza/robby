@@ -71,7 +71,7 @@ def test_b1_lookup_on_toy_data() -> None:
 
 
 def test_b1_reads_the_onset_free_robson_group(data: ModelData) -> None:
-    """Spec v1.3: B1 is the lookup on robson_group_no_onset (1+2 and 3+4 merged)."""
+    """B1 is the lookup on robson_group_no_onset (1+2 and 3+4 merged)."""
     fs = feature_spec(data, "FS0")
     pipe = get_model("B1").build(_params("B1", "M0"), fs)
     pipe.fit(data.x[list(fs.columns)], data.y)

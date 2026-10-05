@@ -121,7 +121,7 @@ def test_stamp_roundtrip(tmp_path: Path) -> None:
     assert load_rule_set(target).checksum == checksum
 
 
-# Coarse inputs (spec v1.2 §6.2): true if the condition holds for every allowed value, false if
+# Coarse inputs: true if the condition holds for every allowed value, false if
 # for none, unknown otherwise.
 
 NON_CEPHALIC = RobsonInputs(fetal_presentation="non_cephalic")

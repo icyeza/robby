@@ -109,7 +109,7 @@ def test_trace_records_every_group_condition() -> None:
     assert all(t.outcome == "true" for t in group_traces if t.group == 1)
 
 
-# Coarse inputs (spec v1.2 §6.2).
+# Coarse inputs.
 
 
 @pytest.mark.parametrize(

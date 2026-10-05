@@ -1,12 +1,12 @@
-"""Offline Robson report table (spec §15.1).
+"""Offline Robson report table.
 
 Independent implementation: must never import the application's audit service code.
 
-Phase G adds: a separate "6/7/9 non-cephalic (type unknown)" row (spec v1.2: presentation is
+It also has a separate "6/7/9 non-cephalic (type unknown)" row (presentation is
 recorded only as malpresentation yes/no, so these records stay partial between groups 6, 7
 and 9), the Vogel (2015) comparison columns when ``data/reference/vogel2015_v1.yaml`` exists
-(:mod:`robson_ml.references`; never invented), and the onset caveat on groups 2 and 4 (spec
-v1.3: the onset field is often coded retrospectively).
+(:mod:`robson_ml.references`; never invented), and the onset caveat on groups 2 and 4 (the
+onset field is often coded retrospectively).
 """
 
 from __future__ import annotations
@@ -28,17 +28,17 @@ NON_CEPHALIC = "6/7/9 non-cephalic (type unknown)"
 NON_CEPHALIC_CANDIDATES = frozenset({6, 7, 9})
 GROUP_LABELS = tuple(str(g) for g in range(1, 11))
 HIDDEN_MARKERS = (SUPPRESSED, SECONDARY)
-# Spec v1.3: onset is often coded retrospectively ("Planned C-section" ~ "had a CS").
+# Onset is often coded retrospectively ("Planned C-section" ~ "had a CS").
 ONSET_AFFECTED_ROWS = ("2", "4")
 ONSET_NOTE = "onset-dependent (v1.3)"
 ONSET_CAVEAT = (
     "Groups 2 and 4 (and their subgroups 2a/2b and 4a/4b) are defined by the onset of labour, "
     "which the export often codes retrospectively: 'Planned C-section' onset frequently means "
-    "'had a CS' (spec v1.3). Their sizes, and by complement those of groups 1 and 3, are "
+    "'had a CS'. Their sizes, and by complement those of groups 1 and 3, are "
     "therefore uncertain, and the 2a/2b and 4a/4b split should not be interpreted."
 )
 NON_CEPHALIC_CAVEAT = (
-    "Presentation is recorded only as malpresentation yes/no (spec v1.2): a record known to be "
+    "Presentation is recorded only as malpresentation yes/no: a record known to be "
     "non-cephalic but of unknown type cannot be placed in group 6, 7 or 9. These records form "
     "their own row, separate from the residual (other partial and conflict records)."
 )
@@ -82,7 +82,7 @@ def _candidates(value: object) -> set[int]:
 
 def non_cephalic_mask(df: pd.DataFrame) -> pd.Series:
     """Partial records left between groups 6, 7 and 9 by a presentation recorded only as
-    ``non_cephalic`` (spec v1.2): their candidate groups are a subset of {6, 7, 9}."""
+    ``non_cephalic``: their candidate groups are a subset of {6, 7, 9}."""
     partial = df["robson_status"].astype(object).eq("partial")
     coarse = df.get("fetal_presentation", pd.Series(index=df.index, dtype=object))
     coarse = coarse.astype(object).eq("non_cephalic")
@@ -122,8 +122,8 @@ def robson_report_table(
     For each Robson group (1-10) plus a residual row (partial and conflict records): group
     size (n, % of deliveries), group CS (n, rate), absolute contribution (group CS / all
     deliveries) and relative contribution (group CS / all CS). With ``split_non_cephalic``
-    the partial 6/7/9 non-cephalic records get their own row before the residual (spec
-    v1.2). Unsuppressed; apply :func:`suppress_report_table` (or use
+    the partial 6/7/9 non-cephalic records get their own row before the residual.
+    Unsuppressed; apply :func:`suppress_report_table` (or use
     :func:`published_audit_table`) before any export.
     """
     missing = {facility_col, "robson_status", "robson_group", "cs"} - set(df.columns)
@@ -239,7 +239,7 @@ def _split_rows_groups(table: pd.DataFrame) -> list[SumRelation]:
 def published_audit_table(
     classified: pd.DataFrame, vogel: VogelReference | None = None
 ) -> pd.DataFrame:
-    """The Phase G Robson audit table, safe to publish beside ``reports/profile``.
+    """The Robson audit table, safe to publish beside ``reports/profile``.
 
     Rows 1-10 are exactly the published (jointly suppressed, rounded) rows of the profile's
     Robson report table (:func:`robson_ml.profile.status_tables`), so the two cannot be

@@ -1,4 +1,4 @@
-"""Split schemes S1-S5 for the evaluation harness (spec §11.1, v1.1 item 5, v1.2 items 5 and 8).
+"""Split schemes S1-S5 for the evaluation harness.
 
 Every split is index-based: indices are row positions (``iloc``) into the frame passed in.
 Splits are deterministic for a given seed. Rows sharing a ``mother_key`` never straddle the
@@ -9,7 +9,7 @@ the row its own group.
 
 The outcome ``cs`` is read only for the rows being stratified (the training pool); the
 held-out rows' outcomes are never read by S1, S2, S4 or S5. S3 is ordinary stratified CV and
-stratifies its outer folds on every row's outcome, as the spec defines it.
+stratifies its outer folds on every row's outcome.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 IndexArray = npt.NDArray[np.int64]
 TuningFolds = list[tuple[IndexArray, IndexArray]]
 
-# 1 of 5 grouped stratified folds = the 20% calibration split (§11.1).
+# 1 of 5 grouped stratified folds = the 20% calibration split.
 CALIBRATION_SPLITS = 5
 RECALIBRATION_N_FIRST = 150
 INTERNAL_OUTER_SPLITS = 5
@@ -161,7 +161,7 @@ def _check_fold(fold: Fold, groups: npt.NDArray[np.str_]) -> Fold:
 
 
 def loho_folds(df: pd.DataFrame, seed: int) -> list[Fold]:
-    """S1 leave-one-hospital-out folds, one per facility in sorted order (spec §11.1).
+    """S1 leave-one-hospital-out folds, one per facility in sorted order.
 
     For held-out facility h: the pool is every other facility's rows, minus rows whose
     mother also has a row at h; 20% of the pool (stratified cs x facility, grouped by mother)
@@ -209,7 +209,7 @@ def recalibration_split(
 def internal_nested_folds(
     df: pd.DataFrame, seed: int, outer: int = INTERNAL_OUTER_SPLITS
 ) -> list[Fold]:
-    """S3 internal nested CV (spec §11.1): reported only to size the internal-vs-LOHO gap.
+    """S3 internal nested CV: reported only to size the internal-vs-LOHO gap.
 
     Outer StratifiedGroupKFold by cs x facility grouped by mother; inside each outer
     training set a 20% calibration split (same stratification and grouping) and an inner
@@ -226,7 +226,7 @@ def internal_nested_folds(
 
 
 def temporal_split(df: pd.DataFrame, seed: int, train_end: str = TEMPORAL_TRAIN_END) -> Fold:
-    """S4 temporal split (spec §11.1): train on ``delivery_date <= train_end``, test after.
+    """S4 temporal split: train on ``delivery_date <= train_end``, test after.
 
     Within the training period the S1 inner structure applies (20% grouped stratified
     calibration split, facility-grouped tuning). Training rows whose mother also delivers
@@ -247,7 +247,7 @@ def temporal_split(df: pd.DataFrame, seed: int, train_end: str = TEMPORAL_TRAIN_
 
 
 def deployment_split(df: pd.DataFrame, seed: int) -> Fold:
-    """S5 deployment fit (spec §11.1, not an evaluation): all rows, 80/20 fit/calibration.
+    """S5 deployment fit (not an evaluation): all rows, 80/20 fit/calibration.
 
     The calibration split is stratified cs x facility and grouped by mother; tuning is
     GroupKFold by facility (one fold per facility). ``test_idx`` is empty.
