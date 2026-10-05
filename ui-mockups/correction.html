@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Correction · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a href="admission-new.html">New admission</a><a class="on" href="admissions-recent.html">Recent admissions</a></nav>
+  <div class="who"><b>Facility A · Maternity</b>Midwife · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <div class="crumbs"><a href="admissions-recent.html">Admissions</a> / A-0193 / Correction</div>
+  <h1>Correct admission A-0193</h1>
+  <div class="notice warn"><b>You are correcting A-0193.</b> The original stays on record and will be marked as replaced. The corrected admission gets a new code.</div>
+
+  <div class="grid-form">
+    <form action="result.html">
+
+      <section class="sec">
+        <div class="sec-b">
+          <div class="f"><label for="why">Reason for correction <span style="color:var(--error)">(required)</span></label><textarea id="why">Gestational age was entered as 29 weeks; the correct value is 39 weeks.</textarea></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h"><span class="sec-n">1</span><h2>Admission and Robson fields</h2><span class="hint">Needed for the Robson group</span></div>
+        <div class="sec-b">
+          <div class="row three">
+            <div class="f"><label for="adm">Admitted at</label><input id="adm" type="text" value="05 Oct 2026, 14:22"></div>
+            <div class="f"><label for="age">Maternal age</label><div class="unit"><input id="age" type="number" value="29"><span>years</span></div></div>
+            <div class="f"><label for="ga">Gestational age</label><div class="unit"><input id="ga" type="number" value="39"><span>weeks</span></div><div class="help">Completed weeks</div></div>
+          </div>
+          <div class="row">
+            <div class="f"><label for="par">Parity</label><input id="par" type="number" value="2"><div class="help">Number of previous births</div></div>
+            <div class="f"><label for="pcs">Previous cesareans</label><input id="pcs" type="number" value="1"></div>
+          </div>
+          <div class="row">
+            <div class="f"><label>Fetal presentation</label><div class="seg"><button class="on">Cephalic</button><button>Breech</button><button>Transverse / oblique</button></div></div>
+            <div class="f"><label>Number of fetuses</label><div class="seg"><button class="on">One</button><button>Two or more</button></div></div>
+          </div>
+          <div class="f"><label>Onset of labour</label><div class="seg"><button class="on">Spontaneous</button><button>Induced</button><button>No labour (pre-labour cesarean)</button></div></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-h"><span class="sec-n">2</span><h2>Screening</h2><span class="hint">Enter a value, or say why it wasn't measured</span></div>
+        <div class="sec-b" style="padding-top:6px;padding-bottom:10px">
+          <div class="scr">
+            <div class="name">Blood pressure</div>
+            <div class="pair"><div class="unit"><input type="number" value="128" aria-label="Systolic"><span>sys</span></div><span class="muted">/</span><div class="unit"><input type="number" value="84" aria-label="Diastolic"><span>dia mmHg</span></div></div>
+            <label class="nm"><input type="checkbox">Not measured</label>
+            <div class="reason"><select aria-label="Reason BP not measured"><option>Choose a reason</option><option>Equipment unavailable or broken</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
+          </div>
+          <div class="scr">
+            <div class="name">Proteinuria</div>
+            <div class="value"><select aria-label="Proteinuria"><option>Negative</option><option>Trace</option><option>+</option><option>++</option><option>+++</option></select></div>
+            <label class="nm"><input type="checkbox" checked>Not measured</label>
+            <div class="reason"><select aria-label="Reason proteinuria not measured"><option>Reagent strips out of stock</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
+          </div>
+          <div class="scr">
+            <div class="name">Glucose</div>
+            <div class="value"><div class="unit"><input type="number" value="5.2" aria-label="Glucose"><span>mmol/L</span></div></div>
+            <label class="nm"><input type="checkbox">Not measured</label>
+            <div class="reason"><select aria-label="Reason glucose not measured"><option>Choose a reason</option><option>Glucometer or strips unavailable</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
+          </div>
+        </div>
+      </section>
+
+      <details class="sec">
+        <summary class="sec-h"><span class="sec-n">3</span><h2>Other details <span style="font-weight:400;color:var(--ink-3);font-size:14px">(optional)</span></h2><span class="hint">Improves the readiness signal ▾</span></summary>
+        <div class="sec-b">
+          <div class="row three">
+            <div class="f"><label for="h">Height</label><div class="unit"><input id="h" type="number" value="158"><span>cm</span></div></div>
+            <div class="f"><label for="w">Weight</label><div class="unit"><input id="w" type="number" value="71"><span>kg</span></div></div>
+            <div class="f"><label for="anc">Antenatal visits</label><input id="anc" type="number" value="4"></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label for="grav">Gravidity</label><input id="grav" type="number"></div>
+            <div class="f"><label for="ab">Abortions or miscarriages</label><input id="ab" type="number"></div>
+            <div class="f"><label for="afp">Age at first pregnancy</label><div class="unit"><input id="afp" type="number"><span>years</span></div></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label for="lc">Living children</label><input id="lc" type="number"></div>
+            <div class="f"><label for="dc">Children who died</label><input id="dc" type="number"></div>
+            <div class="f"><label>Previous stillbirth</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label>Previous preterm birth</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>HIV status</label><div class="seg"><button>Positive</button><button>Negative</button><button>Unknown</button></div></div>
+            <div class="f"><label>Pre-eclampsia recorded</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label>Gestational diabetes recorded</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>IVF pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Admitted during pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label>Malaria in pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Genito-urinary infection</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label for="ins">Insurance</label><select id="ins"><option>Choose</option><option>Community-based (Mutuelle)</option><option>Private</option><option>None</option></select></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label for="edu">Education</label><select id="edu"><option>Choose</option><option>None</option><option>Primary</option><option>Secondary</option><option>Tertiary</option></select></div>
+            <div class="f"><label for="res">Residence</label><select id="res"><option>Choose</option><option>Urban</option><option>Rural</option></select></div>
+            <div class="f"><label for="mar">Marital status</label><select id="mar"><option>Choose</option><option>Married or partnered</option><option>Single</option><option>Other</option></select></div>
+          </div>
+          <div class="row three">
+            <div class="f"><label for="occ">Occupation</label><select id="occ"><option>Choose</option><option>Farmer</option><option>Employed</option><option>Self-employed</option><option>Student</option><option>Not working</option></select></div>
+          </div>
+        </div>
+      </details>
+      <div class="chips" style="margin-top:-12px;margin-bottom:6px">
+        <span class="chip done">✓ Height</span><span class="chip done">✓ Weight</span><span class="chip done">✓ Antenatal visits</span><span class="chip">Gravidity</span><span class="chip">HIV status</span><span class="chip">Pre-eclampsia</span><span class="chip">+ 16 more</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-p" type="submit">Save correction</button>
+        <span class="note">Saving creates A-0201, which replaces A-0193</span>
+      </div>
+    </form>
+
+    <aside class="panel" aria-live="polite">
+      <div class="panel-h"><span>Robson group</span><span class="live"><i></i>Updating</span></div>
+      <div class="panel-b">
+        <p class="state">Group 5 · subgroup 5a</p>
+        <div class="strip compact">
+          <div class="out">1</div><div class="out">2</div><div class="out">3</div><div class="out">4</div><div class="on">5</div>
+          <div class="out">6</div><div class="out">7</div><div class="out">8</div><div class="out">9</div><div class="out">10</div>
+        </div>
+        <ul class="trace">
+          <li><span class="ck">✓</span><span>One fetus</span><span class="val">one</span></li>
+          <li><span class="ck">✓</span><span>Cephalic presentation</span><span class="val">cephalic</span></li>
+          <li><span class="ck">✓</span><span>Multiparous</span><span class="val">parity 2</span></li>
+          <li><span class="ck">✓</span><span>At least one previous cesarean</span><span class="val">1</span></li>
+          <li><span class="ck">✓</span><span>37 weeks or more</span><span class="val">39 weeks</span></li>
+        </ul>
+      </div>
+      <div class="panel-foot">Classification only. The readiness signal appears after saving.</div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>
