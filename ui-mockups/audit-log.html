@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approval log · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a href="models.html">Models</a><a href="monitoring.html">Monitoring</a><a class="on" href="audit-log.html">Approval log</a></nav>
+  <div class="who"><b>All facilities</b>Model custodian · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <h1>Approval log</h1>
+  <p class="lede">Every recorded approval, correction and account change. Entries cannot be edited or deleted.</p>
+
+  <div class="filters">
+    <div class="f"><label for="from">From</label><input id="from" type="text" value="01 Aug 2026"></div>
+    <div class="f"><label for="to">To</label><input id="to" type="text" value="05 Oct 2026"></div>
+    <div class="f"><label>Type</label><div class="seg" role="group" aria-label="Type"><button type="button" class="on" aria-pressed="true">All</button><button type="button" aria-pressed="false">Models</button><button type="button" aria-pressed="false">Corrections</button><button type="button" aria-pressed="false">Accounts</button></div></div>
+  </div>
+
+  <section class="tablecard">
+    <table class="wide">
+      <thead><tr><th>When</th><th>Who</th><th>Role</th><th>Action</th><th>Item</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>05 Oct 2026, 15:12</td><td><b>mw.a014</b></td><td>Clinician</td><td>Correction</td><td>A-0193 → A-0201</td><td>“Admission time was entered as 14:22; admitted at 15:05.”</td></tr>
+        <tr><td>02 Oct 2026, 11:30</td><td><b>mc.01</b></td><td>Model custodian</td><td>Registered candidate</td><td>v1.2</td><td>“Gradient boosting run from pipeline.”</td></tr>
+        <tr><td>01 Oct 2026, 08:44</td><td><b>fa.a02</b></td><td>Facility administrator</td><td>Exported monthly report</td><td>Facility A, Sep 2026</td><td>—</td></tr>
+        <tr><td>28 Sep 2026, 16:05</td><td><b>mc.01</b></td><td>Model custodian</td><td>Moved to shadow</td><td>v1.1</td><td>“Better calibration in validation; check on live admissions.”</td></tr>
+        <tr><td>12 Sep 2026, 10:00</td><td><b>mc.01</b></td><td>Model custodian</td><td>Promoted to active</td><td>v1.0</td><td>“Beats Robson baseline in all four hospitals.”</td></tr>
+        <tr><td>12 Aug 2026, 09:15</td><td><b>fa.a02</b></td><td>Facility administrator</td><td>Deactivated account</td><td>mw.a009</td><td>“Left the facility.”</td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Newest first. Showing 6 of 6 entries in this period.</div>
+  </section>
+</main>
+</body>
+</html>
