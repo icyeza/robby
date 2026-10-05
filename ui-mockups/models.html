@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Models · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a class="on" href="models.html">Models</a></nav>
+  <div class="who"><b>All facilities</b>Model custodian · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <h1>Models</h1>
+  <p class="lede">Every registered version and its state. Only one version is active at a time; a shadow version scores admissions in the background without being shown.</p>
+
+  <section class="tablecard">
+    <table>
+      <thead><tr><th>Version</th><th>State</th><th>Algorithm</th><th>Trained on</th><th>Calibration</th><th>Beats Robson baseline</th><th>Registered</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>v1.1</b></td><td><span class="st shadow">Shadow</span></td><td>Elastic-net logistic</td><td>Jan 2021 – Jun 2026</td><td>Isotonic</td><td>Yes</td><td>28 Sep 2026</td><td class="r"><a href="model-detail.html">Details</a></td></tr>
+        <tr><td><b>v1.0</b></td><td><span class="st active">Active</span></td><td>L2 logistic</td><td>Jan 2021 – Dec 2025</td><td>Platt</td><td>Yes</td><td>10 Sep 2026</td><td class="r"><a href="model-detail.html">Details</a></td></tr>
+        <tr><td><b>v1.2</b></td><td><span class="st candidate">Candidate</span></td><td>Gradient boosting</td><td>Jan 2021 – Jun 2026</td><td>Isotonic</td><td>Yes</td><td>02 Oct 2026</td><td class="r"><a href="model-detail.html">Details</a></td></tr>
+        <tr><td><b>v0.9</b></td><td><span class="st retired">Retired</span></td><td>Robson-group lookup</td><td>Jan 2021 – Dec 2025</td><td>None</td><td>—</td><td>01 Sep 2026</td><td class="r"><a href="model-detail.html">Details</a></td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Versions are registered from the ML pipeline as candidates. Moving a version to shadow or active, or rolling back, needs a recorded approval.</div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model v1.1 · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a class="on" href="models.html">Models</a></nav>
+  <div class="who"><b>All facilities</b>Model custodian · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <div class="crumbs"><a href="models.html">Models</a> / v1.1</div>
+  <div class="titlebar">
+    <h1>Model v1.1</h1><span class="st shadow">Shadow</span>
+    <span class="meta">Compared with active v1.0 on 612 admissions with recorded outcomes, 28 Sep – 05 Oct 2026</span>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Discrimination (AUC)</div><div class="v">0.81</div><div class="s">Active v1.0: 0.78</div></div>
+    <div class="tile"><div class="k">Calibration slope</div><div class="v">0.97</div><div class="s">Active v1.0: 0.91 · ideal 1.00</div></div>
+    <div class="tile"><div class="k">Calibration-in-the-large</div><div class="v">+0.01</div><div class="s">Active v1.0: −0.04 · ideal 0.00</div></div>
+    <div class="tile"><div class="k">Brier score</div><div class="v">0.164</div><div class="s">Active v1.0: 0.172 · lower is better</div></div>
+  </div>
+
+  <section class="tablecard">
+    <div class="tc-h"><h2>Discrimination by facility</h2><div class="lg"><span><i class="sw"></i>v1.1 shadow</span><span><i class="sw alt"></i>v1.0 active</span></div></div>
+    <table>
+      <thead><tr><th>Facility</th><th class="r">Admissions</th><th>AUC (axis 0.5–1.0)</th></tr></thead>
+      <tbody>
+        <tr><td>Facility A</td><td class="r num">188</td><td><div class="cell"><div class="bar" data-tip="v1.1: 0.82"><div class="fill" style="width:64%"></div></div><span class="num">0.82</span></div><div class="cell" style="margin-top:4px"><div class="bar" data-tip="v1.0: 0.79"><div class="fill alt" style="width:58%"></div></div><span class="num">0.79</span></div></td></tr>
+        <tr><td>Facility B</td><td class="r num">161</td><td><div class="cell"><div class="bar" data-tip="v1.1: 0.80"><div class="fill" style="width:60%"></div></div><span class="num">0.80</span></div><div class="cell" style="margin-top:4px"><div class="bar" data-tip="v1.0: 0.77"><div class="fill alt" style="width:54%"></div></div><span class="num">0.77</span></div></td></tr>
+        <tr><td>Facility C</td><td class="r num">142</td><td><div class="cell"><div class="bar" data-tip="v1.1: 0.79"><div class="fill" style="width:58%"></div></div><span class="num">0.79</span></div><div class="cell" style="margin-top:4px"><div class="bar" data-tip="v1.0: 0.78"><div class="fill alt" style="width:56%"></div></div><span class="num">0.78</span></div></td></tr>
+        <tr><td>Facility D</td><td class="r num">121</td><td><div class="cell"><div class="bar" data-tip="v1.1: 0.81"><div class="fill" style="width:62%"></div></div><span class="num">0.81</span></div><div class="cell" style="margin-top:4px"><div class="bar" data-tip="v1.0: 0.76"><div class="fill alt" style="width:52%"></div></div><span class="num">0.76</span></div></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="tablecard">
+    <div class="tc-h"><h2>Calibration by Robson group</h2><div class="lg"><span>Observed vs mean predicted cesarean rate</span></div></div>
+    <table>
+      <thead><tr><th>Group</th><th class="r">Admissions</th><th class="r">Observed</th><th class="r">v1.1 predicted</th><th class="r">v1.0 predicted</th></tr></thead>
+      <tbody>
+        <tr><td><span class="gnum">1</span></td><td class="r num">131</td><td class="r num">23%</td><td class="r num">22%</td><td class="r num">19%</td></tr>
+        <tr><td><span class="gnum">3</span></td><td class="r num">224</td><td class="r num">9%</td><td class="r num">10%</td><td class="r num">8%</td></tr>
+        <tr><td><span class="gnum">5</span></td><td class="r num">93</td><td class="r num">80%</td><td class="r num">78%</td><td class="r num">72%</td></tr>
+        <tr><td><span class="gnum">10</span></td><td class="r num">57</td><td class="r num">40%</td><td class="r num">42%</td><td class="r num">36%</td></tr>
+        <tr><td><span class="gnum">Other</span></td><td class="r num">107</td><td class="r num">49%</td><td class="r num">47%</td><td class="r num">45%</td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Groups with fewer than 50 admissions in the window are combined into "Other".</div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><span>Version facts</span></div>
+    <div class="card-b">
+      <dl class="facts">
+        <dt>Algorithm</dt><dd>Elastic-net logistic regression, isotonic calibration</dd>
+        <dt>Feature set</dt><dd>features_v1 (34 inputs)</dd>
+        <dt>Training window</dt><dd>Jan 2021 – Jun 2026</dd>
+        <dt>Rule set</dt><dd>robson-v1.0</dd>
+        <dt>Artefact hash</dt><dd><code>3f9a…c21e</code></dd>
+      </dl>
+    </div>
+  </section>
+
+  <div class="actions">
+    <a class="btn btn-p" href="#" data-open="promote">Promote v1.1 to active</a>
+    <a class="btn btn-s" href="#" data-open="rollback">Roll back active version to v0.9</a>
+  </div>
+
+  <div class="dialog-backdrop" id="promote">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pt">
+      <h2 id="pt">Promote v1.1 to active?</h2>
+      <div class="body">
+        <p>v1.1 will produce the readiness signal on every new admission. v1.0 will become retired. This approval is recorded with your name and reason.</p>
+        <div class="f"><label for="pn">Approved by</label><input id="pn" type="text"></div>
+        <div class="f"><label for="pr">Reason</label><textarea id="pr"></textarea></div>
+      </div>
+      <div class="foot"><a class="btn-g" href="#" data-close>Cancel</a><a class="btn btn-p" href="models.html">Record approval and promote</a></div>
+    </div>
+  </div>
+
+  <div class="dialog-backdrop" id="rollback">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rt">
+      <h2 id="rt">Roll back to v0.9?</h2>
+      <div class="body">
+        <p>v0.9 will become active again and v1.0 will be retired. This approval is recorded with your name and reason.</p>
+        <div class="f"><label for="rn">Approved by</label><input id="rn" type="text"></div>
+        <div class="f"><label for="rr">Reason</label><textarea id="rr"></textarea></div>
+      </div>
+      <div class="foot"><a class="btn-g" href="#" data-close>Cancel</a><a class="btn btn-p" href="models.html">Record approval and roll back</a></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
