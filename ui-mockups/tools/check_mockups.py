@@ -21,6 +21,7 @@ PAGES = [
     "admission-conflict.html",
     "result.html",
     "result-no-model.html",
+    "result-corrected.html",
     "admissions-recent.html",
     "outcome-record.html",
     "correction.html",

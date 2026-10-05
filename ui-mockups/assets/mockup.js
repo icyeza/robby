@@ -13,7 +13,7 @@
       }
       nodes[n].innerHTML = html;
       nodes[n].setAttribute('role', 'img');
-      nodes[n].setAttribute('aria-label', filled + ' of 100 figures filled');
+      nodes[n].setAttribute('aria-label', filled + ' of 100 women had a cesarean');
     }
   }
 
@@ -56,27 +56,46 @@
     document.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('.seg button') : null;
       if (!b) return;
-      e.preventDefault();
       var all = b.parentNode.querySelectorAll('button');
-      for (var i = 0; i < all.length; i++) all[i].classList.remove('on');
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.remove('on');
+        all[i].setAttribute('aria-pressed', 'false');
+      }
       b.classList.add('on');
+      b.setAttribute('aria-pressed', 'true');
     });
   }
 
-  /* [data-open="id"] opens .dialog-backdrop#id; [data-close] closes its backdrop */
+  /* [data-open="id"] opens .dialog-backdrop#id; [data-close] or Escape closes it */
   function dialogs() {
+    var lastOpener = null;
+    function close(backdrop) {
+      backdrop.classList.remove('open');
+      if (lastOpener && lastOpener.focus) lastOpener.focus();
+      lastOpener = null;
+    }
     document.addEventListener('click', function (e) {
       var opener = e.target.closest ? e.target.closest('[data-open]') : null;
       if (opener) {
         e.preventDefault();
-        document.getElementById(opener.getAttribute('data-open')).classList.add('open');
+        var target = document.getElementById(opener.getAttribute('data-open'));
+        if (!target) return;
+        lastOpener = opener;
+        target.classList.add('open');
+        var first = target.querySelector('input, select, textarea');
+        if (first) first.focus();
         return;
       }
       var closer = e.target.closest ? e.target.closest('[data-close]') : null;
       if (closer) {
         e.preventDefault();
-        closer.closest('.dialog-backdrop').classList.remove('open');
+        close(closer.closest('.dialog-backdrop'));
       }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' && e.keyCode !== 27) return;
+      var open = document.querySelector('.dialog-backdrop.open');
+      if (open) close(open);
     });
   }
 

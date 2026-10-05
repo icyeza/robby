@@ -6,7 +6,7 @@
 :root{
   --brand:#7b1e3a; --brand-dark:#5c1229; --brand-tint:#f8eef1; --brand-line:#e7cfd6;
   --ink:#1c1b1d; --ink-2:#4a4649; --ink-3:#77707a; --line:#e4e1e3; --bg:#faf9f9; --white:#fff;
-  --field:#bdb7bb; --track:#f1eef0;
+  --field:#8f878c; --track:#f1eef0;
   --error:#c62828; --error-bg:#fdeeee; --warn:#9a5b00; --warn-bg:#fff6e5; --ok:#2e6b3f; --ok-bg:#eaf3ec;
   --fig:#4b4650; --fig-off:#dcd8db;
   --size-flag:#4d3373; --size-flag-bg:#efe9f6;
@@ -89,6 +89,7 @@ select:disabled,input:disabled{background:#f4f2f3;color:var(--ink-3)}
 .seg button{flex:1;border:none;background:#fff;font:inherit;font-size:14px;color:var(--ink-2);border-right:1px solid #ddd8db;cursor:pointer;padding:0 12px}
 .seg button:last-child{border-right:none}
 .seg button.on{background:var(--brand);color:#fff;font-weight:600}
+.seg button:focus-visible{outline:3px solid #e8b8c6;outline-offset:-3px}
 .f.missing input{border-color:var(--brand);border-style:dashed;background:var(--brand-tint)}
 .f.conflict input{border-color:var(--error);box-shadow:0 0 0 3px var(--error-bg)}
 .f .msg{color:var(--error);font-size:13px;font-weight:600;margin-top:6px}
@@ -124,10 +125,10 @@ select:disabled,input:disabled{background:#f4f2f3;color:var(--ink-3)}
 /* ---------- Robson strip ---------- */
 .strip{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-bottom:6px}
 .strip.compact{grid-template-columns:repeat(5,1fr);gap:6px;margin:10px 0 16px}
-.strip div{height:34px;border-radius:4px;background:#f2f0f1;color:#b9b2b6;display:grid;place-items:center;font-weight:700;font-size:13px}
+.strip div{height:34px;border-radius:4px;background:#f2f0f1;color:#857d82;display:grid;place-items:center;font-weight:700;font-size:13px}
 .strip div.on{background:var(--brand);color:#fff;box-shadow:0 0 0 3px var(--brand-tint)}
 .strip div.poss{background:var(--brand-tint);color:var(--brand);outline:1.5px solid var(--brand-line)}
-.strip div.out{text-decoration:line-through;text-decoration-thickness:1.5px;color:#c3bdc0}
+.strip div.out{text-decoration:line-through;text-decoration-thickness:1.5px;color:#9a9297}
 .strip-cap{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;font-size:11px;color:var(--ink-3);margin-bottom:22px;text-align:center}
 .strip-cap span{border-top:1.5px solid var(--line);padding-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -243,7 +244,7 @@ table.wide th{white-space:normal;vertical-align:bottom}
 /* ---------- dialog ---------- */
 .dialog-backdrop{position:fixed;inset:0;background:rgba(28,27,29,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 .dialog-backdrop.open{display:flex}
-.dialog{background:#fff;border-radius:8px;max-width:520px;width:100%;border-top:4px solid var(--brand)}
+.dialog{background:#fff;border-radius:8px;max-width:520px;width:100%;border-top:4px solid var(--brand);max-height:calc(100vh - 32px);overflow:auto}
 .dialog h2{font-size:21px;margin:0;padding:20px 24px 4px}
 .dialog .body{padding:8px 24px 4px}
 .dialog .body .f{margin-bottom:14px}
@@ -280,7 +281,8 @@ table.wide th{white-space:normal;vertical-align:bottom}
   .scr .reason,.scr .errbox{grid-column:1 / 3}
   .scr .pair{grid-column:1 / 3}
   .tiles,.kv3{grid-template-columns:1fr 1fr}
-  nav{display:none}
+  .top-in{height:auto;flex-wrap:wrap;padding-top:10px;padding-bottom:10px;gap:8px 20px}
+  nav a{padding:6px 2px;top:0}
   .icon-array{grid-template-columns:repeat(10,1fr);max-width:260px}
   .login-brand{padding:28px}
   .login-brand .big{display:none}

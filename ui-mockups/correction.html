@@ -21,11 +21,11 @@
   <div class="notice warn"><b>You are correcting A-0193.</b> The original stays on record and will be marked as replaced. The corrected admission gets a new code.</div>
 
   <div class="grid-form">
-    <form action="result.html">
+    <form action="result-corrected.html">
 
       <section class="sec">
         <div class="sec-b">
-          <div class="f"><label for="why">Reason for correction <span style="color:var(--error)">(required)</span></label><textarea id="why">Gestational age was entered as 29 weeks; the correct value is 39 weeks.</textarea></div>
+          <div class="f"><label for="why">Reason for correction <span style="color:var(--error)">(required)</span></label><textarea id="why">Admission time was entered as 14:22; the woman was admitted at 15:05.</textarea></div>
         </div>
       </section>
 
@@ -33,7 +33,7 @@
         <div class="sec-h"><span class="sec-n">1</span><h2>Admission and Robson fields</h2><span class="hint">Needed for the Robson group</span></div>
         <div class="sec-b">
           <div class="row three">
-            <div class="f"><label for="adm">Admitted at</label><input id="adm" type="text" value="05 Oct 2026, 14:22"></div>
+            <div class="f"><label for="adm">Admitted at</label><input id="adm" type="text" value="05 Oct 2026, 15:05"></div>
             <div class="f"><label for="age">Maternal age</label><div class="unit"><input id="age" type="number" value="29"><span>years</span></div></div>
             <div class="f"><label for="ga">Gestational age</label><div class="unit"><input id="ga" type="number" value="39"><span>weeks</span></div><div class="help">Completed weeks</div></div>
           </div>
@@ -42,10 +42,10 @@
             <div class="f"><label for="pcs">Previous cesareans</label><input id="pcs" type="number" value="1"></div>
           </div>
           <div class="row">
-            <div class="f"><label>Fetal presentation</label><div class="seg"><button class="on">Cephalic</button><button>Breech</button><button>Transverse / oblique</button></div></div>
-            <div class="f"><label>Number of fetuses</label><div class="seg"><button class="on">One</button><button>Two or more</button></div></div>
+            <div class="f"><label>Fetal presentation</label><div class="seg" role="group" aria-label="Fetal presentation"><button type="button" class="on" aria-pressed="true">Cephalic</button><button type="button" aria-pressed="false">Breech</button><button type="button" aria-pressed="false">Transverse / oblique</button></div></div>
+            <div class="f"><label>Number of fetuses</label><div class="seg" role="group" aria-label="Number of fetuses"><button type="button" class="on" aria-pressed="true">One</button><button type="button" aria-pressed="false">Two or more</button></div></div>
           </div>
-          <div class="f"><label>Onset of labour</label><div class="seg"><button class="on">Spontaneous</button><button>Induced</button><button>No labour (pre-labour cesarean)</button></div></div>
+          <div class="f"><label>Onset of labour</label><div class="seg" role="group" aria-label="Onset of labour"><button type="button" class="on" aria-pressed="true">Spontaneous</button><button type="button" aria-pressed="false">Induced</button><button type="button" aria-pressed="false">No labour (pre-labour cesarean)</button></div></div>
         </div>
       </section>
 
@@ -55,19 +55,19 @@
           <div class="scr">
             <div class="name">Blood pressure</div>
             <div class="pair"><div class="unit"><input type="number" value="128" aria-label="Systolic"><span>sys</span></div><span class="muted">/</span><div class="unit"><input type="number" value="84" aria-label="Diastolic"><span>dia mmHg</span></div></div>
-            <label class="nm"><input type="checkbox">Not measured</label>
+            <label class="nm"><input type="checkbox" aria-label="Blood pressure not measured">Not measured</label>
             <div class="reason"><select aria-label="Reason BP not measured"><option>Choose a reason</option><option>Equipment unavailable or broken</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
           </div>
           <div class="scr">
             <div class="name">Proteinuria</div>
             <div class="value"><select aria-label="Proteinuria"><option>Negative</option><option>Trace</option><option>+</option><option>++</option><option>+++</option></select></div>
-            <label class="nm"><input type="checkbox" checked>Not measured</label>
+            <label class="nm"><input type="checkbox" checked aria-label="Proteinuria not measured">Not measured</label>
             <div class="reason"><select aria-label="Reason proteinuria not measured"><option>Reagent strips out of stock</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
           </div>
           <div class="scr">
             <div class="name">Glucose</div>
-            <div class="value"><div class="unit"><input type="number" value="5.2" aria-label="Glucose"><span>mmol/L</span></div></div>
-            <label class="nm"><input type="checkbox">Not measured</label>
+            <div class="value"><div class="unit"><input id="glu" type="number" value="5.2" aria-label="Glucose"><span>mmol/L</span></div></div>
+            <label class="nm"><input type="checkbox" aria-label="Glucose not measured">Not measured</label>
             <div class="reason"><select aria-label="Reason glucose not measured"><option>Choose a reason</option><option>Glucometer or strips unavailable</option><option>Woman declined</option><option>No time before delivery</option><option>Other</option></select></div>
           </div>
         </div>
@@ -89,21 +89,21 @@
           <div class="row three">
             <div class="f"><label for="lc">Living children</label><input id="lc" type="number"></div>
             <div class="f"><label for="dc">Children who died</label><input id="dc" type="number"></div>
-            <div class="f"><label>Previous stillbirth</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Previous stillbirth</label><div class="seg" role="group" aria-label="Previous stillbirth"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
           </div>
           <div class="row three">
-            <div class="f"><label>Previous preterm birth</label><div class="seg"><button>Yes</button><button>No</button></div></div>
-            <div class="f"><label>HIV status</label><div class="seg"><button>Positive</button><button>Negative</button><button>Unknown</button></div></div>
-            <div class="f"><label>Pre-eclampsia recorded</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Previous preterm birth</label><div class="seg" role="group" aria-label="Previous preterm birth"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+            <div class="f"><label>HIV status</label><div class="seg" role="group" aria-label="HIV status"><button type="button" aria-pressed="false">Positive</button><button type="button" aria-pressed="false">Negative</button><button type="button" aria-pressed="false">Unknown</button></div></div>
+            <div class="f"><label>Pre-eclampsia recorded</label><div class="seg" role="group" aria-label="Pre-eclampsia recorded"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
           </div>
           <div class="row three">
-            <div class="f"><label>Gestational diabetes recorded</label><div class="seg"><button>Yes</button><button>No</button></div></div>
-            <div class="f"><label>IVF pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
-            <div class="f"><label>Admitted during pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Gestational diabetes recorded</label><div class="seg" role="group" aria-label="Gestational diabetes recorded"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+            <div class="f"><label>IVF pregnancy</label><div class="seg" role="group" aria-label="IVF pregnancy"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+            <div class="f"><label>Admitted during pregnancy</label><div class="seg" role="group" aria-label="Admitted during pregnancy"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
           </div>
           <div class="row three">
-            <div class="f"><label>Malaria in pregnancy</label><div class="seg"><button>Yes</button><button>No</button></div></div>
-            <div class="f"><label>Genito-urinary infection</label><div class="seg"><button>Yes</button><button>No</button></div></div>
+            <div class="f"><label>Malaria in pregnancy</label><div class="seg" role="group" aria-label="Malaria in pregnancy"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+            <div class="f"><label>Genito-urinary infection</label><div class="seg" role="group" aria-label="Genito-urinary infection"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
             <div class="f"><label for="ins">Insurance</label><select id="ins"><option>Choose</option><option>Community-based (Mutuelle)</option><option>Private</option><option>None</option></select></div>
           </div>
           <div class="row three">
