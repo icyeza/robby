@@ -30,13 +30,16 @@ PAGES = [
     "model-detail.html",
 ]
 
-# Copy rules (spec section 7) apply inside any element with class "signal".
+# Copy rules (spec section 7) apply inside any element with class "signal" or "signal-cell".
 BANNED_IN_SIGNAL = [
-    re.compile(r"\brisk\b", re.I),
+    re.compile(r"\brisk(s|y)?\b", re.I),
     re.compile(r"\bshould\b", re.I),
-    re.compile(r"\bindicated\b", re.I),
+    re.compile(r"\bindicat(ed|es|ion)\b", re.I),
     re.compile(r"(?<!not a )\brecommend", re.I),
 ]
+SIGNAL_CLASSES = {"signal", "signal-cell"}
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+        "meta", "param", "source", "track", "wbr", "use", "path", "circle"}
 
 
 class Page(HTMLParser):
@@ -46,32 +49,41 @@ class Page(HTMLParser):
         self.classes: set[str] = set()
         self.title = ""
         self._in_title = False
-        self._stack: list[bool] = []  # per open element: is it inside .signal?
+        self._stack: list[tuple[str, bool]] = []  # (tag, inside a signal element?)
         self.signal_text: list[str] = []
 
-    def handle_starttag(self, tag, attrs):
+    def _open(self, tag, attrs, push):
         a = dict(attrs)
         cls = (a.get("class") or "").split()
         self.classes.update(cls)
-        for key in ("href", "src"):
+        for key in ("href", "src", "action"):
             if a.get(key):
                 self.links.append(a[key])
         if tag == "title":
             self._in_title = True
-        inside = (bool(self._stack) and self._stack[-1]) or "signal" in cls
-        if tag not in {"br", "img", "input", "meta", "link", "hr", "use"}:
-            self._stack.append(inside)
+        if push and tag not in VOID:
+            inside = (bool(self._stack) and self._stack[-1][1]) or bool(SIGNAL_CLASSES & set(cls))
+            self._stack.append((tag, inside))
+
+    def handle_starttag(self, tag, attrs):
+        self._open(tag, attrs, True)
+
+    def handle_startendtag(self, tag, attrs):
+        self._open(tag, attrs, False)
 
     def handle_endtag(self, tag):
         if tag == "title":
             self._in_title = False
-        if tag not in {"br", "img", "input", "meta", "link", "hr", "use"} and self._stack:
-            self._stack.pop()
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                break
+        # no matching open tag: ignore the stray end tag
 
     def handle_data(self, data):
         if self._in_title:
             self.title += data
-        if self._stack and self._stack[-1]:
+        if self._stack and self._stack[-1][1]:
             self.signal_text.append(data)
 
 
@@ -109,10 +121,33 @@ def check() -> list[str]:
             for other in PAGES[1:]:
                 if other not in p.links:
                     errors.append(f"index.html: does not link {other}")
+    for extra in sorted(ROOT.glob("*.html")):
+        if extra.name not in PAGES:
+            errors.append(f"{extra.name}: page not in PAGES")
     return errors
 
 
+def _self_test() -> None:
+    def parse(html: str) -> Page:
+        p = Page()
+        p.feed(html)
+        return p
+
+    p = parse('<section class="signal"><div></span><p>fine</p></div><p>you should</p></section>')
+    text = " ".join(p.signal_text)
+    assert any(rx.search(text) for rx in BANNED_IN_SIGNAL), "stray end tag lost the signal context"
+    assert BANNED_IN_SIGNAL[1].search(text), "'should' not detected"
+    q = parse('<section class="signal"><p>fine</p></section><p>you should</p>')
+    assert "should" not in " ".join(q.signal_text), "text after a closed signal section was collected"
+    r = parse('<table><tr><td class="signal-cell">no risk here</td><td>risk</td></tr></table>')
+    assert " ".join(r.signal_text) == "no risk here", "signal-cell scoping wrong"
+    print("self-test passed")
+
+
 def main() -> int:
+    if "--self-test" in sys.argv:
+        _self_test()
+        return 0
     errors = check()
     for e in errors:
         print("FAIL", e)
