@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facilities · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a class="on" href="facilities.html">Facilities</a><a href="users.html">Users</a></nav>
+  <div class="who"><b>All facilities</b>System administrator · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <div class="titlebar" style="margin-bottom:6px"><h1>Facilities</h1><a class="btn btn-p btn-sm" style="margin-left:auto" href="#" data-open="add-facility">Add facility</a></div>
+  <p class="lede">Facilities taking part, and who administers each.</p>
+
+  <section class="tablecard">
+    <table>
+      <thead><tr><th>Facility</th><th>Code</th><th>District</th><th>Administrators</th><th class="r">Active users</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Facility A</b></td><td>FA</td><td>District 1</td><td>fa.a02</td><td class="r num">14</td><td><span class="st done">Active</span></td></tr>
+        <tr><td><b>Facility B</b></td><td>FB</td><td>District 2</td><td>fa.b01</td><td class="r num">11</td><td><span class="st done">Active</span></td></tr>
+        <tr><td><b>Facility C</b></td><td>FC</td><td>District 2</td><td>fa.c01</td><td class="r num">9</td><td><span class="st done">Active</span></td></tr>
+        <tr><td><b>Facility D</b></td><td>FD</td><td>District 3</td><td>fa.d01</td><td class="r num">16</td><td><span class="st done">Active</span></td></tr>
+      </tbody>
+    </table>
+    <div class="tc-foot">Each facility administrator creates and deactivates the accounts for their own facility.</div>
+  </section>
+
+  <div class="dialog-backdrop" id="add-facility">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="aft">
+      <h2 id="aft">Add facility</h2>
+      <div class="body">
+        <div class="f"><label for="fn">Facility name</label><input id="fn" type="text"></div>
+        <div class="f"><label for="fc">Facility code</label><input id="fc" type="text"></div>
+        <div class="f"><label for="fd">District</label><input id="fd" type="text"></div>
+        <div class="f"><label for="fu">Facility administrator username</label><input id="fu" type="text"></div>
+      </div>
+      <div class="foot"><a class="btn-g" href="#" data-close>Cancel</a><a class="btn btn-p" href="facilities.html">Create</a></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
