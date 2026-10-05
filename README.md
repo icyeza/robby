@@ -3,7 +3,7 @@
 **Automated Robson Ten-Group Classification and Cesarean Readiness System for Rwandan maternity units**
 
 Repository: <https://github.com/icyeza/robby>
-Video demo: **[link to the demo video]** <!-- replace with the YouTube / Drive link -->
+Video demo: <https://vimeo.com/1233169400>
 
 ## Description
 
