@@ -94,6 +94,8 @@ the same graceful degradation the app is designed for.
 | ![Incomplete](ui-mockups/screenshots/admission-incomplete.png) | ![Conflict](ui-mockups/screenshots/admission-conflict.png) |
 | **Facility audit report** | **National overview** |
 | ![Audit report](ui-mockups/screenshots/audit-report.png) | ![National overview](ui-mockups/screenshots/national-overview.png) |
+| **API (Swagger UI): the deployed MVP** | |
+| ![Swagger UI](ui-mockups/screenshots/api-swagger.png) | |
 | **Model registry** | **Model monitoring** |
 | ![Models](ui-mockups/screenshots/models.png) | ![Monitoring](ui-mockups/screenshots/monitoring.png) |
 
