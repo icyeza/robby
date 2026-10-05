@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "ML workstream: Robson classification, readiness model and audit analytics"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "matplotlib>=3.11.2",
     "mlflow>=3.16.1",
     "numpy>=2.4.6",
@@ -20,6 +21,7 @@ dependencies = [
     "statsmodels>=0.15.0",
     "torch>=2.5",
     "typer>=0.27.2",
+    "uvicorn>=0.53.0",
     "xgboost>=3.2.0",
 ]
 
@@ -42,7 +44,7 @@ robson-engine = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "packages/robson_engine/src", "tests"]
+src = ["src", "packages/robson_engine/src", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
@@ -67,6 +69,7 @@ addopts = "-q --strict-markers --import-mode=importlib"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13.1",
     "ipykernel>=7.3.0",
     "mypy>=2.3.1",
     "nbclient>=0.11.0",
