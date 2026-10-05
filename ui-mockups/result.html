@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admission result · Robson Readiness</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script src="assets/mockup.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="mark" href="index.html"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
+  <nav><a href="admission-new.html">New admission</a><a class="on" href="admissions-recent.html">Recent admissions</a></nav>
+  <div class="who"><b>Facility A · Maternity</b>Midwife · <a href="login.html">Sign out</a></div>
+</div></header>
+
+<main class="page">
+  <div class="example-banner">Example data. Every figure on this page is a placeholder for the design, not real facility, patient or reference data.</div>
+  <div class="crumbs"><a href="admissions-recent.html">Admissions</a> / A-0193</div>
+  <div class="titlebar">
+    <h1>Admission result</h1>
+    <span class="meta">A-0193 · Admitted 05 Oct 2026, 14:22 · Age 29 · 39 weeks</span>
+    <span class="saved">✓ Saved 14:31</span>
+  </div>
+
+  <div class="grid-result">
+    <section class="card">
+      <div class="card-h"><span>Robson classification</span></div>
+      <div class="card-b">
+        <div class="rg"><span class="rg-num">5</span><span class="rg-sub">subgroup 5a</span></div>
+        <p class="rg-name">Multiparous with one previous cesarean, single cephalic pregnancy, 37 weeks or more</p>
+        <div class="strip">
+          <div>1</div><div>2</div><div>3</div><div>4</div><div class="on">5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div>
+        </div>
+        <div class="strip-cap"><span style="grid-column:1/3">Nulliparous</span><span style="grid-column:3/6">Multiparous</span><span style="grid-column:6/8">Breech</span><span>Multiple</span><span>Transverse</span><span>Preterm</span></div>
+        <p class="why-h">Why group 5</p>
+        <ul class="trace">
+          <li><span class="ck">✓</span><span>Multiparous</span><span class="val">parity 2</span></li>
+          <li><span class="ck">✓</span><span>At least one previous cesarean</span><span class="val">1 previous</span></li>
+          <li><span class="ck">✓</span><span>One fetus</span><span class="val">one</span></li>
+          <li><span class="ck">✓</span><span>Cephalic presentation</span><span class="val">cephalic</span></li>
+          <li><span class="ck">✓</span><span>37 weeks or more</span><span class="val">39 weeks</span></li>
+          <li><span class="ck">✓</span><span>Subgroup 5a: exactly one previous cesarean</span><span class="val">1</span></li>
+        </ul>
+        <div class="ruleset">WHO Robson rule set robson-v1.0. Onset of labour does not affect group 5.</div>
+      </div>
+    </section>
+
+    <section class="card signal">
+      <div class="card-h"><span>Readiness signal · under current practice</span></div>
+      <div class="card-b">
+        <p class="signal-lead">Of 100 women like her admitted to facilities like this one, about 71 had a cesarean.</p>
+        <div class="icon-array" data-filled="71"></div>
+        <div class="legend">
+          <span><i style="background:var(--fig)"></i>Delivered by cesarean (71)</span>
+          <span><i style="background:var(--fig-off)"></i>Delivered vaginally (29)</span>
+        </div>
+        <div class="frame"><b>This describes what usually happens here. It is not a judgement of what ought to happen.</b> Use it to plan theatre and staff readiness. It is not a recommendation for or against cesarean.</div>
+        <dl class="facts">
+          <dt>Model</dt><dd>v1.0 · active since 12 Sep 2026</dd>
+          <dt>Inputs not given</dt><dd>HIV status, pre-eclampsia record · <a href="correction.html">Add them</a></dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:24px">
+    <div class="card-h"><span>Screening recorded</span></div>
+    <div class="card-b kv3">
+      <div><div class="n-k">Blood pressure</div><div class="n-v">128 / 84 mmHg</div></div>
+      <div><div class="n-k">Proteinuria</div><div class="n-v warn">Not measured · reagent strips out of stock</div></div>
+      <div><div class="n-k">Glucose</div><div class="n-v">5.2 mmol/L</div></div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <a class="btn btn-p" href="admission-new.html">New admission</a>
+    <a class="btn btn-s" href="correction.html">Record a correction</a>
+    <a class="btn-g" href="#" onclick="window.print();return false">Print</a>
+  </div>
+</main>
+</body>
+</html>
