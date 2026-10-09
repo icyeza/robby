@@ -143,6 +143,19 @@ def histogram(
     count of 1-4). With ``share`` each level is shown as % of its own total, so levels of
     different sizes (e.g. CS and vaginal births) compare by shape; bars sit side by side."""
     fig, ax = plt.subplots(figsize=(FIG_WIDTH, 3.8))
+    _draw_histogram(ax, table, levels, level_labels, share)
+    ax.set_xlabel(xlabel)
+    return _finish(fig, title, "Bins holding 1-4 records are merged with a neighbour.")
+
+
+def _draw_histogram(
+    ax: plt.Axes,
+    table: pd.DataFrame,
+    levels: Sequence[str],
+    level_labels: Mapping[str, str] | None,
+    share: bool,
+    fontsize: int = 8,
+) -> None:
     positions = np.arange(len(table))
     width = 0.8 / max(len(levels), 1)
     for k, level in enumerate(levels):
@@ -156,11 +169,31 @@ def histogram(
             label=label,
             color=PALETTE[k % len(PALETTE)],
         )
-    ax.set_xticks(positions, table["bin"], rotation=60, ha="right", fontsize=8)
-    ax.set_xlabel(xlabel)
+    ax.set_xticks(positions, table["bin"], rotation=60, ha="right", fontsize=fontsize)
     ax.set_ylabel("% of the group" if share else "records")
     if len(levels) > 1:
-        ax.legend(loc="upper right")
+        ax.legend(loc="upper right", fontsize=fontsize)
+
+
+def histogram_grid(
+    tables: Mapping[str, pd.DataFrame],
+    levels: Sequence[str],
+    title: str,
+    ncols: int = 2,
+    share: bool = True,
+) -> Figure:
+    """Small multiples of :func:`histogram`, one panel per variable (titled by its key)."""
+    names = list(tables)
+    ncols = max(1, min(ncols, len(names)))
+    nrows = int(np.ceil(len(names) / ncols))
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(FIG_WIDTH * 1.25, 3.2 * nrows + 0.6), squeeze=False
+    )
+    for ax, name in zip(axes.flat, names, strict=False):
+        _draw_histogram(ax, tables[name], levels, None, share, fontsize=7)
+        ax.set_title(name, fontsize=9, fontweight="bold")
+    for ax in list(axes.flat)[len(names) :]:
+        ax.set_visible(False)
     return _finish(fig, title, "Bins holding 1-4 records are merged with a neighbour.")
 
 
@@ -201,6 +234,8 @@ def heatmap(
                 else:
                     text = fmt.format(values[i, j] + 0.0).replace("-0.0", "0.0")
                     scaled = (values[i, j] - low) / (high - low) if high > low else 0.0
+                    if cmap.endswith("_r"):  # reversed colormap: dark at the low end
+                        scaled = 1.0 - scaled
                     color = (
                         "white" if abs(scaled - (0.5 if cmap == DIVERGING else 0)) > 0.45 else INK
                     )
@@ -411,3 +446,123 @@ def importance_bars(
     ax.set_ylabel("input feature")
     note = f"Orange: {', '.join(highlight)}." if highlight else None
     return _finish(fig, title, note)
+
+
+def confusion_grid(
+    matrices: Mapping[str, pd.DataFrame],
+    title: str,
+    ncols: int = 3,
+    note: str | None = None,
+) -> Figure:
+    """Small multiples of 2x2 confusion matrices (rows observed, columns predicted), one
+    panel per model. Each cell shows its count and its share of the observed row; hidden
+    cells (markers) are grey and labelled."""
+    names = list(matrices)
+    ncols = max(1, min(ncols, len(names)))
+    nrows = int(np.ceil(len(names) / ncols))
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(FIG_WIDTH * 1.25, 2.7 * nrows + 0.6), squeeze=False
+    )
+    colormap = mpl.colormaps[SEQUENTIAL].with_extremes(bad="#d9d8d4")
+    for ax, name in zip(axes.flat, names, strict=False):
+        matrix = matrices[name]
+        values = matrix.apply(lambda col: _numeric(list(col))).to_numpy(dtype=np.float64)
+        row_totals = np.nansum(values, axis=1, keepdims=True)
+        shares = np.divide(
+            values, row_totals, out=np.full_like(values, np.nan), where=row_totals > 0
+        )
+        ax.imshow(np.ma.masked_invalid(shares), cmap=colormap, vmin=0, vmax=1)
+        ax.grid(False)
+        for i in range(2):
+            for j in range(2):
+                raw = matrix.iat[i, j]
+                if isinstance(raw, str):
+                    text, color = raw, INK
+                else:
+                    text = f"{int(raw)}\n{100 * shares[i, j]:.0f}%"
+                    color = "white" if shares[i, j] > 0.55 else INK
+                ax.text(j, i, text, ha="center", va="center", fontsize=9, color=color)
+        ax.set_xticks([0, 1], ["vaginal", "CS"])
+        ax.set_yticks([0, 1], ["vaginal", "CS"])
+        ax.set_xlabel("predicted", fontsize=8)
+        ax.set_ylabel("observed", fontsize=8)
+        ax.set_title(name, fontsize=9, fontweight="bold")
+    for ax in list(axes.flat)[len(names) :]:
+        ax.set_visible(False)
+    return _finish(fig, title, note or "Count and % of the observed class; colour: % of row.")
+
+
+def grouped_bars(
+    table: pd.DataFrame,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    ylim: tuple[float, float] | None = None,
+    note: str | None = None,
+) -> Figure:
+    """Vertical bars grouped by row of ``table`` (e.g. a model), one colour per column
+    (e.g. a metric), in palette order."""
+    data = table.apply(lambda col: _numeric(list(col)))
+    n_rows, n_cols = data.shape
+    width = 0.8 / max(n_cols, 1)
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH * 1.15, 4.4))
+    positions = np.arange(n_rows)
+    for k, column in enumerate(data.columns):
+        ax.bar(
+            positions + (k - (n_cols - 1) / 2) * width,
+            data[column].to_numpy(),
+            width=width,
+            color=PALETTE[k % len(PALETTE)],
+            label=str(column),
+            edgecolor=SURFACE,
+            linewidth=1,
+        )
+    ax.set_xticks(positions, [str(i) for i in data.index], rotation=30, ha="right")
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.legend(
+        loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=min(n_cols, 6), fontsize=8, frameon=False
+    )
+    return _finish(fig, title, note)
+
+
+def tuning_panels(
+    panels: Mapping[str, tuple[pd.DataFrame, str]],
+    title: str,
+    ncols: int = 2,
+    note: str | None = None,
+) -> Figure:
+    """One panel per tuned model: inner-CV log loss of every tuning trial (one point per
+    trial, never per woman) against one hyperparameter, with the best trial marked.
+    ``panels`` maps a panel title to (trial history, hyperparameter column). A numeric
+    hyperparameter spanning more than two decades gets a log axis; a categorical one is
+    placed at evenly spaced positions."""
+    names = list(panels)
+    ncols = max(1, min(ncols, len(names)))
+    nrows = int(np.ceil(len(names) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(FIG_WIDTH, 3.0 * nrows + 0.6), squeeze=False)
+    for k, (ax, name) in enumerate(zip(axes.flat, names, strict=False)):
+        history, param = panels[name]
+        x = history[param]
+        numeric = pd.api.types.is_numeric_dtype(x) and not pd.api.types.is_bool_dtype(x)
+        if numeric:
+            xs = x.astype(float).to_numpy()
+            positive = xs[xs > 0]
+            if len(positive) == len(xs) and positive.max() / positive.min() > 100:
+                ax.set_xscale("log")
+        else:
+            levels = sorted(x.astype(str).unique())
+            xs = np.array([levels.index(v) for v in x.astype(str)], dtype=float)
+            ax.set_xticks(range(len(levels)), levels, fontsize=7, rotation=30, ha="right")
+        ys = history["log_loss"].to_numpy()
+        ax.scatter(xs, ys, s=22, color=PALETTE[k % len(PALETTE)], alpha=0.8, edgecolor=SURFACE)
+        best = int(np.argmin(ys))
+        ax.scatter(xs[best], ys[best], s=90, facecolor="none", edgecolor=INK, linewidth=1.5)
+        ax.set_title(name, fontsize=9, fontweight="bold")
+        ax.set_xlabel(param, fontsize=8)
+        ax.set_ylabel("inner-CV log loss", fontsize=8)
+    for ax in list(axes.flat)[len(names) :]:
+        ax.set_visible(False)
+    return _finish(fig, title, note or "One point per tuning trial; circled: the best trial.")

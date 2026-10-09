@@ -75,6 +75,7 @@ from robson_ml.splits import (
     recalibration_split,
     temporal_split,
 )
+from robson_ml.tracking import logged_threshold_metrics
 
 EXPERIMENT_NAME = "robson-readiness"
 SPLITS = ("S1", "S2", "S3", "S4")
@@ -274,8 +275,23 @@ def tune(
     exhaustively over it (``{}``: nothing to tune). For early-stopped models the returned
     ``n_estimators`` is the mean best number of rounds over the inner folds.
     """
+    study = tuning_study(spec, fs, config, x, y, tuning)
+    return {} if study is None else dict(study.best_trial.user_attrs["params"])
+
+
+def tuning_study(
+    spec: ModelSpec,
+    fs: FeatureSpec,
+    config: ExperimentConfig,
+    x: pd.DataFrame,
+    y: npt.NDArray[np.int64],
+    tuning: Sequence[tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]],
+) -> optuna.Study | None:
+    """The finished Optuna study behind :func:`tune` (None when there is nothing to tune);
+    each trial's value is its inner-CV mean log loss and ``user_attrs["params"]`` its
+    hyperparameters."""
     if spec.grid is not None and not spec.grid:
-        return {}
+        return None
     reserved = _reserved(config)
 
     def objective(trial: optuna.Trial) -> float:
@@ -304,7 +320,21 @@ def tune(
         n_trials = config.n_trials
     study = optuna.create_study(direction="minimize", sampler=sampler)
     study.optimize(objective, n_trials=n_trials)
-    return dict(study.best_trial.user_attrs["params"])
+    return study
+
+
+def fold_tuning_study(data: ModelData, config: ExperimentConfig, fold: Fold) -> optuna.Study | None:
+    """Re-run the tuning of one fold of ``config`` exactly as :func:`run_experiment` does
+    (same inputs, inner folds and seeds) and return its study, to inspect the trials. On a
+    run's first fold this reproduces the logged hyperparameters."""
+    spec = get_model(config.model)
+    fs = feature_spec(data, config.feature_set)
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        return tuning_study(spec, fs, config, data.x[list(fs.columns)], data.y, fold.tuning)
 
 
 def _sigmoid(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -551,6 +581,7 @@ def _log_run(
         run_id = str(run.info.run_id)
         mlflow.log_params(params)
         mlflow.log_metrics(summary)
+        mlflow.log_metrics(logged_threshold_metrics(oof["y"].to_numpy(), oof["p"].to_numpy()))
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             (out / "metrics.json").write_text(
