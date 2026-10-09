@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
@@ -129,9 +130,29 @@ def _quieten() -> None:
     logging.getLogger("mlflow").setLevel(logging.ERROR)
 
 
-def setup(start: Path | None = None, commands: tuple[str, ...] = PROCESS_COMMANDS) -> Project:
+def _pipeline_outputs(project: Project) -> list[Path]:
+    # What the EDA, training and evaluation notebooks read (ingest, robson, profile, leakage).
+    return [
+        project.raw_path,
+        project.processed / "canonical.parquet",
+        project.classified_path,
+        project.interim / "mapping_report.json",
+        project.reports / "leakage" / "leakage_screens.csv",
+    ]
+
+
+def setup(
+    start: Path | None = None,
+    commands: tuple[str, ...] = PROCESS_COMMANDS,
+    prepare: Callable[[Path], None] | None = None,
+    required: Callable[[Project], list[Path]] = _pipeline_outputs,
+) -> Project:
     """Read the mode, prepare the project (built and processed in synthetic mode) and
-    return it. Raises FileNotFoundError in real mode when the CLI outputs are missing."""
+    return it.
+
+    In synthetic mode ``prepare(root)``, when given, runs after the project is built and
+    before ``commands`` (e.g. to write fake reference files). ``required(project)`` lists
+    the outputs the notebook reads; FileNotFoundError names any that are missing."""
     mode = os.environ.get("ROBSON_NOTEBOOK_MODE", "synthetic")
     if mode not in MODES:
         raise ValueError(f"ROBSON_NOTEBOOK_MODE must be 'synthetic' or 'real', not {mode!r}")
@@ -154,6 +175,8 @@ def setup(start: Path | None = None, commands: tuple[str, ...] = PROCESS_COMMAND
         root = Path(tempfile.mkdtemp(prefix="robson_notebook_"))
         n = int(os.environ.get("ROBSON_NOTEBOOK_SYNTHETIC_N", str(SYNTHETIC_N)))
         build_synthetic_project(root, repo, n=n, seed=SYNTHETIC_SEED)
+        if prepare is not None:
+            prepare(root)
         for command in commands:
             run_cli(root, command)
         print(f"synthetic project built and processed in {time.time() - started:.0f} s")
@@ -163,18 +186,9 @@ def setup(start: Path | None = None, commands: tuple[str, ...] = PROCESS_COMMAND
     project = Project(
         mode, run_live, repo, root, load_project_config(root / "configs" / "project.yaml")
     )
-    required = [
-        project.raw_path,
-        project.processed / "canonical.parquet",
-        project.classified_path,
-        project.interim / "mapping_report.json",
-        project.reports / "leakage" / "leakage_screens.csv",
-    ]
-    missing = [str(p.relative_to(root)) for p in required if not p.exists()]
+    missing = [str(p.relative_to(root)) for p in required(project) if not p.exists()]
     if missing:
-        raise FileNotFoundError(
-            f"run the robson-ml CLI first (ingest, robson, profile, leakage); missing: {missing}"
-        )
+        raise FileNotFoundError(f"run the robson-ml CLI first; missing: {missing}")
     print(f"data: {mode}")
     return project
 
