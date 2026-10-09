@@ -1,5 +1,6 @@
-"""The pipeline notebook: committed outputs are PII-free, it executes end to end in synthetic mode,
-and its executed outputs hold aggregates only (no identifier, no row-level table)."""
+"""The EDA, training and evaluation notebooks: committed outputs are PII-free, each executes end to
+end in synthetic mode, and the executed outputs hold aggregates only (no identifier, no row-level
+table)."""
 
 import re
 import sys
@@ -9,7 +10,13 @@ import nbformat
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-NOTEBOOK = REPO / "notebooks" / "01_cesarean_readiness_pipeline.ipynb"
+NOTEBOOKS = REPO / "notebooks"
+# Each notebook and text its synthetic run must print (proof that its key steps ran).
+EXPECTED = {
+    "01_eda.ipynb": ("data: synthetic", "canonical schema: valid"),
+    "02_model_training.ipynb": ("data: synthetic", "same as logged in MLflow", "SELECTED:"),
+    "03_model_evaluation.ipynb": ("data: synthetic", "rebuilt AUC", "deployment-variant decision"),
+}
 sys.path.insert(0, str(REPO / "scripts"))
 
 from run_notebook import execute  # noqa: E402
@@ -66,10 +73,11 @@ def scan_outputs(nb: nbformat.NotebookNode) -> list[str]:
     return problems
 
 
-def test_committed_notebook_outputs_are_pii_free() -> None:
+@pytest.mark.parametrize("name", sorted(EXPECTED))
+def test_committed_notebook_outputs_are_pii_free(name: str) -> None:
     """Committed notebooks may carry real-data outputs (the repository is private),
     but only aggregates: no identifiers, no row-level tables, no errors."""
-    nb = nbformat.read(NOTEBOOK, as_version=4)
+    nb = nbformat.read(NOTEBOOKS / name, as_version=4)
     if has_outputs(nb):
         assert scan_outputs(nb) == []
 
@@ -103,28 +111,30 @@ def test_scanner_catches_identifiers_and_row_tables() -> None:
     assert any("identifier column" in p for p in problems)
 
 
-@pytest.fixture(scope="module")
-def executed(tmp_path_factory: pytest.TempPathFactory) -> nbformat.NotebookNode:
-    output = tmp_path_factory.mktemp("notebook") / "executed.ipynb"
-    execute("synthetic", output)
-    return nbformat.read(output, as_version=4)
+@pytest.fixture(scope="module", params=sorted(EXPECTED))
+def executed(
+    request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
+) -> tuple[str, nbformat.NotebookNode]:
+    output = tmp_path_factory.mktemp("notebook") / request.param
+    execute("synthetic", output, notebook=NOTEBOOKS / request.param)
+    return request.param, nbformat.read(output, as_version=4)
 
 
-def test_notebook_executes_in_synthetic_mode(executed: nbformat.NotebookNode) -> None:
-    code_cells = [c for c in executed.cells if c.cell_type == "code"]
+def test_notebook_executes_in_synthetic_mode(executed: tuple[str, nbformat.NotebookNode]) -> None:
+    name, nb = executed
+    code_cells = [c for c in nb.cells if c.cell_type == "code"]
     assert all(c.execution_count is not None for c in code_cells)
     assert not any(o.output_type == "error" for c in code_cells for o in c.outputs)
-    text = "\n".join(t for _, _, t in _texts(executed))
-    assert "mode: synthetic" in text
-    assert "SELECTED:" in text
-    assert "rebuilt AUC" in text
+    text = "\n".join(t for _, _, t in _texts(nb))
+    for expected in EXPECTED[name]:
+        assert expected in text, f"{name}: {expected!r} missing"
 
 
-def test_executed_outputs_are_aggregate_only(executed: nbformat.NotebookNode) -> None:
-    assert scan_outputs(executed) == []
+def test_executed_outputs_are_aggregate_only(executed: tuple[str, nbformat.NotebookNode]) -> None:
+    assert scan_outputs(executed[1]) == []
 
 
-def test_no_output_frames_a_recommendation(executed: nbformat.NotebookNode) -> None:
-    text = "\n".join(t for _, _, t in _texts(executed)).lower()
+def test_no_output_frames_a_recommendation(executed: tuple[str, nbformat.NotebookNode]) -> None:
+    text = "\n".join(t for _, _, t in _texts(executed[1])).lower()
     for phrase in ("recommend a cesarean", "should have a cesarean", "should receive a cs"):
         assert phrase not in text

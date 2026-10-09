@@ -1,5 +1,5 @@
-"""Notebook 02: committed outputs are PII-free, it executes in synthetic mode, and its outputs hold
-aggregates only (same leak scan as the pipeline notebook)."""
+"""Notebook 04 (audit and research questions): committed outputs are PII-free, it executes in
+synthetic mode, and its outputs hold aggregates only (same leak scan as notebooks 01-03)."""
 
 import sys
 from pathlib import Path
@@ -10,7 +10,7 @@ import pytest
 from tests.test_notebook import _texts, scan_outputs
 
 REPO = Path(__file__).resolve().parents[1]
-NOTEBOOK = REPO / "notebooks" / "02_audit_and_research_questions.ipynb"
+NOTEBOOK = REPO / "notebooks" / "04_audit_and_research_questions.ipynb"
 sys.path.insert(0, str(REPO / "scripts"))
 
 from run_notebook import execute  # noqa: E402
@@ -27,7 +27,7 @@ def test_committed_notebook_outputs_are_pii_free() -> None:
 
 @pytest.fixture(scope="module")
 def executed(tmp_path_factory: pytest.TempPathFactory) -> nbformat.NotebookNode:
-    output = tmp_path_factory.mktemp("notebook02") / "executed.ipynb"
+    output = tmp_path_factory.mktemp("notebook04") / "executed.ipynb"
     execute("synthetic", output, notebook=NOTEBOOK)
     return nbformat.read(output, as_version=4)
 

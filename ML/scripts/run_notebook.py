@@ -1,10 +1,11 @@
 """Execute a notebook and save the executed copy.
 
 Usage:
-    uv run python scripts/run_notebook.py --mode real \
-        --output reports/notebooks/01_cesarean_readiness_pipeline.executed.ipynb
+    uv run python scripts/run_notebook.py --mode real --notebook notebooks/02_model_training.ipynb \
+        --output reports/notebooks/02_model_training.executed.ipynb
 
-``--mode synthetic`` (the default) runs on a synthetic project in a temporary directory.
+``--notebook`` defaults to notebooks/01_eda.ipynb. ``--mode synthetic`` (the default) runs on
+a synthetic project in a temporary directory.
 ``--mode real`` reads configs/, data/processed/, reports/ and mlruns/; add ``--run-live``
 to run one demonstration configuration (tracked in a temporary store, not mlruns/). The
 executed notebook contains aggregate outputs only; run the output scan in
@@ -23,7 +24,7 @@ import nbformat
 from nbclient import NotebookClient
 
 REPO = Path(__file__).resolve().parents[1]
-NOTEBOOK = REPO / "notebooks" / "01_cesarean_readiness_pipeline.ipynb"
+NOTEBOOK = REPO / "notebooks" / "01_eda.ipynb"
 CELL_TIMEOUT_S = 7200
 
 
