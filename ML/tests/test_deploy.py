@@ -137,12 +137,14 @@ def test_deployment_feature_choice(tmp_path: Path) -> None:
         deployment_feature_choice(uri, data_hash="other")
 
 
-def _write_deployment(root: Path, label: str, use_facility: object) -> Path:
+def _write_deployment(
+    root: Path, label: str, use_facility: object, model: str = "logreg_l2"
+) -> Path:
     path = root / "configs" / f"{label}.yaml"
     path.write_text(
         yaml.safe_dump(
             {
-                "model": "logreg_l2",
+                "model": model,
                 "feature_set": "FS2",
                 "use_facility": use_facility,
                 "missing_strategy": "M2",
@@ -245,6 +247,19 @@ def test_fit_deploy_auto_uses_s3_rule(project: Path) -> None:  # noqa: F811
     assert summary["feature_set"] == "FS2" and summary["use_facility"] is False
     assert summary["facility_decision"]["s3_mean_log_loss_deploy"] == 0.55
     assert FACILITY not in summary["features"]
+    assert not (project / "reports" / "interpretation" / "facility_contribution.csv").exists()
+
+
+def test_fit_deploy_nonlinear_model_with_facility_has_no_offsets(project: Path) -> None:  # noqa: F811
+    commit_rule(project)
+    config = _write_deployment(project, "readiness-tree", True, model="random_forest")
+    result = _invoke(project, "fit-deploy", config.as_posix())
+    assert result.exit_code == 0, result.output  # type: ignore[attr-defined]
+    summary = json.loads(
+        (project / "artefacts" / "readiness-tree" / "fit_summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["use_facility"] is True and FACILITY in summary["features"]
+    assert "facility_contribution" not in summary
     assert not (project / "reports" / "interpretation" / "facility_contribution.csv").exists()
 
 

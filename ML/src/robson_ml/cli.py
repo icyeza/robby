@@ -518,7 +518,7 @@ def fit_deploy(config: Path) -> None:
         f"selection rule commit: {s['selection_rule_commit']}; run_id={result.run_id}"
     )
     typer.echo(f"artefact written to {result.out_dir}")
-    if use_facility:
+    if "facility_contribution" in s:
         out = cfg.reports_dir / FACILITY_CONTRIBUTION_CSV
         out.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(s["facility_contribution"]).to_csv(out, index=False)

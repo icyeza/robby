@@ -51,6 +51,7 @@ from robson_ml.feature_sets import (
     feature_spec,
 )
 from robson_ml.models import get_model
+from robson_ml.models.base import CLF
 from robson_ml.populations import P_PRED, POPULATION_VERSION
 from robson_ml.privacy import fmt_count
 from robson_ml.splits import deployment_split, mother_groups
@@ -323,7 +324,8 @@ def fit_deployment(
         "features_yaml_hash": provenance.features_yaml_hash,
         "library_versions": library_versions(),
     }
-    if use_facility:
+    # Per-facility offsets exist only for a linear classifier (one coefficient per level).
+    if use_facility and hasattr(model.estimator.named_steps[CLF], "coef_"):
         table = facility_contribution(model)
         summary["facility_contribution"] = table.to_dict("records")
 
