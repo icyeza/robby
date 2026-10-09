@@ -7,8 +7,10 @@ code they call and the settings they read.
 
 | Notebook | What it shows |
 |---|---|
-| [`notebooks/01_cesarean_readiness_pipeline.ipynb`](notebooks/01_cesarean_readiness_pipeline.ipynb) | The full ML pipeline: data inventory, data quality, Robson classification, EDA (distributions, correlations, missingness), leakage audit, preprocessing, **model architectures**, evaluation design, training, results (AUC, calibration, Brier, **accuracy / precision / recall / F1**), pre-registered model selection, interpretation (permutation importance, SHAP), robustness, eight model families, complete-case analysis |
-| [`notebooks/02_audit_and_research_questions.ipynb`](notebooks/02_audit_and_research_questions.ipynb) | The Robson audit table, facility contributions, case-mix-adjusted facility CS rates (RQ1) and the missing-data / under-recording analysis (RQ2) |
+| [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) | **Exploratory data analysis**: data inventory, data quality, Robson classification, outcome and predictor distributions, missingness, correlations, leakage audit, populations |
+| [`notebooks/02_model_training.ipynb`](notebooks/02_model_training.ipynb) | **Model training**: feature sets, model architectures and training curve, evaluation design, training, **hyperparameter tuning** (Optuna trial curves), **experiment tracking** (MLflow), **per-model metrics table** (accuracy, precision, recall, specificity, F1, log loss, AUC, Brier), **confusion matrix per model**, calibration, pre-registered model selection |
+| [`notebooks/03_model_evaluation.ipynb`](notebooks/03_model_evaluation.ipynb) | **Model evaluation**: interpretation (permutation importance, SHAP, partial dependence), robustness (internal vs other hospitals vs later period), onset sensitivity, deployment model, complete-case analysis, summary of findings |
+| [`notebooks/04_audit_and_research_questions.ipynb`](notebooks/04_audit_and_research_questions.ipynb) | The Robson audit table, facility contributions, case-mix-adjusted facility CS rates (RQ1) and the missing-data / under-recording analysis (RQ2) |
 
 The committed notebooks are executed on the real data, but show **aggregates only**: no record,
 identifier or individual value is ever displayed, and counts of 1-4 are shown as `<5`.
@@ -17,7 +19,7 @@ identifier or individual value is ever displayed, and counts of 1-4 are shown as
 
 ```
 ML/
-├── notebooks/          the two notebooks above
+├── notebooks/          the four notebooks above
 ├── api/                FastAPI service: Robson classification + readiness probability (Swagger UI)
 ├── src/robson_ml/      the ML code the notebooks call (one module per step, see below)
 ├── packages/robson_engine/  the WHO Robson Ten-Group rule engine (its own small package)
@@ -37,10 +39,10 @@ is under a data-sharing agreement).
 | Robson classification and data profile | `robson_run`, `profile`, `eda` |
 | Features and leakage audit | `features`, `leakage`, `feature_sets`, `populations` |
 | Models | `models/` (one file per model: baselines B0-B3, logistic, elastic net, CART, random forest, SVM, XGBoost, MLP, FT-Transformer) |
-| Evaluation | `splits`, `evaluate`, `calibration`, `metrics`, `select`, `preregistration` |
+| Evaluation | `splits`, `evaluate`, `calibration`, `metrics`, `select`, `preregistration`, `tracking` |
 | Interpretation and deployment | `explain`, `deploy` |
-| Audit analyses (notebook 02) | `casemix`, `missingness`, `cmodel`, `references`, `audit_offline` |
-| Figures and command line | `figures`, `plots`, `reporting`, `cli` |
+| Audit analyses (notebook 04) | `casemix`, `missingness`, `cmodel`, `references`, `audit_offline` |
+| Figures, notebook set-up and command line | `figures`, `plots`, `reporting`, `notebook`, `cli` |
 
 ### `configs/`
 
@@ -52,7 +54,7 @@ is under a data-sharing agreement).
 | `selection_rule.yaml` | The model selection rule, committed **before** any model was run on real data (pre-registration). The code refuses to train on real data if this file is modified |
 | `experiments/*.yaml` | The training runs: `baselines`, `main_models`, `additional_models`, `deployment_check`, `sensitivity_onset_coded`, `complete_case` |
 | `deployment.yaml` | The model that gets deployed |
-| `analysis.yaml` | Settings for the audit analyses in notebook 02 |
+| `analysis.yaml` | Settings for the audit analyses in notebook 04 |
 
 `features_v1.yaml` and `selection_rule.yaml` are left exactly as they were when the experiments ran:
 their hashes are recorded with every run.
@@ -74,7 +76,7 @@ project in a temporary folder and runs every step end to end:
 
 ```bash
 uv run jupyter lab notebooks/          # or open the .ipynb in VS Code with the .venv kernel
-uv run python scripts/run_notebook.py --mode synthetic --output reports/notebooks/01.synthetic.ipynb
+uv run python scripts/run_notebook.py --mode synthetic --notebook notebooks/02_model_training.ipynb \n    --output reports/notebooks/02.synthetic.ipynb
 ```
 
 With the dataset in `data/raw/`, the real pipeline is driven by the `robson-ml` command:
@@ -87,7 +89,18 @@ uv run robson-ml leakage         # leakage screens for the feature registry
 uv run robson-ml run configs/experiments/main_models.yaml   # train + evaluate (logged to MLflow)
 uv run robson-ml fit-deploy configs/deployment.yaml         # fit the deployment model
 ROBSON_NOTEBOOK_MODE=real uv run python scripts/run_notebook.py --mode real \
-    --output reports/notebooks/01.executed.ipynb
+    --notebook notebooks/02_model_training.ipynb --output reports/notebooks/02.executed.ipynb
+```
+
+## Tracking experiments (MLflow)
+
+Every training run is logged to MLflow in `mlruns/`: configuration, tuned hyperparameters per fold,
+calibration choice, and metrics per held-out hospital, averaged and pooled (AUC, calibration, Brier,
+log loss, accuracy, precision, recall, specificity, F1). To browse and compare the runs:
+
+```bash
+uv run mlflow ui --backend-store-uri mlruns      # then open http://127.0.0.1:5000
+uv run python scripts/log_threshold_metrics.py   # once: add precision/recall/F1 to older runs
 ```
 
 ## Serving the model (API)

@@ -42,7 +42,7 @@ agreement. The data are **not** in this repository.
 | Folder | Contents |
 |---|---|
 | [`ML/`](ML/) | Notebooks, ML code, tests and the API. **Start with [`ML/README.md`](ML/README.md)** |
-| [`ML/notebooks/`](ML/notebooks/) | `01_cesarean_readiness_pipeline.ipynb` (data, EDA, model architectures, training, metrics, selection, interpretation) and `02_audit_and_research_questions.ipynb` (Robson audit, case-mix, missing data) |
+| [`ML/notebooks/`](ML/notebooks/) | `01_eda` (data quality, Robson classification, exploratory analysis), `02_model_training` (architectures, training, hyperparameter tuning, MLflow tracking, per-model metrics and confusion matrices, selection), `03_model_evaluation` (interpretation, robustness, deployment, missing data) and `04_audit_and_research_questions` (Robson audit, case-mix, missing data) |
 | [`ML/api/`](ML/api/) | FastAPI service: Robson classification and readiness probability, with Swagger UI |
 | [`ui-mockups/`](ui-mockups/) | Clickable HTML mockups of every screen of the web app, and their [screenshots](ui-mockups/screenshots/) |
 
