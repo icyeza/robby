@@ -15,6 +15,8 @@ from pathlib import Path
 
 import yaml
 
+from robson_ml.evaluate import ExperimentConfig, RunContext, RunResult, run_experiment
+from robson_ml.feature_sets import ModelData, complete_cases, deploy_variant
 from robson_ml.features import load_feature_registry
 from robson_ml.schema import CANONICAL_DTYPES
 from tests.synthetic import make_admissions, make_raw_sheet
@@ -94,3 +96,56 @@ def build_synthetic_project(root: Path, repo: Path, n: int = 1500, seed: int = 1
     (root / "data" / "raw").mkdir(parents=True, exist_ok=True)
     raw.to_excel(root / RAW_FILE, index=False, sheet_name=SHEET)
     return root
+
+
+SYNTHETIC_TRIALS = 2
+SYNTHETIC_BOOT = 50
+# (model, feature set, missing strategy): the small main grid, run under S1 and S4.
+MAIN_GRID = (("B1", "FS0", "M0"), ("logreg_l2", "FS1", "M1"), ("xgboost", "FS0", "M0"))
+EXTRA_MODELS = ("elasticnet", "cart", "random_forest", "svm_rbf")
+
+
+def synthetic_grid(seed: int) -> list[ExperimentConfig]:
+    """Every configuration the notebooks need in synthetic mode, kept tiny (memory and
+    time): the main grid under S1 and S4, S3 on each non-baseline model's base and deploy
+    feature sets, two onset-coded sensitivity runs, the additional families on FS1/M1 under
+    S1 and S4, and two complete-case runs. The FT-Transformer is left out (slow on CPU)."""
+
+    def config(model: str, fs: str, strategy: str, split: str, population: str = "P_pred"):
+        return ExperimentConfig(
+            model, fs, strategy, split, population, SYNTHETIC_TRIALS, seed, SYNTHETIC_BOOT
+        )
+
+    grid = [config(m, f, s, split) for split in ("S1", "S4") for m, f, s in MAIN_GRID]
+    grid += [
+        config(m, fs, s, "S3")
+        for m, f, s in MAIN_GRID
+        if m != "B1"
+        for fs in (f, deploy_variant(f))
+    ]
+    grid += [
+        config(m, f, s, "S1", "P_pred_onset_coded")
+        for m, f, s in MAIN_GRID
+        if m in ("B1", "logreg_l2")
+    ]
+    grid += [config(m, "FS1", "M1", split) for m in EXTRA_MODELS for split in ("S1", "S4")]
+    grid += [
+        config(m, "FS0", s, "S1", "P_pred_complete") for m, s in (("B1", "M0"), ("logreg_l2", "M1"))
+    ]
+    return grid
+
+
+def train_synthetic_grid(
+    data: ModelData, data_onset: ModelData, ctx: RunContext, seed: int
+) -> list[RunResult]:
+    """Run :func:`synthetic_grid`, each configuration on its population's data."""
+    results = []
+    for cfg in synthetic_grid(seed):
+        if cfg.population == "P_pred_onset_coded":
+            subset = data_onset
+        elif cfg.population == "P_pred_complete":
+            subset = complete_cases(data, cfg.feature_set)
+        else:
+            subset = data
+        results.append(run_experiment(cfg, subset, ctx))
+    return results
