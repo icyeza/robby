@@ -1,0 +1,34 @@
+/* Robson Readiness application: additions to styles.css (which is the mockups' stylesheet, unchanged).
+   Every rule here replaces an inline style="" from a mockup page or styles a real form control
+   the static mockups faked. The Content-Security-Policy forbids inline styles. */
+
+/* titlebar spacing and the right-aligned action button (users.html, facilities.html) */
+.titlebar.tight{margin-bottom:6px}
+.titlebar .push{margin-left:auto}
+
+/* error box spacing on the sign-in form and on pages */
+.errbox.spaced{margin-bottom:16px}
+
+/* fixed (non-editable) value inside a form, e.g. the facility in "Add user" */
+.f .fixed{font-weight:600}
+.f > .label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+
+/* stacked fields inside a form section */
+.sec-b .f + .f{margin-top:16px}
+
+/* POST actions that look like the mockups' links (sign out, deactivate, reset password) */
+form.inline{display:inline}
+.linkbtn{background:none;border:none;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer}
+.linkbtn:focus-visible{outline:3px solid #e8b8c6;outline-offset:2px}
+.actions-cell form.inline + form.inline::before{content:" · ";color:var(--ink-3)}
+
+/* a temporary password shown once */
+.secret{display:inline-block;font-family:Consolas,"SFMono-Regular",Menlo,monospace;font-size:22px;font-weight:700;letter-spacing:.08em;background:var(--white);border:1px solid var(--line);border-radius:4px;padding:6px 12px;margin:8px 0 10px}
+
+/* segmented control built from radio inputs: real, keyboard-accessible form controls */
+.seg label{flex:1;display:flex;margin:0;font-weight:400;border-right:1px solid #ddd8db;cursor:pointer;position:relative}
+.seg label:last-child{border-right:none}
+.seg input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.seg label span{flex:1;display:grid;place-items:center;padding:0 12px;font-size:14px;color:var(--ink-2);background:#fff}
+.seg input:checked + span{background:var(--brand);color:#fff;font-weight:600}
+.seg input:focus-visible + span{outline:3px solid #e8b8c6;outline-offset:-3px}
