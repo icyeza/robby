@@ -16,9 +16,10 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy.stats import rankdata
 
+from robson_serving.stats import clip_probabilities, logit
+
 FloatArray = npt.NDArray[np.float64]
 
-PROB_CLIP = 1e-6
 AUC_BOOTSTRAP = 1000
 AUC_CI_LEVEL = 0.95
 BRIER_BINS = 10
@@ -54,17 +55,6 @@ def _validate(y: npt.ArrayLike, p: npt.ArrayLike) -> tuple[FloatArray, FloatArra
     if (p_arr < 0).any() or (p_arr > 1).any():
         raise ValueError("p must lie in [0, 1]")
     return y_arr, p_arr
-
-
-def clip_probabilities(p: npt.ArrayLike) -> FloatArray:
-    """Clip probabilities to [PROB_CLIP, 1 - PROB_CLIP]."""
-    return np.clip(np.asarray(p, dtype=np.float64), PROB_CLIP, 1 - PROB_CLIP)
-
-
-def logit(p: npt.ArrayLike) -> FloatArray:
-    """Logit of the clipped probabilities."""
-    clipped = clip_probabilities(p)
-    return np.log(clipped / (1 - clipped))
 
 
 def fit_logistic(
