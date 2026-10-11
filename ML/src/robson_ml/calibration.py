@@ -1,24 +1,52 @@
-"""Calibration method selection and the calibrated model wrapper.
+"""Calibration method selection (training side).
 
 The calibrator only ever sees calibration-split rows. Three options are compared by
 5-fold stratified cross-validated Brier score within the calibration split (each option is
 fitted on four folds and scored on the fifth); ties within 0.001 go to Platt, then ``none``;
 the chosen option is then refitted on the whole calibration split.
+
+The runtime classes (calibrators, :class:`CalibrationChoice`, :class:`CalibratedModel`) live
+in :mod:`robson_serving.calibration` and are re-exported here, so existing imports keep
+working and artefacts pickled under ``robson_ml.calibration`` still load wherever robson_ml
+is installed (pickle resolves the names through this module).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Protocol, Self
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
-from robson_ml.metrics import fit_logistic, logit
+from robson_serving.calibration import (
+    PREDICT_THRESHOLD,
+    CalibratedModel,
+    CalibrationChoice,
+    Calibrator,
+    IdentityCalibrator,
+    IsotonicCalibrator,
+    PlattCalibrator,
+)
+
+__all__ = [
+    "BRIER_TIE",
+    "CALIBRATORS",
+    "CV_SPLITS",
+    "PREDICT_THRESHOLD",
+    "TIE_ORDER",
+    "CalibratedModel",
+    "CalibrationChoice",
+    "Calibrator",
+    "IdentityCalibrator",
+    "IsotonicCalibrator",
+    "PlattCalibrator",
+    "calibrate",
+    "choose_method",
+    "select_calibrator",
+]
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -26,81 +54,12 @@ CV_SPLITS = 5
 BRIER_TIE = 0.001
 # Tie preference: Platt first, then none, then isotonic.
 TIE_ORDER = ("platt", "none", "isotonic")
-PREDICT_THRESHOLD = 0.5
-
-
-class Calibrator(Protocol):
-    """Maps raw probabilities of the positive class to calibrated probabilities."""
-
-    def fit(self, p: FloatArray, y: FloatArray) -> Self:
-        """Fit on raw probabilities ``p`` and binary outcomes ``y``."""
-        ...
-
-    def transform(self, p: FloatArray) -> FloatArray:
-        """Calibrated probabilities for raw probabilities ``p``."""
-        ...
-
-
-class IdentityCalibrator:
-    """The ``none`` option: returns the raw probabilities unchanged."""
-
-    def fit(self, p: FloatArray, y: FloatArray) -> Self:
-        """No-op fit (kept for a uniform interface)."""
-        return self
-
-    def transform(self, p: FloatArray) -> FloatArray:
-        """The raw probabilities as floats."""
-        return np.asarray(p, dtype=np.float64)
-
-
-class PlattCalibrator:
-    """Platt scaling: unpenalised logistic regression of y on logit(p)."""
-
-    def __init__(self) -> None:
-        self.intercept_ = 0.0
-        self.slope_ = 1.0
-
-    def fit(self, p: FloatArray, y: FloatArray) -> Self:
-        """Estimate ``y ~ sigmoid(intercept + slope * logit(p))``."""
-        self.intercept_, self.slope_ = (float(v) for v in fit_logistic(y, logit(p)))
-        return self
-
-    def transform(self, p: FloatArray) -> FloatArray:
-        """``sigmoid(intercept + slope * logit(p))``."""
-        z = self.intercept_ + self.slope_ * logit(p)
-        return np.asarray(1 / (1 + np.exp(-z)), dtype=np.float64)
-
-
-class IsotonicCalibrator:
-    """Isotonic regression of y on p, clipped to [0, 1] and to the fitted range."""
-
-    def __init__(self) -> None:
-        self.model_ = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-
-    def fit(self, p: FloatArray, y: FloatArray) -> Self:
-        """Fit a non-decreasing step function of p to y."""
-        self.model_.fit(np.asarray(p, dtype=np.float64), np.asarray(y, dtype=np.float64))
-        return self
-
-    def transform(self, p: FloatArray) -> FloatArray:
-        """The fitted step function at ``p``."""
-        return np.asarray(self.model_.predict(np.asarray(p, dtype=np.float64)), dtype=np.float64)
-
 
 CALIBRATORS: Mapping[str, Callable[[], Calibrator]] = {
     "none": IdentityCalibrator,
     "platt": PlattCalibrator,
     "isotonic": IsotonicCalibrator,
 }
-
-
-@dataclass(frozen=True)
-class CalibrationChoice:
-    """The selected method, every option's cross-validated Brier, and the refitted calibrator."""
-
-    method: str
-    cv_brier: dict[str, float]
-    calibrator: Calibrator
 
 
 def choose_method(cv_brier: Mapping[str, float]) -> str:
@@ -147,29 +106,6 @@ def select_calibrator(
 def _rows(data: Any, idx: npt.NDArray[np.int64]) -> Any:
     """Rows ``idx`` (positions) of a DataFrame, Series or array."""
     return data.iloc[idx] if isinstance(data, pd.DataFrame | pd.Series) else np.asarray(data)[idx]
-
-
-class CalibratedModel:
-    """A fitted classifier plus its calibrator, exposing the sklearn classifier interface.
-
-    ``predict_proba`` returns ``[1 - q, q]`` where ``q`` is the calibrated probability of
-    ``cs = 1``. Picklable with joblib when the wrapped estimator is.
-    """
-
-    def __init__(self, estimator: Any, choice: CalibrationChoice) -> None:
-        self.estimator = estimator
-        self.choice = choice
-        self.classes_ = np.array([0, 1])
-
-    def predict_proba(self, x: Any) -> FloatArray:
-        """Calibrated class probabilities, shape (n, 2)."""
-        raw = np.asarray(self.estimator.predict_proba(x), dtype=np.float64)[:, 1]
-        q = np.clip(self.choice.calibrator.transform(raw), 0.0, 1.0)
-        return np.column_stack([1 - q, q])
-
-    def predict(self, x: Any) -> npt.NDArray[np.int64]:
-        """Class labels at a 0.5 calibrated probability (reporting only)."""
-        return (self.predict_proba(x)[:, 1] >= PREDICT_THRESHOLD).astype(np.int64)
 
 
 def calibrate(
