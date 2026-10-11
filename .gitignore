@@ -15,3 +15,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# app settings with local credentials and the secret key
+app/.env
