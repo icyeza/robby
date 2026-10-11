@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import URL, Connection, Engine, create_engine
 from sqlalchemy.orm import Session
 
+from robby.config import Settings
 from robby.migrate import upgrade
 from tests.dbutil import bound_session, create_database, drop_database, server_url_from_env
 
@@ -49,3 +50,20 @@ def db(connection: Connection) -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+TEST_SECRET = "test-secret-key-that-is-long-enough-0123456789"
+
+
+@pytest.fixture
+def settings(database_url: URL) -> Settings:
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        database_url=database_url.render_as_string(hide_password=False),
+        secret_key=TEST_SECRET,
+        secure_cookies=False,
+        session_idle_minutes=30,
+        session_absolute_hours=12,
+        timezone="Africa/Kigali",
+        demo=False,
+    )
