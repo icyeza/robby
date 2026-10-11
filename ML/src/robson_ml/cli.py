@@ -6,11 +6,12 @@ import functools
 import json
 import os
 import secrets
+import shutil
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Annotated, TypeVar
 
 import pandas as pd
 import typer
@@ -523,6 +524,55 @@ def fit_deploy(config: Path) -> None:
         out.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(s["facility_contribution"]).to_csv(out, index=False)
         typer.echo(f"facility contribution written to {out}")
+
+
+@app.command()
+@guarded
+def package(
+    artefact_dir: Path,
+    out: Annotated[Path, typer.Option("--out", help="Directory to write the packaged artefact")],
+) -> None:
+    """Package a fit-deploy artefact for serving (spec §17.1) into ``--out``.
+
+    Rebuilds the artefact's population from the project data and refuses unless the data and
+    the feature registry hash to the values in its fit summary. Writes model.joblib (re-dumped
+    so it references robson_serving only), feature_schema.json, manifest.json,
+    reference_distributions.json and 200 synthetic golden admissions with their outputs, and
+    checks that robson_serving rebuilds the training features and probabilities exactly. If a
+    check fails nothing is kept. The pre-registration guard applies. Prints aggregates only.
+    """
+    from robson_ml.feature_sets import build_model_data
+    from robson_ml.package import package_artefact, read_fit_summary
+    from robson_ml.select import load_runs
+
+    cfg = load_project_config()
+    summary = read_fit_summary(artefact_dir)
+    inputs = _model_inputs(cfg)
+    if inputs.data_hash != summary["data_hash"]:
+        raise ValueError("the processed data differ from the data the artefact was fitted on")
+    if inputs.registry.sha256 != summary["features_yaml_hash"]:
+        raise ValueError("the feature registry differs from the one the artefact was fitted with")
+    data = build_model_data(
+        inputs.canonical, inputs.registry, inputs.raw_features, str(summary["population"])
+    )
+    runs = load_runs(MLRUNS_DIR.resolve().as_uri())
+    result = package_artefact(artefact_dir, out, data, inputs.registry, runs)
+    manifest, golden = result.manifest, result.golden
+    typer.echo(f"{manifest['version_label']}: packaged to {out}")
+    typer.echo(
+        f"features: {len(manifest['feature_list'])}; calibration: "
+        f"{manifest['calibration_method']}; runtime libraries: "
+        f"{', '.join(manifest['runtime_libraries'])}"
+    )
+    typer.echo(
+        f"golden: {golden.n} admissions, max |difference| {golden.max_abs_diff:.1e} "
+        f"({'pass' if golden.ok else 'FAIL'})"
+    )
+    typer.echo(f"parity: {'pass' if result.parity.ok else 'FAIL'} ({result.parity.summary()})")
+    if not result.ok:
+        shutil.rmtree(out, ignore_errors=True)
+        typer.echo("packaging failed: nothing was kept", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command("explain-local")
