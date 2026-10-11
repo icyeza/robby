@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from robby.config import Settings
 from robby.models import Role
-from robby.web.nav import landing_path
+from robby.web.nav import NAV, landing_path
 from robby.web.placeholders import PLACEHOLDER_PAGES
 from tests.factories import make_facility, make_user
 from tests.webutil import csrf_for, sign_in_client
@@ -17,6 +17,7 @@ PAGES: list[tuple[str, frozenset[Role]]] = [
     (path, frozenset({role})) for path, _title, role in PLACEHOLDER_PAGES
 ]
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
+PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -69,6 +70,10 @@ def test_placeholder_pages_say_not_available_and_show_no_data(
 POST_ACTIONS: list[tuple[str, frozenset[Role]]] = [
     ("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})),
     ("/admin/facilities/{facility}/deactivate", frozenset({Role.SYSTEM_ADMIN})),
+    ("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
+    ("/admin/users/{user}/reset-password", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
+    ("/admin/users/{user}/deactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
+    ("/admin/users/{user}/reactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
 ]
 
 
@@ -91,3 +96,12 @@ def test_actions_are_refused_to_other_roles(
     db.refresh(facility)
     db.refresh(target)
     assert facility.active and target.active
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_every_nav_link_of_every_role_opens_a_page(
+    client: TestClient, db: Session, settings: Settings, role: Role
+) -> None:
+    sign_in_client(client, db, settings, make_user(db, role=role))
+    for item in NAV[role]:
+        assert client.get(item.path).status_code == 200, item.path

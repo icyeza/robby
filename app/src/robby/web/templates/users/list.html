@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="titlebar tight"><h1>Users</h1><a class="btn btn-p btn-sm push" href="/admin/users?add=1" data-open="add-user">Add user</a></div>
+{% if is_system_admin %}
+<p class="lede">People who can sign in, and what each can do.</p>
+{% else %}
+<p class="lede">People who can sign in at {{ user.facility.name }}, and what each can do.</p>
+{% endif %}
+{% if problem %}<div class="errbox spaced" role="alert"><b>⚠ {{ problem }}</b></div>{% endif %}
+
+<section class="tablecard">
+  <table>
+    <thead><tr><th>Username</th><th>Role</th>{% if is_system_admin %}<th>Facility</th>{% endif %}<th>Status</th><th>Last signed in</th><th></th></tr></thead>
+    <tbody>
+    {% for person in users %}
+      <tr>
+        <td><b>{{ person.username }}</b>{% if person.display_name %}<div class="muted">{{ person.display_name }}</div>{% endif %}</td>
+        <td>{{ role_label(person.role) }}</td>
+        {% if is_system_admin %}<td>{{ person.facility.name if person.facility else "All facilities" }}</td>{% endif %}
+        <td>{% if not person.active %}<span class="st retired">Deactivated</span>{% elif person.locked_until and person.locked_until > now %}<span class="st awaiting">Locked</span>{% else %}<span class="st done">Active</span>{% endif %}</td>
+        <td>{{ person.last_login_at | local_dt }}</td>
+        <td class="r actions-cell">{% if person.active %}{{ ui.post_link("/admin/users/" ~ person.id ~ "/reset-password", "Reset password") }}{% if person.id != user.id %}{{ ui.post_link("/admin/users/" ~ person.id ~ "/deactivate", "Deactivate") }}{% endif %}{% else %}{{ ui.post_link("/admin/users/" ~ person.id ~ "/reactivate", "Reactivate") }}{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No accounts yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Clinician accounts see only their facility's admissions. Deactivated accounts cannot sign in; their records are kept.</div>
+</section>
+
+<div class="dialog-backdrop{% if open_dialog %} open{% endif %}" id="add-user">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="aut">
+    <form method="post" action="/admin/users">
+      <h2 id="aut">Add user</h2>
+      <div class="body">
+        {{ ui.csrf_input() }}
+        {{ ui.field("display_name", "Full name", form.display_name, error=errors.display_name, help="Optional. Leave blank where names should not be stored.") }}
+        {{ ui.field("username", "Username", form.username, error=errors.username, autocomplete="off") }}
+        {{ ui.select_field("role", "Role", roles, form.role or roles[0][0], error=errors.role) }}
+        {% if is_system_admin %}
+        {{ ui.select_field("facility_id", "Facility", facilities, form.facility_id, error=errors.facility_id, blank="Not tied to a facility", help="Required for clinicians and facility administrators.") }}
+        {% else %}
+        <div class="f"><span class="label">Facility</span><div class="fixed">{{ user.facility.name }}</div></div>
+        {% endif %}
+        <p class="muted">A temporary password is shown once after saving.</p>
+      </div>
+      <div class="foot"><a class="btn-g" href="/admin/users" data-close>Cancel</a><button class="btn btn-p" type="submit">Create user</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

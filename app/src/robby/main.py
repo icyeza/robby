@@ -7,6 +7,7 @@ from robby.auth.routes import router as auth_router
 from robby.config import Settings, get_settings
 from robby.db import get_sessionmaker
 from robby.facilities.routes import router as facilities_router
+from robby.users.routes import router as users_router
 from robby.web.errors import install_error_handlers
 from robby.web.placeholders import build_placeholder_router
 from robby.web.security import install_security_headers
@@ -24,5 +25,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_security_headers(app)
     app.include_router(auth_router)
     app.include_router(facilities_router)
+    app.include_router(users_router)
     app.include_router(build_placeholder_router())
     return app
