@@ -7,6 +7,7 @@ then wrapped in robson_serving.calibration.CalibratedModel like the deployment m
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,8 +20,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from robson_engine import load_rule_set
+from robson_serving.artefact import write_artefact
 from robson_serving.calibration import CalibratedModel, CalibrationChoice, PlattCalibrator
 from robson_serving.features import CATEGORICAL, NUMERIC, build_frame, required_inputs
+from robson_serving.monitoring import reference_distributions
 from robson_serving.schema import (
     CATEGORY,
     INTEGER,
@@ -203,3 +206,17 @@ def schema(fitted: tuple[CalibratedModel, pd.DataFrame]) -> FeatureSchema:
 @pytest.fixture
 def fields(schema: FeatureSchema) -> dict[str, Any]:
     return manifest_fields(schema)
+
+
+@pytest.fixture
+def artefact_dir(
+    tmp_path: Path,
+    fitted: tuple[CalibratedModel, pd.DataFrame],
+    schema: FeatureSchema,
+    fields: dict[str, Any],
+) -> Path:
+    """A freshly written synthetic artefact without golden files (tests may alter it)."""
+    model, x = fitted
+    out = tmp_path / "synthetic-v0"
+    write_artefact(out, model, schema, fields, reference_distributions(x, KINDS))
+    return out
