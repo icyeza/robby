@@ -35,6 +35,22 @@ TABLES_IN_CREATION_ORDER = (
     "export_record",
 )
 
+IMMUTABLE_TABLES = (
+    "admission", "screening_omission", "classification", "prediction",
+    "delivery_outcome", "reconciled_outcome", "event_log",
+)
+
+# Built with || rather than RAISE's % placeholders so no percent sign passes through the driver.
+FORBID_CHANGE_FUNCTION = """
+CREATE FUNCTION forbid_change() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION USING
+        MESSAGE = TG_OP || ' on ' || TG_TABLE_NAME || ' is not allowed: rows in this table are immutable',
+        ERRCODE = 'restrict_violation';
+END;
+$$
+"""
+
 
 def enum(name: str) -> pg.ENUM:
     """Column type for an enum created up front (never re-created per table)."""
@@ -410,11 +426,22 @@ def upgrade() -> None:
         fk("export_record", "exported_by", "app_user"),
         check("export_record", "period_is_month_start", "EXTRACT(DAY FROM period_month) = 1"),
     )
+    op.execute(FORBID_CHANGE_FUNCTION)
+    for table in IMMUTABLE_TABLES:
+        op.execute(
+            f"CREATE TRIGGER {table}_immutable BEFORE UPDATE OR DELETE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION forbid_change()"
+        )
+        op.execute(
+            f"CREATE TRIGGER {table}_no_truncate BEFORE TRUNCATE ON {table} "
+            "FOR EACH STATEMENT EXECUTE FUNCTION forbid_change()"
+        )
 
 
 def downgrade() -> None:
     for table in reversed(TABLES_IN_CREATION_ORDER):
         op.drop_table(table)
+    op.execute("DROP FUNCTION forbid_change()")
     bind = op.get_bind()
     for name in reversed(ENUMS):
         pg.ENUM(name=name).drop(bind)
