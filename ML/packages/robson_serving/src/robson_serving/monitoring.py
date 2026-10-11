@@ -19,7 +19,7 @@ import math
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -47,6 +47,10 @@ STRATA = ("facility", "robson_group")
 METRIC_COLUMNS = ("auc", "calibration_in_the_large", "calibration_slope", "brier")
 ROLLING_COLUMNS = ("stratum", "level", "n", "events", "status", *METRIC_COLUMNS)
 CALIBRATION_DRIFT_THRESHOLD = 0.05
+BOOTSTRAP = 1000
+SHADOW_CI_LEVEL = 0.95
+THEATRE_LEVEL = 0.90
+CDF_TOLERANCE = 1e-12
 
 
 def _numeric_keys(values: pd.Series, edges: Sequence[float]) -> list[str]:
@@ -272,3 +276,106 @@ def calibration_drift(
     rate = float(recent["cs"].mean())
     difference = mean_p - rate
     return CalibrationDrift(len(recent), mean_p, rate, difference, abs(difference) > threshold)
+
+
+SHADOW_METRICS: dict[str, Metric] = {
+    "auc": _auc,
+    "brier": _brier,
+    "log_loss": _log_loss,
+    "calibration_in_the_large": _citl,
+    "calibration_slope": _slope,
+}
+
+
+def shadow_compare(
+    df: pd.DataFrame,
+    *,
+    n_boot: int = BOOTSTRAP,
+    seed: int = 0,
+    level: float = SHADOW_CI_LEVEL,
+) -> pd.DataFrame:
+    """Paired metrics of the active and candidate models on the same admissions.
+
+    Input columns: ``p_active``, ``p_candidate``, ``cs``. One row per metric with both values,
+    ``difference`` = candidate - active and a percentile CI of the difference from a seeded
+    stratified bootstrap (cases and controls resampled separately, the same rows for both
+    models). Raises ValueError unless both outcomes are present.
+    """
+    y = df["cs"].to_numpy(dtype=np.float64)
+    active = df["p_active"].to_numpy(dtype=np.float64)
+    candidate = df["p_candidate"].to_numpy(dtype=np.float64)
+    positives, negatives = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
+    if len(positives) == 0 or len(negatives) == 0:
+        raise ValueError("shadow comparison needs both outcomes")
+    rng = np.random.default_rng(seed)
+    boots = {name: np.full(n_boot, math.nan) for name in SHADOW_METRICS}
+    for b in range(n_boot):
+        rows = np.concatenate(
+            [
+                rng.choice(positives, size=len(positives)),
+                rng.choice(negatives, size=len(negatives)),
+            ]
+        )
+        for name, metric in SHADOW_METRICS.items():
+            boots[name][b] = _safe(metric, y[rows], candidate[rows]) - _safe(
+                metric, y[rows], active[rows]
+            )
+    tail = (1 - level) / 2 * 100
+    out = []
+    for name, metric in SHADOW_METRICS.items():
+        a, c = _safe(metric, y, active), _safe(metric, y, candidate)
+        finite = boots[name][np.isfinite(boots[name])]
+        low, high = np.percentile(finite, [tail, 100 - tail]) if len(finite) else (math.nan,) * 2
+        out.append(
+            {
+                "metric": name,
+                "active": a,
+                "candidate": c,
+                "difference": c - a,
+                "ci_low": float(low),
+                "ci_high": float(high),
+                "n": len(y),
+            }
+        )
+    return pd.DataFrame(out)
+
+
+class TheatreLoad(NamedTuple):
+    """Expected cesarean count with an equal-tailed interval (counts)."""
+
+    expected: float
+    low: int
+    high: int
+
+
+def _probabilities(probs: npt.ArrayLike) -> FloatArray:
+    p = np.asarray(probs, dtype=np.float64).ravel()
+    if not np.all(np.isfinite(p)) or ((p < 0) | (p > 1)).any():
+        raise ValueError("probabilities must be finite and within [0, 1]")
+    return p
+
+
+def poisson_binomial_pmf(probs: npt.ArrayLike) -> FloatArray:
+    """Exact distribution of the number of cesareans (dynamic programming, O(n^2))."""
+    p = _probabilities(probs)
+    pmf = np.zeros(len(p) + 1)
+    pmf[0] = 1.0
+    for q in p:
+        shifted = np.zeros_like(pmf)
+        shifted[1:] = pmf[:-1] * q
+        pmf = pmf * (1.0 - q) + shifted
+    return pmf
+
+
+def expected_theatre_load(probs: npt.ArrayLike, level: float = THEATRE_LEVEL) -> TheatreLoad:
+    """Expected count (sum of p) and the ``level`` interval from the Poisson-binomial.
+
+    ``low`` is the smallest k with P(X <= k) >= (1 - level)/2 and ``high`` the smallest k with
+    P(X <= k) >= 1 - (1 - level)/2 (90%: the 5th and 95th percentiles).
+    """
+    p = _probabilities(probs)
+    cdf = np.cumsum(poisson_binomial_pmf(p))
+    tail = (1 - level) / 2
+    low = int(np.searchsorted(cdf, tail - CDF_TOLERANCE, side="left"))
+    high = int(np.searchsorted(cdf, 1 - tail - CDF_TOLERANCE, side="left"))
+    return TheatreLoad(float(p.sum()), min(low, len(p)), min(high, len(p)))

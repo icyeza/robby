@@ -9,6 +9,7 @@ from robson_serving.monitoring import (
     feature_drift,
     reference_distributions,
     rolling_metrics,
+    shadow_compare,
 )
 from robson_serving.stats import fit_logistic, logit
 
@@ -127,3 +128,39 @@ def test_calibration_drift_flags_a_gap_over_the_threshold() -> None:
     assert not calibration_drift(df, "7D", threshold=0.2).flagged
     old = calibration_drift(df, "7D", now=t + pd.Timedelta("30D"))
     assert old.n == 0 and not old.flagged and np.isnan(old.difference)
+
+
+def _shadow(n: int, seed: int) -> pd.DataFrame:
+    return _scored(n, seed).rename(columns={"prob": "p_active"})
+
+
+def test_identical_models_differ_by_exactly_zero() -> None:
+    df = _shadow(400, 3)
+    df["p_candidate"] = df["p_active"]
+    out = shadow_compare(df, n_boot=100, seed=1).set_index("metric")
+    assert set(out.index) == {
+        "auc",
+        "brier",
+        "log_loss",
+        "calibration_in_the_large",
+        "calibration_slope",
+    }
+    assert (out["difference"] == 0).all()
+    assert (out["ci_low"] == 0).all() and (out["ci_high"] == 0).all()
+
+
+def test_shadow_compare_is_seeded_and_oriented_candidate_minus_active() -> None:
+    df = _shadow(400, 4)
+    df["p_candidate"] = np.clip(df["p_active"] + 0.2, 0, 1)
+    first = shadow_compare(df, n_boot=100, seed=7)
+    pd.testing.assert_frame_equal(first, shadow_compare(df, n_boot=100, seed=7))
+    brier = first.set_index("metric").loc["brier"]
+    assert brier["difference"] == pytest.approx(brier["candidate"] - brier["active"])
+    assert brier["difference"] > 0
+    assert brier["ci_low"] <= brier["difference"] <= brier["ci_high"]
+
+
+def test_shadow_compare_needs_both_outcomes() -> None:
+    df = pd.DataFrame({"p_active": [0.2, 0.3], "p_candidate": [0.2, 0.3], "cs": [0, 0]})
+    with pytest.raises(ValueError, match="both outcomes"):
+        shadow_compare(df)
