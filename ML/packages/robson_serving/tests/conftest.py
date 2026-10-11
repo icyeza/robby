@@ -22,7 +22,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from robson_engine import load_rule_set
 from robson_serving.artefact import write_artefact
 from robson_serving.calibration import CalibratedModel, CalibrationChoice, PlattCalibrator
+from robson_serving.contract import write_golden
 from robson_serving.features import CATEGORICAL, NUMERIC, build_frame, required_inputs
+from robson_serving.loader import load
 from robson_serving.monitoring import reference_distributions
 from robson_serving.schema import (
     CATEGORY,
@@ -219,4 +221,18 @@ def artefact_dir(
     model, x = fitted
     out = tmp_path / "synthetic-v0"
     write_artefact(out, model, schema, fields, reference_distributions(x, KINDS))
+    return out
+
+
+@pytest.fixture(scope="session")
+def packaged_dir(
+    tmp_path_factory: pytest.TempPathFactory,
+    fitted: tuple[CalibratedModel, pd.DataFrame],
+    schema: FeatureSchema,
+) -> Path:
+    """A complete synthetic packaged artefact (all six §17.1 files)."""
+    model, x = fitted
+    out = tmp_path_factory.mktemp("packaged") / "synthetic-v0"
+    write_artefact(out, model, schema, manifest_fields(schema), reference_distributions(x, KINDS))
+    write_golden(load(out), out)
     return out
