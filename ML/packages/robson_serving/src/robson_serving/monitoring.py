@@ -17,14 +17,17 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from sklearn.metrics import roc_auc_score
 
 from robson_serving.features import CATEGORICAL, NUMERIC, is_missing
+from robson_serving.stats import ConvergenceError, clip_probabilities, fit_logistic, logit
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -35,6 +38,15 @@ MISSING_KEY = "missing"
 PSI_THRESHOLD = 0.2
 PSI_FLOOR = 1e-4
 DRIFT_COLUMNS = ("feature", "n", "psi", "flagged")
+MIN_N = 50
+MIN_EVENTS = 10
+OK = "ok"
+INSUFFICIENT = "insufficient"
+MISSING_LEVEL = "missing"
+STRATA = ("facility", "robson_group")
+METRIC_COLUMNS = ("auc", "calibration_in_the_large", "calibration_slope", "brier")
+ROLLING_COLUMNS = ("stratum", "level", "n", "events", "status", *METRIC_COLUMNS)
+CALIBRATION_DRIFT_THRESHOLD = 0.05
 
 
 def _numeric_keys(values: pd.Series, edges: Sequence[float]) -> list[str]:
@@ -144,3 +156,119 @@ def feature_drift(
         psi = population_stability_index(expected, counts / len(keys))
         rows.append({"feature": name, "n": len(keys), "psi": psi, "flagged": psi > threshold})
     return pd.DataFrame(rows, columns=list(DRIFT_COLUMNS))
+
+
+def _auc(y: FloatArray, p: FloatArray) -> float:
+    return float(roc_auc_score(y, p))
+
+
+def _brier(y: FloatArray, p: FloatArray) -> float:
+    return float(np.mean((p - y) ** 2))
+
+
+def _log_loss(y: FloatArray, p: FloatArray) -> float:
+    q = clip_probabilities(p)
+    return float(-np.mean(y * np.log(q) + (1 - y) * np.log(1 - q)))
+
+
+def _citl(y: FloatArray, p: FloatArray) -> float:
+    return float(fit_logistic(y, offset=logit(p))[0])
+
+
+def _slope(y: FloatArray, p: FloatArray) -> float:
+    return float(fit_logistic(y, logit(p))[1])
+
+
+Metric = Callable[[FloatArray, FloatArray], float]
+
+
+def _safe(metric: Metric, y: FloatArray, p: FloatArray) -> float:
+    try:
+        return metric(y, p)
+    except (ConvergenceError, ValueError):
+        return math.nan
+
+
+def _in_window(df: pd.DataFrame, window: str | pd.Timedelta, now: Any = None) -> pd.DataFrame:
+    """Rows with ``end - window < scored_at <= end``; ``end`` is ``now`` or the latest row."""
+    if df.empty:
+        return df
+    times = pd.to_datetime(df["scored_at"])
+    end = pd.Timestamp(now) if now is not None else times.max()
+    start = end - pd.Timedelta(window)
+    return df.loc[(times > start) & (times <= end)]
+
+
+def _stratum_row(
+    stratum: str, level: str, frame: pd.DataFrame, min_n: int, min_events: int
+) -> dict[str, Any]:
+    y = frame["cs"].to_numpy(dtype=np.float64)
+    p = frame["prob"].to_numpy(dtype=np.float64)
+    n, events = len(y), int(y.sum())
+    row: dict[str, Any] = {"stratum": stratum, "level": level, "n": n, "events": events}
+    if n < min_n or min(events, n - events) < min_events:
+        return {**row, "status": INSUFFICIENT, **dict.fromkeys(METRIC_COLUMNS, math.nan)}
+    return {
+        **row,
+        "status": OK,
+        "auc": _safe(_auc, y, p),
+        "calibration_in_the_large": _safe(_citl, y, p),
+        "calibration_slope": _safe(_slope, y, p),
+        "brier": _brier(y, p),
+    }
+
+
+def rolling_metrics(
+    df: pd.DataFrame,
+    window: str | pd.Timedelta,
+    *,
+    now: Any = None,
+    strata: Sequence[str] = STRATA,
+    min_n: int = MIN_N,
+    min_events: int = MIN_EVENTS,
+) -> pd.DataFrame:
+    """AUC, calibration-in-the-large, slope and Brier over the window, overall and per stratum.
+
+    Input columns: ``prob``, ``cs``, ``scored_at`` and each stratum column (default
+    ``facility`` and ``robson_group``; a missing level is ``"missing"``). A stratum with fewer
+    than ``min_n`` rows or fewer than ``min_events`` in either outcome class is
+    ``"insufficient"`` with NaN metrics (spec §11.4).
+    """
+    recent = _in_window(df, window, now)
+    rows = [_stratum_row("all", "all", recent, min_n, min_events)]
+    for column in strata:
+        levels = recent[column].astype(object).where(recent[column].notna(), MISSING_LEVEL)
+        labels = levels.astype(str)
+        for level in sorted(labels.unique()):
+            rows.append(
+                _stratum_row(column, level, recent.loc[labels == level], min_n, min_events)
+            )
+    return pd.DataFrame(rows, columns=list(ROLLING_COLUMNS))
+
+
+@dataclass(frozen=True)
+class CalibrationDrift:
+    """Mean predicted probability against the observed cesarean rate over a window."""
+
+    n: int
+    mean_probability: float
+    observed_rate: float
+    difference: float
+    flagged: bool
+
+
+def calibration_drift(
+    df: pd.DataFrame,
+    window: str | pd.Timedelta,
+    threshold: float = CALIBRATION_DRIFT_THRESHOLD,
+    *,
+    now: Any = None,
+) -> CalibrationDrift:
+    """Flags when |mean(prob) - mean(cs)| exceeds ``threshold`` over the window."""
+    recent = _in_window(df, window, now)
+    if recent.empty:
+        return CalibrationDrift(0, math.nan, math.nan, math.nan, False)
+    mean_p = float(recent["prob"].mean())
+    rate = float(recent["cs"].mean())
+    difference = mean_p - rate
+    return CalibrationDrift(len(recent), mean_p, rate, difference, abs(difference) > threshold)

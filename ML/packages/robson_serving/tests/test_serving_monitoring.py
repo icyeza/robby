@@ -1,9 +1,16 @@
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.metrics import roc_auc_score
 
 from robson_serving.features import CATEGORICAL, NUMERIC
-from robson_serving.monitoring import feature_drift, reference_distributions
+from robson_serving.monitoring import (
+    calibration_drift,
+    feature_drift,
+    reference_distributions,
+    rolling_metrics,
+)
+from robson_serving.stats import fit_logistic, logit
 
 
 def test_numeric_reference_uses_decile_edges_and_a_missing_bucket() -> None:
@@ -66,3 +73,57 @@ def test_a_value_on_an_edge_falls_in_the_lower_bin() -> None:
     }
     drift = feature_drift(pd.DataFrame({"x": [1.0, 1.0, 2.0, 2.0]}), reference)
     assert drift.loc[0, "psi"] == pytest.approx(0.0, abs=1e-12)
+
+
+def _scored(n: int, seed: int) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    prob = rng.uniform(0.05, 0.95, n)
+    return pd.DataFrame(
+        {
+            "prob": prob,
+            "cs": (rng.random(n) < prob).astype(int),
+            "facility": pd.Series(rng.choice(["FAC_A", "FAC_B"], n), dtype=object),
+            "robson_group": rng.choice([1, 3, 5], n),
+            "scored_at": pd.Timestamp("2026-01-01")
+            + pd.to_timedelta(rng.integers(0, 60, n), unit="D"),
+        }
+    )
+
+
+def test_rolling_metrics_match_a_direct_computation_in_the_window() -> None:
+    df = _scored(2000, 1)
+    out = rolling_metrics(df, "30D")
+    end = df["scored_at"].max()
+    recent = df[df["scored_at"] > end - pd.Timedelta("30D")]
+    overall = out[out["stratum"] == "all"].iloc[0]
+    assert overall["n"] == len(recent) and overall["status"] == "ok"
+    y = recent["cs"].to_numpy(float)
+    p = recent["prob"].to_numpy(float)
+    assert overall["auc"] == pytest.approx(roc_auc_score(y, p))
+    assert overall["brier"] == pytest.approx(np.mean((p - y) ** 2))
+    assert overall["calibration_slope"] == pytest.approx(fit_logistic(y, logit(p))[1])
+    assert overall["calibration_in_the_large"] == pytest.approx(
+        fit_logistic(y, offset=logit(p))[0]
+    )
+    assert set(out.loc[out["stratum"] == "facility", "level"]) == {"FAC_A", "FAC_B"}
+    assert set(out.loc[out["stratum"] == "robson_group", "level"]) == {"1", "3", "5"}
+
+
+def test_small_strata_are_insufficient() -> None:
+    df = _scored(2000, 2)
+    df.loc[df.index[:20], "facility"] = "FAC_SMALL"
+    df.loc[df.index[20:25], "facility"] = None
+    out = rolling_metrics(df, "365D").set_index(["stratum", "level"])
+    assert out.loc[("facility", "FAC_SMALL"), "status"] == "insufficient"
+    assert np.isnan(out.loc[("facility", "FAC_SMALL"), "auc"])
+    assert out.loc[("facility", "missing"), "n"] == 5
+
+
+def test_calibration_drift_flags_a_gap_over_the_threshold() -> None:
+    t = pd.Timestamp("2026-03-01")
+    df = pd.DataFrame({"prob": [0.3] * 10, "cs": [1] * 4 + [0] * 6, "scored_at": [t] * 10})
+    drift = calibration_drift(df, "7D")
+    assert drift.n == 10 and drift.difference == pytest.approx(-0.1) and drift.flagged
+    assert not calibration_drift(df, "7D", threshold=0.2).flagged
+    old = calibration_drift(df, "7D", now=t + pd.Timedelta("30D"))
+    assert old.n == 0 and not old.flagged and np.isnan(old.difference)
