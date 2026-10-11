@@ -1,0 +1,39 @@
+{# Form building blocks. Import with: {% import "partials/_macros.html" as ui with context %} #}
+
+{% macro csrf_input() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{%- endmacro %}
+
+{% macro field(name, label, value="", type="text", error=none, help=none, autocomplete=none, required=false) -%}
+<div class="f{% if error %} conflict{% endif %}">
+  <label for="f-{{ name }}">{{ label }}</label>
+  <input id="f-{{ name }}" name="{{ name }}" type="{{ type }}"{% if type != "password" %} value="{{ value or '' }}"{% endif %}{% if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}{% if required %} required{% endif %}{% if error %} aria-invalid="true" aria-describedby="f-{{ name }}-msg"{% elif help %} aria-describedby="f-{{ name }}-help"{% endif %}>
+  {% if help %}<div class="help" id="f-{{ name }}-help">{{ help }}</div>{% endif %}
+  {% if error %}<div class="msg" id="f-{{ name }}-msg">{{ error }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro select_field(name, label, options, selected="", error=none, help=none, blank=none) -%}
+<div class="f{% if error %} conflict{% endif %}">
+  <label for="f-{{ name }}">{{ label }}</label>
+  <select id="f-{{ name }}" name="{{ name }}"{% if error %} aria-invalid="true" aria-describedby="f-{{ name }}-msg"{% endif %}>
+    {% if blank is not none %}<option value="">{{ blank }}</option>{% endif %}
+    {% for value, text in options %}<option value="{{ value }}"{% if value == selected %} selected{% endif %}>{{ text }}</option>{% endfor %}
+  </select>
+  {% if help %}<div class="help">{{ help }}</div>{% endif %}
+  {% if error %}<div class="msg" id="f-{{ name }}-msg">{{ error }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro segmented(name, label, options, selected="") -%}
+<div class="f">
+  <span class="label" id="f-{{ name }}-label">{{ label }}</span>
+  <div class="seg" role="radiogroup" aria-labelledby="f-{{ name }}-label">
+    {% for value, text in options %}<label><input type="radio" name="{{ name }}" value="{{ value }}"{% if value == selected %} checked{% endif %}><span>{{ text }}</span></label>{% endfor %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro post_link(action, label) -%}
+<form class="inline" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="linkbtn" type="submit">{{ label }}</button></form>
+{%- endmacro %}

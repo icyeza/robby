@@ -8,12 +8,15 @@ transaction through savepoints, so tests never see each other's rows."""
 from collections.abc import Iterator
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import URL, Connection, Engine, create_engine
 from sqlalchemy.orm import Session
 
 from robby.config import Settings
 from robby.migrate import upgrade
 from tests.dbutil import bound_session, create_database, drop_database, server_url_from_env
+from tests.webutil import make_test_app
 
 
 @pytest.fixture(scope="session")
@@ -67,3 +70,14 @@ def settings(database_url: URL) -> Settings:
         timezone="Africa/Kigali",
         demo=False,
     )
+
+
+@pytest.fixture
+def app(settings: Settings, connection: Connection) -> FastAPI:
+    return make_test_app(settings, connection)
+
+
+@pytest.fixture
+def client(app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(app, follow_redirects=False) as test_client:
+        yield test_client
