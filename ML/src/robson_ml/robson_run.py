@@ -2,81 +2,19 @@
 
 from __future__ import annotations
 
-import math
-import numbers
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
 import pandas as pd
 
-from robson_engine import COARSE_PRESENTATIONS, INPUT_FIELDS, RobsonInputs, RuleSet, classify
+from robson_engine import COARSE_PRESENTATIONS, INPUT_FIELDS, RuleSet, classify
 from robson_ml.schema import GA_BAND_FIELDS
+from robson_serving.features import inputs_from_record
 
 
 class RobsonValidationError(AssertionError):
     """The dataset-level engine checks failed (message holds counts only)."""
-
-
-def _clean(value: object) -> object:
-    if value is None or value is pd.NA or value is pd.NaT:
-        return None
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    return value
-
-
-def _as_int(value: object) -> int | None:
-    value = _clean(value)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ValueError("boolean where an integer was expected")
-    if isinstance(value, numbers.Integral):
-        return int(value)
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    raise ValueError("non-integer value where an integer was expected")
-
-
-def _as_float(value: object) -> float | None:
-    value = _clean(value)
-    if value is None:
-        return None
-    if isinstance(value, numbers.Real) and not isinstance(value, bool):
-        return float(value)
-    raise ValueError("non-numeric value where a number was expected")
-
-
-def _as_str(value: object) -> str | None:
-    value = _clean(value)
-    return None if value is None else str(value)
-
-
-def inputs_from_record(record: Mapping[str, object]) -> RobsonInputs:
-    """Build engine inputs from one canonical record; NaN/NA/None all mean not recorded.
-
-    When the exact gestational age is missing and both GA band bounds are recorded, the band
-    is passed as ``gestational_age_range`` (coarse input). A presentation of
-    ``non_cephalic`` is passed through as the engine's coarse code.
-    """
-    ga = _as_float(record.get("gestational_age_weeks"))
-    ga_range = None
-    if ga is None:
-        lower = _as_float(record.get("ga_band_lower"))
-        upper = _as_float(record.get("ga_band_upper"))
-        if lower is not None and upper is not None:
-            ga_range = (lower, upper)
-    return RobsonInputs(
-        parity=_as_int(record.get("parity")),
-        previous_cs_count=_as_int(record.get("previous_cs_count")),
-        plurality=_as_int(record.get("plurality")),
-        fetal_presentation=_as_str(record.get("fetal_presentation")),
-        gestational_age_weeks=ga,
-        onset_of_labour=_as_str(record.get("onset_of_labour")),
-        gestational_age_range=ga_range,
-    )
 
 
 def classify_frame(df: pd.DataFrame, rule_set: RuleSet) -> pd.DataFrame:

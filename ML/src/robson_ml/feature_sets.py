@@ -7,6 +7,8 @@ the included canonical columns, the included derived columns (``bmi``,
 ``facility_id``; evaluated only under S3 and fitted only under S5). Cleaning here is
 row-wise and stateless (dtype normalisation and derivations); every fitted transformation
 (imputation, encoding, scaling) happens inside the model Pipeline, within folds.
+The row-level derivations themselves live in :mod:`robson_serving.features`, shared with the
+serving runtime so a scored admission gets exactly the training columns.
 
 The onset field is outcome-contaminated (coded retrospectively), so
 ``onset_of_labour`` and the onset-based ``robson_group`` never reach a model built on
@@ -20,13 +22,13 @@ is the sensitivity population ``P_pred_onset_coded``, whose model data is built 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from robson_engine import INPUT_FIELDS, ClassificationResult, RuleSet, classify, load_rule_set
+from robson_engine import RuleSet
 from robson_ml.features import FeatureEntry, FeatureRegistry
 from robson_ml.populations import (
     P_PRED,
@@ -39,8 +41,13 @@ from robson_ml.populations import (
     prediction_population,
     untyped_cs_mask,
 )
-from robson_ml.robson_run import inputs_from_record
-from robson_ml.schema import GA_BAND_FIELDS
+from robson_serving.features import (
+    ROBSON_NO_ONSET,
+    categorical_values,
+    derived_kind,
+    model_column,
+    robson_group_no_onset,
+)
 
 FACILITY = "facility_id"
 # Complete-case analysis: P_pred restricted to rows with no missing input in the feature set
@@ -48,14 +55,8 @@ FACILITY = "facility_id"
 P_PRED_COMPLETE = "P_pred_complete"
 BASE_POPULATIONS = (P_PRED, P_PRED_ONSET_CODED)
 POPULATIONS = (*BASE_POPULATIONS, P_PRED_COMPLETE)
-ROBSON_NO_ONSET = "robson_group_no_onset"
 # Outcome-contaminated: in model data only for P_pred_onset_coded (legacy_onset).
 LEGACY_ONSET_COLUMNS = ("onset_of_labour", "robson_group")
-NO_ONSET_MERGES: dict[frozenset[int], str] = {
-    frozenset({1, 2}): "1_2",
-    frozenset({3, 4}): "3_4",
-}
-NO_ONSET_UNRESOLVED = "partial"
 # A registry entry naming a canonical concept stored in more than one canonical column.
 CANONICAL_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "gestational_age_band": ("ga_band_lower", "ga_band_upper"),
@@ -66,7 +67,6 @@ CANONICAL_CATEGORICAL = frozenset(
 DERIVED_CATEGORICAL = frozenset({"robson_group", ROBSON_NO_ONSET})
 RAW_CATEGORICAL_KINDS = frozenset({"text", "category"})
 RAW_NUMERIC_KINDS = frozenset({"integer", "integer_sum", "float", "gestational_age"})
-MISSING_PREFIX = "is_missing_"
 GROUP_ORDER = ("G_robson", "G_maternal", "G_obs", "G_missing", "G_context")
 BASE_FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "FS0": GROUP_ORDER[:1],
@@ -145,53 +145,6 @@ def _entry_columns(entry: FeatureEntry) -> tuple[str, ...]:
 def allowed_columns(registry: FeatureRegistry) -> set[str]:
     """Every model column the registry's ``include`` entries can produce."""
     return {col for entry in registry.included() for col in _entry_columns(entry)}
-
-
-def _numeric(series: pd.Series) -> pd.Series:
-    values = pd.to_numeric(series, errors="coerce")
-    return pd.Series(
-        values.to_numpy(dtype=np.float64, na_value=np.nan), index=series.index, dtype=np.float64
-    )
-
-
-def _categorical(series: pd.Series) -> pd.Series:
-    """Object dtype holding strings, with ``np.nan`` for missing (integers keep no ``.0``)."""
-
-    def label(value: object) -> object:
-        if value is None or value is pd.NA or (isinstance(value, float) and np.isnan(value)):
-            return np.nan
-        if isinstance(value, float | np.floating) and float(value).is_integer():
-            return str(int(value))
-        return str(value)
-
-    return pd.Series([label(v) for v in series.astype(object)], index=series.index, dtype=object)
-
-
-def _no_onset_label(result: ClassificationResult) -> str:
-    if result.status == "resolved" and result.group is not None:
-        return str(result.group)
-    if result.status == "partial":
-        return NO_ONSET_MERGES.get(frozenset(result.candidates), NO_ONSET_UNRESOLVED)
-    return NO_ONSET_UNRESOLVED  # conflict
-
-
-def robson_group_no_onset(frame: pd.DataFrame, rule_set: RuleSet | None = None) -> pd.Series:
-    """The Robson group computed without onset, as a string category.
-
-    Each row is classified by the engine with ``onset_of_labour`` forced to missing (the GA
-    band is used when the exact GA is missing, as in :func:`inputs_from_record`). Resolved
-    rows keep their group (only groups 5-10 resolve without onset); a partial row whose
-    candidates are exactly {1, 2} is ``"1_2"`` and exactly {3, 4} is ``"3_4"``; every other
-    partial or conflict row is ``"partial"``. Never missing.
-    """
-    rule_set = rule_set if rule_set is not None else load_rule_set()
-    columns = [c for c in (*INPUT_FIELDS, *GA_BAND_FIELDS) if c in frame.columns]
-    records = cast("list[dict[str, Any]]", frame[columns].to_dict("records"))
-    labels = []
-    for record in records:
-        record["onset_of_labour"] = None
-        labels.append(_no_onset_label(classify(inputs_from_record(record), rule_set)))
-    return pd.Series(labels, index=frame.index, dtype=object, name=ROBSON_NO_ONSET)
 
 
 def _category_row(
@@ -305,13 +258,14 @@ def build_model_data(
         for entry in (e for e in included if e.group == group):
             if legacy_onset and entry.name == ROBSON_NO_ONSET:
                 columns = [
-                    (name, _categorical(meta[name]), "categorical") for name in LEGACY_ONSET_COLUMNS
+                    (name, categorical_values(meta[name]), "categorical")
+                    for name in LEGACY_ONSET_COLUMNS
                 ]
             else:
                 columns = _columns_for(entry, meta)
             for column, series, kind in columns:
                 x[column], kinds[column], groups[column] = series, kind, group
-    x[FACILITY] = _categorical(meta[FACILITY])
+    x[FACILITY] = categorical_values(meta[FACILITY])
     kinds[FACILITY], groups[FACILITY] = "categorical", "G_context"
     y = np.asarray(meta["cs"].astype(int).to_numpy(), dtype=np.int64)
     return ModelData(
@@ -331,37 +285,23 @@ def _columns_for(entry: FeatureEntry, meta: pd.DataFrame) -> list[tuple[str, pd.
     """(column, cleaned series, kind) for one included registry entry."""
     if entry.source == "raw":
         kind = _raw_kind(entry)
-        clean = _categorical if kind == "categorical" else _numeric
-        return [(entry.name, clean(meta[entry.name]), kind)]
+        return [(entry.name, model_column(entry.name, kind, meta), kind)]
     if entry.source == "canonical":
         out = []
         for column in _entry_columns(entry):
             if column not in meta.columns:
                 raise ValueError(f"canonical column {column!r} is missing")
-            if column in CANONICAL_CATEGORICAL:
-                out.append((column, _categorical(meta[column]), "categorical"))
-            else:
-                out.append((column, _numeric(meta[column]), "numeric"))
+            kind = "categorical" if column in CANONICAL_CATEGORICAL else "numeric"
+            out.append((column, model_column(column, kind, meta), kind))
         return out
-    return [(entry.name, _derived(entry.name, meta), _derived_kind(entry.name))]
+    if derived_kind(entry.name) is None:
+        raise ValueError(f"no derivation defined for derived feature {entry.name!r}")
+    kind = _derived_kind(entry.name)
+    return [(entry.name, model_column(entry.name, kind, meta), kind)]
 
 
 def _derived_kind(name: str) -> str:
     return "categorical" if name in DERIVED_CATEGORICAL else "numeric"
-
-
-def _derived(name: str, meta: pd.DataFrame) -> pd.Series:
-    if name == "bmi":
-        height, weight = _numeric(meta["height_cm"]), _numeric(meta["weight_kg"])
-        return weight / (height / 100.0) ** 2  # NaN unless both are present
-    if name == ROBSON_NO_ONSET:
-        return _categorical(meta[ROBSON_NO_ONSET])
-    if name.startswith(MISSING_PREFIX):
-        field = name.removeprefix(MISSING_PREFIX)
-        if field not in meta.columns:
-            raise ValueError(f"{name}: source field {field!r} is not in the frame")
-        return meta[field].isna().astype(np.float64)
-    raise ValueError(f"no derivation defined for derived feature {name!r}")
 
 
 def complete_cases(data: ModelData, feature_set: str) -> ModelData:

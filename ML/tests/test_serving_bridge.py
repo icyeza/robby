@@ -7,12 +7,18 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import pandas as pd
 import pytest
 
 import robson_ml.metrics
 from robson_ml import calibration as training_calibration
+from robson_ml import feature_sets, robson_run
+from robson_ml.feature_sets import feature_spec
+from robson_ml.features import load_feature_registry
 from robson_serving import calibration as runtime_calibration
+from robson_serving import features as serving_features
 from robson_serving.stats import fit_logistic, logit
+from tests.test_feature_sets import model_data
 
 LEGACY_MODEL = Path("artefacts/readiness-v1.0/model.joblib")
 RUNTIME_NAMES = (
@@ -83,3 +89,19 @@ def test_legacy_artefact_loads_as_serving_classes_and_redumps_cleanly(tmp_path: 
     redumped = (tmp_path / "model.joblib").read_bytes()
     assert b"robson_ml" not in redumped
     assert b"robson_serving.calibration" in redumped
+
+
+def test_training_uses_the_serving_derivations() -> None:
+    assert feature_sets.robson_group_no_onset is serving_features.robson_group_no_onset
+    assert feature_sets.model_column is serving_features.model_column
+    assert feature_sets.ROBSON_NO_ONSET == serving_features.ROBSON_NO_ONSET
+    assert robson_run.inputs_from_record is serving_features.inputs_from_record
+
+
+def test_serving_frame_equals_training_frame_on_synthetic_data() -> None:
+    data = model_data(load_feature_registry(Path("configs/features_v1.yaml")))
+    spec = feature_spec(data, "FS4_deploy")
+    columns = [(c, data.kinds[c]) for c in spec.columns]
+    inputs = list(serving_features.required_inputs(spec.columns))
+    rebuilt = serving_features.build_frame(data.meta[inputs], columns)
+    pd.testing.assert_frame_equal(rebuilt, data.x[list(spec.columns)])
