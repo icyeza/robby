@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from robby.models.base import Base, CreatedAt, UUIDPK
+from robby.models.base import UUIDPK, Base, CreatedAt
 from robby.models.enums import (
     AdmissionSource,
     ClassificationStatus,
@@ -74,7 +74,9 @@ class Admission(Base):
     diastolic_bp: Mapped[int | None]
     proteinuria: Mapped[str | None]
     glucose_mmol: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
-    details: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default=text("'{}'::jsonb"))
+    details: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb")
+    )
     created_at: Mapped[CreatedAt]
 
 

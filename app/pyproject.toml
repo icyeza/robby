@@ -42,6 +42,12 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/versions/*.py" = ["E501"]
+# These exceptions are control-flow signals named for the situation they report (like HTTP
+# statuses: NotFound, Forbidden), not for being errors; an "Error" suffix would read worse.
+"src/robby/errors.py" = ["N818"]
+"src/robby/auth/dependencies.py" = ["N818"]
+"src/robby/auth/service.py" = ["N818"]
+"src/robby/rulesets.py" = ["N818"]
 
 [tool.mypy]
 python_version = "3.11"

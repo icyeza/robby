@@ -48,7 +48,8 @@ def test_help_lists_every_command() -> None:
 
 def test_create_system_admin(db: Session) -> None:
     result = runner.invoke(
-        cli.app, ["create-system-admin", "--username", "Root.Admin"],
+        cli.app,
+        ["create-system-admin", "--username", "Root.Admin"],
         input="a-strong-password\na-strong-password\n",
     )
     assert result.exit_code == 0, result.output
@@ -63,7 +64,8 @@ def test_create_system_admin(db: Session) -> None:
 
 def test_create_system_admin_needs_matching_passwords(db: Session) -> None:
     result = runner.invoke(
-        cli.app, ["create-system-admin", "--username", "root.admin"],
+        cli.app,
+        ["create-system-admin", "--username", "root.admin"],
         input="a-strong-password\nanother-password\n",
     )
     assert result.exit_code != 0
@@ -82,7 +84,8 @@ def test_create_system_admin_refuses_a_taken_username(db: Session) -> None:
     make_user(db, role=Role.SYSTEM_ADMIN, username="root.admin")
     db.commit()
     result = runner.invoke(
-        cli.app, ["create-system-admin", "--username", "root.admin"],
+        cli.app,
+        ["create-system-admin", "--username", "root.admin"],
         input="a-strong-password\na-strong-password\n",
     )
     assert result.exit_code == 1
@@ -114,7 +117,9 @@ def test_rules_load_a_new_version_replaces_the_active_one(
     db: Session, settings: Settings, tmp_path: Path
 ) -> None:
     runner.invoke(cli.app, ["rules", "load"])
-    newer = rule_set_copy(settings, tmp_path, 'version_label: "robson-v1.0"', 'version_label: "robson-v9.9"')
+    newer = rule_set_copy(
+        settings, tmp_path, 'version_label: "robson-v1.0"', 'version_label: "robson-v9.9"'
+    )
     result = runner.invoke(cli.app, ["rules", "load", "--path", str(newer)])
     assert result.exit_code == 0, result.output
     active = db.scalars(select(RuleSet).where(RuleSet.is_active)).all()
@@ -134,10 +139,14 @@ def test_rules_load_refuses_changed_content_under_an_old_label(
     assert "already loaded with a different checksum" in result.output
 
 
-def test_rules_load_refuses_a_file_whose_checksum_is_stale(settings: Settings, tmp_path: Path) -> None:
+def test_rules_load_refuses_a_file_whose_checksum_is_stale(
+    settings: Settings, tmp_path: Path
+) -> None:
     source = settings.rule_set_path.read_text(encoding="utf-8")
     path = tmp_path / "stale.yaml"
-    path.write_text(source.replace(DEFAULT_GROUP_1, 'name: "Edited without re-stamping"'), encoding="utf-8")
+    path.write_text(
+        source.replace(DEFAULT_GROUP_1, 'name: "Edited without re-stamping"'), encoding="utf-8"
+    )
     result = runner.invoke(cli.app, ["rules", "load", "--path", str(path)])
     assert result.exit_code == 1
     assert "checksum mismatch" in result.output

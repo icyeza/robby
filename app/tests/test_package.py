@@ -1,7 +1,8 @@
 """The package installs and its path dependency on robson_engine resolves."""
 
-import robby
 from robson_engine import load_rule_set
+
+import robby
 
 
 def test_version() -> None:

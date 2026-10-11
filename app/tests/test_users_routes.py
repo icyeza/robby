@@ -18,7 +18,11 @@ SECRET = re.compile(r'<span class="secret">([a-z0-9-]+)</span>')
 
 
 def signed_in(
-    client: TestClient, db: Session, settings: Settings, role: Role, facility: Facility | None = None
+    client: TestClient,
+    db: Session,
+    settings: Settings,
+    role: Role,
+    facility: Facility | None = None,
 ) -> tuple[AppUser, str]:
     user = make_user(db, role=role, facility=facility)
     row = sign_in_client(client, db, settings, user)
@@ -36,7 +40,9 @@ def test_facility_admin_sees_only_their_facility(
     assert response.status_code == 200
     assert "<b>mw.a014</b>" in response.text and "mw.b001" not in response.text
     assert admin.facility is not None
-    assert f"People who can sign in at {admin.facility.name}, and what each can do." in response.text
+    assert (
+        f"People who can sign in at {admin.facility.name}, and what each can do." in response.text
+    )
     assert "<th>Facility</th>" not in response.text
     assert f'<div class="fixed">{admin.facility.name}</div>' in response.text
     assert '<option value="clinician"' in response.text
@@ -65,8 +71,13 @@ def test_facility_admin_adds_a_clinician_to_their_own_facility(
     db.commit()
     response = client.post(
         "/admin/users",
-        data={"csrf_token": token, "display_name": "", "username": "MW.New01", "role": "clinician",
-              "facility_id": str(elsewhere.id)},
+        data={
+            "csrf_token": token,
+            "display_name": "",
+            "username": "MW.New01",
+            "role": "clinician",
+            "facility_id": str(elsewhere.id),
+        },
     )
     assert response.status_code == 200
     assert "Temporary password for mw.new01" in response.text
@@ -87,8 +98,12 @@ def test_a_new_account_chooses_its_password_at_first_sign_in(
     db.commit()
     response = client.post(
         "/admin/users",
-        data={"csrf_token": token, "username": "mw.first", "role": "clinician",
-              "facility_id": str(facility.id)},
+        data={
+            "csrf_token": token,
+            "username": "mw.first",
+            "role": "clinician",
+            "facility_id": str(facility.id),
+        },
     )
     match = SECRET.search(response.text)
     assert match is not None

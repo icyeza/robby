@@ -14,8 +14,8 @@ from robby.errors import FormErrors, NotAllowed, NotFound
 from robby.models import ROLE_LABELS, AppUser, Facility, Role
 from robby.timeutil import utcnow
 from robby.users.service import (
-    create_user,
     creatable_roles,
+    create_user,
     get_user_in_scope,
     list_users,
     reset_password,
@@ -49,11 +49,19 @@ def _list_page(
         )
         facilities = [(str(f.id), f.name) for f in open_facilities]
     return render(
-        request, "users/list.html", current=current, status_code=status_code,
+        request,
+        "users/list.html",
+        current=current,
+        status_code=status_code,
         users=list_users(db, actor),
         roles=[(role.value, ROLE_LABELS[role]) for role in creatable_roles(actor)],
-        facilities=facilities, is_system_admin=is_system_admin, now=utcnow(),
-        open_dialog=open_dialog, form=form or {}, errors=errors or {}, problem=problem,
+        facilities=facilities,
+        is_system_admin=is_system_admin,
+        now=utcnow(),
+        open_dialog=open_dialog,
+        form=form or {},
+        errors=errors or {},
+        problem=problem,
     )
 
 
@@ -75,8 +83,15 @@ def _password_page(
     request: Request, current: CurrentUser, heading: str, intro: str, username: str, password: str
 ) -> Response:
     return render(
-        request, "users/password_shown.html", current=current, heading=heading, intro=intro,
-        username=username, password=password, back_url="/admin/users", back_label="Back to users",
+        request,
+        "users/password_shown.html",
+        current=current,
+        heading=heading,
+        intro=intro,
+        username=username,
+        password=password,
+        back_url="/admin/users",
+        back_label="Back to users",
     )
 
 
@@ -96,10 +111,19 @@ def add_user(
     role: FormText = "",
     facility_id: FormText = "",
 ) -> Response:
-    form = {"display_name": display_name, "username": username, "role": role, "facility_id": facility_id}
+    form = {
+        "display_name": display_name,
+        "username": username,
+        "role": role,
+        "facility_id": facility_id,
+    }
     try:
         created = create_user(
-            db, current.user, username=username, display_name=display_name, role=role,
+            db,
+            current.user,
+            username=username,
+            display_name=display_name,
+            role=role,
             facility_id=_parse_uuid(facility_id),
         )
     except FormErrors as exc:
@@ -110,8 +134,12 @@ def add_user(
     db.commit()
     assert created.temporary_password is not None
     return _password_page(
-        request, current, "User added", f"The account {created.user.username} was created.",
-        created.user.username, created.temporary_password,
+        request,
+        current,
+        "User added",
+        f"The account {created.user.username} was created.",
+        created.user.username,
+        created.temporary_password,
     )
 
 
@@ -123,9 +151,12 @@ def reset(
     temporary = reset_password(db, current.user, target, now=utcnow())
     db.commit()
     return _password_page(
-        request, current, "Password reset",
+        request,
+        current,
+        "Password reset",
         "The old password no longer works and any open sessions of this account were ended.",
-        target.username, temporary,
+        target.username,
+        temporary,
     )
 
 

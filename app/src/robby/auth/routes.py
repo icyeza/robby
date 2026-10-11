@@ -46,8 +46,13 @@ def _login_page(
     nonce, token = new_login_token(settings)
     response = render(request, template, status_code=status_code, login_token=token, **context)
     response.set_cookie(
-        LOGIN_NONCE_COOKIE, nonce, max_age=LOGIN_TOKEN_MAX_AGE, path="/login",
-        httponly=True, secure=settings.secure_cookies, samesite="strict",
+        LOGIN_NONCE_COOKIE,
+        nonce,
+        max_age=LOGIN_TOKEN_MAX_AGE,
+        path="/login",
+        httponly=True,
+        secure=settings.secure_cookies,
+        samesite="strict",
     )
     return response
 
@@ -71,11 +76,19 @@ def login(
 ) -> Response:
     if not check_login_token(settings, csrf_token, request.cookies.get(LOGIN_NONCE_COOKIE)):
         return _login_page(
-            request, settings, "auth/login.html", status_code=400, username=username, error="expired"
+            request,
+            settings,
+            "auth/login.html",
+            status_code=400,
+            username=username,
+            error="expired",
         )
     try:
         _, token = authenticate(
-            db, settings, username, password,
+            db,
+            settings,
+            username,
+            password,
             ip=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
             now=utcnow(),
@@ -83,17 +96,28 @@ def login(
     except LoginFailed:
         db.commit()  # keep the failure count and the event
         return _login_page(
-            request, settings, "auth/login.html", status_code=400, username=username,
+            request,
+            settings,
+            "auth/login.html",
+            status_code=400,
+            username=username,
             error="credentials",
         )
     db.commit()
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
-        SESSION_COOKIE, token, path="/", httponly=True, secure=settings.secure_cookies,
+        SESSION_COOKIE,
+        token,
+        path="/",
+        httponly=True,
+        secure=settings.secure_cookies,
         samesite="strict",
     )
     response.delete_cookie(
-        LOGIN_NONCE_COOKIE, path="/login", httponly=True, secure=settings.secure_cookies,
+        LOGIN_NONCE_COOKIE,
+        path="/login",
+        httponly=True,
+        secure=settings.secure_cookies,
         samesite="strict",
     )
     return response
@@ -113,7 +137,11 @@ def sign_out(db: DbDep, settings: SettingsDep, current: SignedIn, _csrf: CsrfChe
 @router.get("/session-ended")
 def session_ended(request: Request, settings: SettingsDep, reason: str = "idle") -> Response:
     return _login_page(
-        request, settings, "auth/session_ended.html", username="", error=None,
+        request,
+        settings,
+        "auth/session_ended.html",
+        username="",
+        error=None,
         reason="absolute" if reason == "absolute" else "idle",
         idle_minutes=settings.session_idle_minutes,
         absolute_hours=settings.session_absolute_hours,

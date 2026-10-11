@@ -54,7 +54,9 @@ def list_users(db: Session, actor: AppUser) -> list[AppUser]:
 def get_user_in_scope(db: Session, actor: AppUser, user_id: uuid.UUID) -> AppUser:
     _require_admin(actor)
     user = db.get(AppUser, user_id)
-    if user is None or (actor.role is Role.FACILITY_ADMIN and user.facility_id != actor.facility_id):
+    if user is None or (
+        actor.role is Role.FACILITY_ADMIN and user.facility_id != actor.facility_id
+    ):
         raise NotFound("No such account.")
     return user
 
@@ -125,7 +127,10 @@ def create_user(
     db.add(user)
     db.flush()
     events.append(
-        db, actor, "user.created", ("app_user", user.id),
+        db,
+        actor,
+        "user.created",
+        ("app_user", user.id),
         {
             "username": name,
             "role": chosen.value,
@@ -144,7 +149,9 @@ def reset_password(db: Session, actor: AppUser, target: AppUser, *, now: datetim
     target.locked_until = None
     revoke_sessions(db, target, now=now)
     db.flush()
-    events.append(db, actor, "user.password_reset", ("app_user", target.id), {"username": target.username})
+    events.append(
+        db, actor, "user.password_reset", ("app_user", target.id), {"username": target.username}
+    )
     return temporary
 
 

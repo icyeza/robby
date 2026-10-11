@@ -23,7 +23,11 @@ PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN}
 @pytest.mark.parametrize("role", list(Role))
 @pytest.mark.parametrize(("path", "allowed"), PAGES, ids=[path for path, _ in PAGES])
 def test_page_access_by_role(
-    client: TestClient, db: Session, settings: Settings, role: Role, path: str,
+    client: TestClient,
+    db: Session,
+    settings: Settings,
+    role: Role,
+    path: str,
     allowed: frozenset[Role],
 ) -> None:
     sign_in_client(client, db, settings, make_user(db, role=role))
@@ -63,7 +67,10 @@ def test_placeholder_pages_say_not_available_and_show_no_data(
     response = client.get("/admissions/new")
     assert "<title>New admission · Robson Readiness</title>" in response.text
     assert "Not available yet" in response.text
-    assert '<a class="on" aria-current="page" href="/admissions/new">New admission</a>' in response.text
+    assert (
+        '<a class="on" aria-current="page" href="/admissions/new">New admission</a>'
+        in response.text
+    )
     assert "<table" not in response.text
 
 
@@ -89,9 +96,17 @@ def test_actions_are_refused_to_other_roles(
     target = make_user(db, role=Role.CLINICIAN, facility=facility)
     row = sign_in_client(client, db, settings, make_user(db, role=role))
     url = path.format(facility=facility.id, user=target.id)
-    response = client.post(url, data={"csrf_token": csrf_for(settings, row), "name": "Facility X",
-                                      "code": "FX", "district": "D", "username": "nobody.new",
-                                      "role": "clinician"})
+    response = client.post(
+        url,
+        data={
+            "csrf_token": csrf_for(settings, row),
+            "name": "Facility X",
+            "code": "FX",
+            "district": "D",
+            "username": "nobody.new",
+            "role": "clinician",
+        },
+    )
     assert response.status_code == 403
     db.refresh(facility)
     db.refresh(target)

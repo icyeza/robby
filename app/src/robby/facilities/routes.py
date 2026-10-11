@@ -31,8 +31,14 @@ def _list_page(
     errors: dict[str, str] | None = None,
 ) -> Response:
     return render(
-        request, "facilities/list.html", current=current, status_code=status_code,
-        rows=list_facilities(db), open_dialog=open_dialog, form=form or {}, errors=errors or {},
+        request,
+        "facilities/list.html",
+        current=current,
+        status_code=status_code,
+        rows=list_facilities(db),
+        open_dialog=open_dialog,
+        form=form or {},
+        errors=errors or {},
     )
 
 
@@ -54,19 +60,29 @@ def add_facility(
     model_facility_key: FormText = "",
 ) -> Response:
     form = {
-        "name": name, "code": code, "district": district,
-        "admin_username": admin_username, "model_facility_key": model_facility_key,
+        "name": name,
+        "code": code,
+        "district": district,
+        "admin_username": admin_username,
+        "model_facility_key": model_facility_key,
     }
     created: CreatedUser | None = None
     try:
         facility = create_facility(
-            db, current.user, name=name, code=code, district=district,
+            db,
+            current.user,
+            name=name,
+            code=code,
+            district=district,
             model_facility_key=model_facility_key,
         )
         if admin_username.strip():
             try:
                 created = create_user(
-                    db, current.user, username=admin_username, role=Role.FACILITY_ADMIN,
+                    db,
+                    current.user,
+                    username=admin_username,
+                    role=Role.FACILITY_ADMIN,
                     facility_id=facility.id,
                 )
             except FormErrors as exc:
@@ -81,11 +97,15 @@ def add_facility(
     if created is None:
         return RedirectResponse("/admin/facilities", status_code=303)
     return render(
-        request, "users/password_shown.html", current=current,
+        request,
+        "users/password_shown.html",
+        current=current,
         heading="Facility added",
         intro=f"{facility.name} ({facility.code}) was added with its first administrator.",
-        username=created.user.username, password=created.temporary_password,
-        back_url="/admin/facilities", back_label="Back to facilities",
+        username=created.user.username,
+        password=created.temporary_password,
+        back_url="/admin/facilities",
+        back_label="Back to facilities",
     )
 
 

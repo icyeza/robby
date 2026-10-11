@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from robby.models.base import Base, CreatedAt, UUIDPK
+from robby.models.base import UUIDPK, Base, CreatedAt
 from robby.models.enums import ModelState, PredictionMode, pg_enum
 
 

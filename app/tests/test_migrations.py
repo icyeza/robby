@@ -51,7 +51,7 @@ def test_downgrade_to_base_then_upgrade_again() -> None:
         upgrade(raw)
         engine = create_engine(url)
         with engine.connect() as conn:
-            assert EXPECTED_TABLES <= set(inspect(conn).get_table_names())
+            assert set(inspect(conn).get_table_names()) >= EXPECTED_TABLES
         engine.dispose()
     finally:
         drop_database(url)

@@ -56,7 +56,10 @@ def load_rule_set_file(db: Session, path: Path, actor: AppUser | None = None) ->
         status = "activated"
     db.flush()
     events.append(
-        db, actor, f"rule_set.{status}", ("rule_set", row.id),
+        db,
+        actor,
+        f"rule_set.{status}",
+        ("rule_set", row.id),
         {"version_label": row.version_label, "checksum": row.checksum},
     )
     return LoadOutcome(row, status)

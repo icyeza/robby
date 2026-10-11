@@ -21,11 +21,17 @@ from robby.web.render import render
 MESSAGES: dict[int, tuple[str, str]] = {
     400: ("Request not understood", "The form was incomplete or not valid. Go back and try again."),
     403: ("Not allowed", "Your account does not give access to this page."),
-    404: ("Page not found", "There is nothing at this address. Check the link, or go to your start page."),
+    404: (
+        "Page not found",
+        "There is nothing at this address. Check the link, or go to your start page.",
+    ),
     405: ("Not allowed", "This page cannot be used that way."),
     500: (
         "Something went wrong",
-        "The page could not be shown. Try again; if it keeps happening, tell your system administrator.",
+        (
+            "The page could not be shown. Try again; if it keeps happening, "
+            "tell your system administrator."
+        ),
     ),
 }
 CSRF_TITLE = "This form has expired"
@@ -60,7 +66,11 @@ def redirect(request: Request, url: str, *, clear_session: bool = False) -> Resp
     if clear_session:
         settings: Settings = request.app.state.settings
         response.delete_cookie(
-            SESSION_COOKIE, path="/", secure=settings.secure_cookies, httponly=True, samesite="strict"
+            SESSION_COOKIE,
+            path="/",
+            secure=settings.secure_cookies,
+            httponly=True,
+            samesite="strict",
         )
     return response
 

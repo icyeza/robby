@@ -41,11 +41,19 @@ def test_hash_is_sha256_of_prev_hash_and_canonical_json(db: Session) -> None:
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     expected = hashlib.sha256(GENESIS_HASH.encode("ascii") + canonical.encode("utf-8")).hexdigest()
     assert row.hash == expected
-    assert compute_hash(
-        GENESIS_HASH, event_id=row.id, occurred_at=row.occurred_at, actor_id=actor.id,
-        event_type="user.created", entity_type="app_user", entity_id=actor.id,
-        payload={"b": 2, "a": "é"},
-    ) == expected
+    assert (
+        compute_hash(
+            GENESIS_HASH,
+            event_id=row.id,
+            occurred_at=row.occurred_at,
+            actor_id=actor.id,
+            event_type="user.created",
+            entity_type="app_user",
+            entity_id=actor.id,
+            payload={"b": 2, "a": "é"},
+        )
+        == expected
+    )
 
 
 def test_append_holds_the_advisory_lock_until_the_transaction_ends(db: Session) -> None:
@@ -86,7 +94,8 @@ def _tamper(db: Session, sql: str, params: dict[str, object]) -> None:
 def test_verify_detects_an_altered_payload(db: Session) -> None:
     rows = [events.append(db, None, "test.n", payload={"n": n}) for n in range(3)]
     _tamper(
-        db, "UPDATE event_log SET payload = CAST(:p AS jsonb) WHERE seq = :seq",
+        db,
+        "UPDATE event_log SET payload = CAST(:p AS jsonb) WHERE seq = :seq",
         {"p": json.dumps({"n": 99}), "seq": rows[1].seq},
     )
     result = events.verify(db)
@@ -99,11 +108,18 @@ def test_verify_detects_an_altered_payload(db: Session) -> None:
 def test_verify_detects_a_rewritten_entry_by_the_broken_link(db: Session) -> None:
     rows = [events.append(db, None, "test.n", payload={"n": n}) for n in range(3)]
     forged = compute_hash(
-        rows[1].prev_hash, event_id=rows[1].id, occurred_at=rows[1].occurred_at, actor_id=None,
-        event_type="test.n", entity_type=None, entity_id=None, payload={"n": 99},
+        rows[1].prev_hash,
+        event_id=rows[1].id,
+        occurred_at=rows[1].occurred_at,
+        actor_id=None,
+        event_type="test.n",
+        entity_type=None,
+        entity_id=None,
+        payload={"n": 99},
     )
     _tamper(
-        db, "UPDATE event_log SET payload = CAST(:p AS jsonb), hash = :h WHERE seq = :seq",
+        db,
+        "UPDATE event_log SET payload = CAST(:p AS jsonb), hash = :h WHERE seq = :seq",
         {"p": json.dumps({"n": 99}), "h": forged, "seq": rows[1].seq},
     )
     result = events.verify(db)

@@ -13,13 +13,17 @@ from robby.web.csrf import check_login_token, new_login_token, session_csrf_toke
 OTHER_SECRET = SecretStr("another-secret-key-that-is-long-enough-012345")
 
 
-def test_session_token_is_stable_and_bound_to_the_session_and_the_secret(settings: Settings) -> None:
+def test_session_token_is_stable_and_bound_to_the_session_and_the_secret(
+    settings: Settings,
+) -> None:
     first, second = uuid.uuid4(), uuid.uuid4()
     token = session_csrf_token(settings, first)
     assert len(token) == 64
     assert session_csrf_token(settings, first) == token
     assert session_csrf_token(settings, second) != token
-    assert session_csrf_token(settings.model_copy(update={"secret_key": OTHER_SECRET}), first) != token
+    assert (
+        session_csrf_token(settings.model_copy(update={"secret_key": OTHER_SECRET}), first) != token
+    )
 
 
 def test_tokens_match_only_identical_strings() -> None:

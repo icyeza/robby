@@ -38,6 +38,8 @@ def list_facilities(db: Session) -> list[FacilityRow]:
     administrators: dict[uuid.UUID, list[str]] = defaultdict(list)
     counts: Counter[uuid.UUID] = Counter()
     for facility_id, username, role in people:
+        if facility_id is None:  # excluded by the query; narrows the type
+            continue
         counts[facility_id] += 1
         if role is Role.FACILITY_ADMIN:
             administrators[facility_id].append(username)
@@ -70,12 +72,18 @@ def create_facility(
     if errors:
         raise FormErrors(errors)
     facility = Facility(
-        name=name, code=code, district=district, model_facility_key=model_facility_key.strip() or None
+        name=name,
+        code=code,
+        district=district,
+        model_facility_key=model_facility_key.strip() or None,
     )
     db.add(facility)
     db.flush()
     events.append(
-        db, actor, "facility.created", ("facility", facility.id),
+        db,
+        actor,
+        "facility.created",
+        ("facility", facility.id),
         {"name": name, "code": code, "district": district},
     )
     return facility
@@ -87,4 +95,6 @@ def deactivate_facility(db: Session, actor: AppUser, facility: Facility) -> None
         return
     facility.active = False
     db.flush()
-    events.append(db, actor, "facility.deactivated", ("facility", facility.id), {"code": facility.code})
+    events.append(
+        db, actor, "facility.deactivated", ("facility", facility.id), {"code": facility.code}
+    )

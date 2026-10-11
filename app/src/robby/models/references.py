@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy import CHAR, CheckConstraint, ForeignKey, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from robby.models.base import Base, CreatedAt, UUIDPK
+from robby.models.base import UUIDPK, Base, CreatedAt
 from robby.models.enums import ReferenceKind, pg_enum
 
 

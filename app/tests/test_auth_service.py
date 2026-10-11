@@ -68,18 +68,25 @@ def test_unknown_username_is_logged_without_what_was_typed(db: Session, settings
     assert event.entity_id is None
 
 
-def test_five_failures_lock_the_account_for_fifteen_minutes(db: Session, settings: Settings) -> None:
+def test_five_failures_lock_the_account_for_fifteen_minutes(
+    db: Session, settings: Settings
+) -> None:
     user = make_user(db)
     now = utcnow()
     for _ in range(5):
         with pytest.raises(LoginFailed):
             sign_in(db, settings, user.username, "wrong-password", now)
     assert user.locked_until == now + LOCKOUT
-    assert events_of(db, "session.login_failed")[-1].payload == {"reason": "bad_password", "locked": True}
+    assert events_of(db, "session.login_failed")[-1].payload == {
+        "reason": "bad_password",
+        "locked": True,
+    }
     with pytest.raises(LoginFailed):
         sign_in(db, settings, user.username, DEFAULT_PASSWORD, now + timedelta(minutes=14))
     assert events_of(db, "session.login_failed")[-1].payload == {"reason": "locked"}
-    row, _ = sign_in(db, settings, user.username, DEFAULT_PASSWORD, now + timedelta(minutes=15, seconds=1))
+    row, _ = sign_in(
+        db, settings, user.username, DEFAULT_PASSWORD, now + timedelta(minutes=15, seconds=1)
+    )
     assert row.user_id == user.id
     assert user.failed_logins == 0 and user.locked_until is None
 
@@ -104,7 +111,10 @@ def test_session_slides_at_most_once_a_minute_and_ends_after_idle_time(
     user = make_user(db)
     t0 = utcnow()
     row, token = start_session(db, settings, user, ip=None, user_agent=None, now=t0)
-    assert resolve_session(db, settings, token, now=t0 + timedelta(seconds=30)).state is SessionState.VALID
+    assert (
+        resolve_session(db, settings, token, now=t0 + timedelta(seconds=30)).state
+        is SessionState.VALID
+    )
     assert row.last_seen_at == t0
     resolved = resolve_session(db, settings, token, now=t0 + timedelta(minutes=5))
     assert resolved.state is SessionState.VALID and resolved.session is row
@@ -159,10 +169,25 @@ def test_revoke_sessions_ends_every_open_session(db: Session, settings: Settings
 @pytest.mark.parametrize(
     ("current", "new", "confirm", "message"),
     [
-        ("wrong-password", "brand-new-password", "brand-new-password", "Current password not recognised."),
-        (DEFAULT_PASSWORD, "brand-new-password", "different-password", "The new passwords do not match."),
+        (
+            "wrong-password",
+            "brand-new-password",
+            "brand-new-password",
+            "Current password not recognised.",
+        ),
+        (
+            DEFAULT_PASSWORD,
+            "brand-new-password",
+            "different-password",
+            "The new passwords do not match.",
+        ),
         (DEFAULT_PASSWORD, "short", "short", "Use at least 10 characters."),
-        (DEFAULT_PASSWORD, DEFAULT_PASSWORD, DEFAULT_PASSWORD, "Choose a password different from the current one."),
+        (
+            DEFAULT_PASSWORD,
+            DEFAULT_PASSWORD,
+            DEFAULT_PASSWORD,
+            "Choose a password different from the current one.",
+        ),
     ],
 )
 def test_password_change_problems(

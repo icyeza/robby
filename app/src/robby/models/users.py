@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import CHAR, CheckConstraint, ForeignKey, text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from robby.models.base import Base, CreatedAt, UUIDPK
+from robby.models.base import UUIDPK, Base, CreatedAt
 from robby.models.enums import Role, pg_enum
 from robby.models.facility import Facility
 

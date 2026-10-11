@@ -90,7 +90,8 @@ def test_sign_in_needs_a_genuine_form_token(client: TestClient, db: Session) -> 
     user = make_user(db)
     client.get("/login")
     response = client.post(
-        "/login", data={"username": user.username, "password": DEFAULT_PASSWORD, "csrf_token": "forged"}
+        "/login",
+        data={"username": user.username, "password": DEFAULT_PASSWORD, "csrf_token": "forged"},
     )
     assert response.status_code == 400
     assert "The sign-in form had expired" in response.text
@@ -101,7 +102,8 @@ def test_sign_in_needs_the_matching_cookie(client: TestClient, db: Session) -> N
     token = form_token(client.get("/login").text)
     client.cookies.clear()
     response = client.post(
-        "/login", data={"username": user.username, "password": DEFAULT_PASSWORD, "csrf_token": token}
+        "/login",
+        data={"username": user.username, "password": DEFAULT_PASSWORD, "csrf_token": token},
     )
     assert response.status_code == 400
 
@@ -223,14 +225,22 @@ def test_forced_password_change_comes_before_anything_else(
     token = csrf_for(settings, row)
     rejected = client.post(
         "/account/password",
-        data={"csrf_token": token, "current_password": DEFAULT_PASSWORD,
-              "new_password": "short", "confirm_password": "short"},
+        data={
+            "csrf_token": token,
+            "current_password": DEFAULT_PASSWORD,
+            "new_password": "short",
+            "confirm_password": "short",
+        },
     )
     assert rejected.status_code == 400 and "Use at least 10 characters." in rejected.text
     accepted = client.post(
         "/account/password",
-        data={"csrf_token": token, "current_password": DEFAULT_PASSWORD,
-              "new_password": "brand-new-password", "confirm_password": "brand-new-password"},
+        data={
+            "csrf_token": token,
+            "current_password": DEFAULT_PASSWORD,
+            "new_password": "brand-new-password",
+            "confirm_password": "brand-new-password",
+        },
     )
     assert accepted.status_code == 303 and accepted.headers["location"] == "/"
     db.refresh(user)
@@ -242,7 +252,10 @@ def test_password_change_needs_csrf(client: TestClient, db: Session, settings: S
     sign_in_client(client, db, settings, make_user(db))
     response = client.post(
         "/account/password",
-        data={"current_password": DEFAULT_PASSWORD, "new_password": "brand-new-password",
-              "confirm_password": "brand-new-password"},
+        data={
+            "current_password": DEFAULT_PASSWORD,
+            "new_password": "brand-new-password",
+            "confirm_password": "brand-new-password",
+        },
     )
     assert response.status_code == 403

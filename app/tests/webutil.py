@@ -43,7 +43,9 @@ def sign_in_client(
     client: TestClient, db: Session, settings: Settings, user: AppUser
 ) -> UserSession:
     """Open a session for `user` directly (no password check) and give the client its cookie."""
-    row, token = start_session(db, settings, user, ip="testclient", user_agent="pytest", now=utcnow())
+    row, token = start_session(
+        db, settings, user, ip="testclient", user_agent="pytest", now=utcnow()
+    )
     db.commit()
     client.cookies.set(SESSION_COOKIE, token)
     return row

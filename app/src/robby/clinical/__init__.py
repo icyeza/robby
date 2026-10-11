@@ -1,1 +1,3 @@
-"""Clinical flow: admission, classification, scoring, corrections, outcomes. Filled by sub-project 3."""
+"""Clinical flow: admission, classification, scoring, corrections, outcomes.
+
+Filled by sub-project 3."""

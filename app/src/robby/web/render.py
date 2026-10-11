@@ -39,4 +39,6 @@ def render(
         base["csrf_token"] = session_csrf_token(settings, current.session.id)
         if not user.must_change_password:
             base["nav"] = nav_for(user.role, request.url.path)
-    return templates.TemplateResponse(request, template, {**base, **context}, status_code=status_code)
+    return templates.TemplateResponse(
+        request, template, {**base, **context}, status_code=status_code
+    )

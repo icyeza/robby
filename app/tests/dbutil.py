@@ -55,4 +55,6 @@ def drop_database(url: URL) -> None:
 def bound_session(connection: Connection) -> Session:
     """A session joined to the test's transaction: its commit() only releases a savepoint,
     so everything is still rolled back when the test ends."""
-    return Session(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False)
+    return Session(
+        bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+    )

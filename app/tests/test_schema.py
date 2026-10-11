@@ -63,7 +63,9 @@ def test_system_admin_cannot_belong_to_a_facility(db: Session) -> None:
     facility = make_facility(db)
     assert_rejected(
         db,
-        AppUser(username="sa.x", password_hash="h", role=Role.SYSTEM_ADMIN, facility_id=facility.id),
+        AppUser(
+            username="sa.x", password_hash="h", role=Role.SYSTEM_ADMIN, facility_id=facility.id
+        ),
     )
 
 
@@ -90,9 +92,13 @@ def test_a_correction_needs_a_reason(db: Session) -> None:
     assert_rejected(
         db,
         Admission(
-            facility_id=original.facility_id, code="CORR-1", admitted_at=utcnow(),
-            source=AdmissionSource.FORM, entered_by=original.entered_by,
-            supersedes_id=original.id, correction_reason=None,
+            facility_id=original.facility_id,
+            code="CORR-1",
+            admitted_at=utcnow(),
+            source=AdmissionSource.FORM,
+            entered_by=original.entered_by,
+            supersedes_id=original.id,
+            correction_reason=None,
         ),
     )
 
@@ -102,8 +108,11 @@ def test_a_form_admission_records_who_entered_it(db: Session) -> None:
     assert_rejected(
         db,
         Admission(
-            facility_id=facility.id, code="NOAUTH-1", admitted_at=utcnow(),
-            source=AdmissionSource.FORM, entered_by=None,
+            facility_id=facility.id,
+            code="NOAUTH-1",
+            admitted_at=utcnow(),
+            source=AdmissionSource.FORM,
+            entered_by=None,
         ),
     )
 
@@ -113,8 +122,11 @@ def test_a_resolved_classification_has_a_group(db: Session) -> None:
     assert_rejected(
         db,
         Classification(
-            admission_id=chain["admission"].id, rule_set_id=make_rule_set(db).id,
-            status=ClassificationStatus.RESOLVED, robson_group=None, trace={},
+            admission_id=chain["admission"].id,
+            rule_set_id=make_rule_set(db).id,
+            status=ClassificationStatus.RESOLVED,
+            robson_group=None,
+            trace={},
         ),
     )
 
@@ -125,8 +137,10 @@ def test_export_period_is_the_first_of_a_month(db: Session) -> None:
     assert_rejected(
         db,
         ExportRecord(
-            facility_id=facility.id, period_month=date(2026, 9, 15),
-            exported_by=admin.id, file_sha256="0" * 64,
+            facility_id=facility.id,
+            period_month=date(2026, 9, 15),
+            exported_by=admin.id,
+            file_sha256="0" * 64,
         ),
     )
 

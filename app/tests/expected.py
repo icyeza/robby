@@ -13,9 +13,22 @@ from robby.models.enums import (
 )
 
 EXPECTED_TABLES = {
-    "facility", "app_user", "user_session", "rule_set", "admission_counter", "admission",
-    "screening_omission", "classification", "model_version", "model_transition", "prediction",
-    "delivery_outcome", "reconciled_outcome", "reference_set", "reference_value", "event_log",
+    "facility",
+    "app_user",
+    "user_session",
+    "rule_set",
+    "admission_counter",
+    "admission",
+    "screening_omission",
+    "classification",
+    "model_version",
+    "model_transition",
+    "prediction",
+    "delivery_outcome",
+    "reconciled_outcome",
+    "reference_set",
+    "reference_value",
+    "event_log",
     "export_record",
 }
 
@@ -32,6 +45,11 @@ EXPECTED_ENUMS = {
 }
 
 IMMUTABLE_TABLES = (
-    "admission", "screening_omission", "classification", "prediction",
-    "delivery_outcome", "reconciled_outcome", "event_log",
+    "admission",
+    "screening_omission",
+    "classification",
+    "prediction",
+    "delivery_outcome",
+    "reconciled_outcome",
+    "event_log",
 )

@@ -12,7 +12,12 @@ from tests.factories import events_of, make_facility, make_user
 def test_create_normalises_input_and_logs_an_event(db: Session) -> None:
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
     facility = create_facility(
-        db, admin, name="  Facility   Z ", code=" fz ", district=" North ", model_facility_key=" Site A "
+        db,
+        admin,
+        name="  Facility   Z ",
+        code=" fz ",
+        district=" North ",
+        model_facility_key=" Site A ",
     )
     assert (facility.name, facility.code, facility.district) == ("Facility Z", "FZ", "North")
     assert facility.model_facility_key == "Site A"
@@ -24,7 +29,9 @@ def test_create_normalises_input_and_logs_an_event(db: Session) -> None:
 
 def test_blank_model_key_is_stored_as_null(db: Session) -> None:
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
-    facility = create_facility(db, admin, name="Facility Y", code="FY", district="D", model_facility_key="  ")
+    facility = create_facility(
+        db, admin, name="Facility Y", code="FY", district="D", model_facility_key="  "
+    )
     assert facility.model_facility_key is None
 
 
@@ -39,7 +46,9 @@ def test_every_problem_is_reported_at_once(db: Session) -> None:
 def test_codes_are_two_to_six_letters(db: Session, code: str) -> None:
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
     with pytest.raises(FormErrors) as caught:
-        create_facility(db, admin, name=f"Facility {code}", code=code, district="D", model_facility_key="")
+        create_facility(
+            db, admin, name=f"Facility {code}", code=code, district="D", model_facility_key=""
+        )
     assert caught.value.errors == {"code": "Use 2 to 6 capital letters, for example FA."}
 
 
@@ -47,7 +56,9 @@ def test_names_and_codes_must_be_new(db: Session) -> None:
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
     make_facility(db, name="Facility Q", code="FQ")
     with pytest.raises(FormErrors) as caught:
-        create_facility(db, admin, name="facility q", code="fq", district="D", model_facility_key="")
+        create_facility(
+            db, admin, name="facility q", code="fq", district="D", model_facility_key=""
+        )
     assert caught.value.errors == {
         "name": "A facility with this name already exists.",
         "code": "This code is already used by another facility.",

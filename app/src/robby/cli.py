@@ -54,7 +54,9 @@ def create_system_admin(
     username: Annotated[str, typer.Option("--username", help="Sign-in name (stored lowercase).")],
     password: Annotated[
         str,
-        typer.Option(prompt=True, confirmation_prompt=True, hide_input=True, help="Asked for twice."),
+        typer.Option(
+            prompt=True, confirmation_prompt=True, hide_input=True, help="Asked for twice."
+        ),
     ],
 ) -> None:
     """Create a system administrator (the first account of a new installation)."""
@@ -84,7 +86,9 @@ def db_upgrade(
 def rules_load(
     path: Annotated[
         Path | None,
-        typer.Option("--path", help="Rule set YAML (default: ROBBY_RULE_SET_PATH).", dir_okay=False),
+        typer.Option(
+            "--path", help="Rule set YAML (default: ROBBY_RULE_SET_PATH).", dir_okay=False
+        ),
     ] = None,
 ) -> None:
     """Load a rule set YAML and make it the active rule set."""

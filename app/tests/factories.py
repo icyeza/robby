@@ -197,8 +197,12 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
     db.add_all([reconciled, event])
     db.flush()
     return {
-        "facility": facility, "clinician": clinician, "admission": admission,
-        "classification": classification, "prediction": prediction, "outcome": outcome,
+        "facility": facility,
+        "clinician": clinician,
+        "admission": admission,
+        "classification": classification,
+        "prediction": prediction,
+        "outcome": outcome,
     }
 
 

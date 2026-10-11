@@ -10,8 +10,8 @@ from robby.errors import FormErrors, NotAllowed, NotFound
 from robby.models import Role
 from robby.timeutil import utcnow
 from robby.users.service import (
-    create_user,
     creatable_roles,
+    create_user,
     get_user_in_scope,
     list_users,
     reset_password,
@@ -24,7 +24,12 @@ def test_system_admin_creates_a_clinician_with_a_temporary_password(db: Session)
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
     facility = make_facility(db)
     created = create_user(
-        db, admin, username=" New.User ", display_name=" Ama ", role="clinician", facility_id=facility.id
+        db,
+        admin,
+        username=" New.User ",
+        display_name=" Ama ",
+        role="clinician",
+        facility_id=facility.id,
     )
     user = created.user
     assert (user.username, user.display_name, user.role) == ("new.user", "Ama", Role.CLINICIAN)
@@ -34,11 +39,17 @@ def test_system_admin_creates_a_clinician_with_a_temporary_password(db: Session)
     assert verify_password(user.password_hash, created.temporary_password)
     [event] = events_of(db, "user.created")
     assert event.actor_id == admin.id and event.entity_id == user.id
-    assert event.payload == {"username": "new.user", "role": "clinician", "facility_id": str(facility.id)}
+    assert event.payload == {
+        "username": "new.user",
+        "role": "clinician",
+        "facility_id": str(facility.id),
+    }
 
 
 def test_creation_with_a_chosen_password_needs_no_change(db: Session) -> None:
-    created = create_user(db, None, username="root.admin", role=Role.SYSTEM_ADMIN, password="a-strong-password")
+    created = create_user(
+        db, None, username="root.admin", role=Role.SYSTEM_ADMIN, password="a-strong-password"
+    )
     assert created.temporary_password is None
     assert created.user.must_change_password is False
     assert created.user.display_name is None
@@ -64,7 +75,9 @@ def test_facility_roles_need_an_active_facility(db: Session) -> None:
 def test_other_roles_are_never_tied_to_a_facility(db: Session) -> None:
     admin = make_user(db, role=Role.SYSTEM_ADMIN)
     facility = make_facility(db)
-    created = create_user(db, admin, username="mc.01", role="model_custodian", facility_id=facility.id)
+    created = create_user(
+        db, admin, username="mc.01", role="model_custodian", facility_id=facility.id
+    )
     assert created.user.facility_id is None
 
 
@@ -82,14 +95,18 @@ def test_facility_admin_creates_only_facility_roles_in_their_own_facility(db: Se
 @pytest.mark.parametrize("username", ["ab", "has space", "-starts.with.dash", "x" * 65])
 def test_usernames_follow_the_pattern(db: Session, username: str) -> None:
     with pytest.raises(FormErrors) as caught:
-        create_user(db, None, username=username, role=Role.SYSTEM_ADMIN, password="a-strong-password")
+        create_user(
+            db, None, username=username, role=Role.SYSTEM_ADMIN, password="a-strong-password"
+        )
     assert set(caught.value.errors) == {"username"}
 
 
 def test_usernames_are_unique(db: Session) -> None:
     make_user(db, role=Role.SYSTEM_ADMIN, username="taken.name")
     with pytest.raises(FormErrors) as caught:
-        create_user(db, None, username="Taken.Name", role=Role.SYSTEM_ADMIN, password="a-strong-password")
+        create_user(
+            db, None, username="Taken.Name", role=Role.SYSTEM_ADMIN, password="a-strong-password"
+        )
     assert caught.value.errors == {"username": "This username is already taken."}
 
 
@@ -105,7 +122,9 @@ def test_listing_is_scoped_to_the_facility_admins_facility(db: Session) -> None:
     stranger = make_user(db, role=Role.CLINICIAN)
     system = make_user(db, role=Role.SYSTEM_ADMIN)
     assert {u.id for u in list_users(db, admin)} == {admin.id, colleague.id}
-    assert {admin.id, colleague.id, stranger.id, system.id} <= {u.id for u in list_users(db, system)}
+    assert {admin.id, colleague.id, stranger.id, system.id} <= {
+        u.id for u in list_users(db, system)
+    }
     with pytest.raises(NotAllowed):
         list_users(db, colleague)
 

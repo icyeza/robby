@@ -131,8 +131,15 @@ def verify(session: Session) -> VerifyResult:
     """Walk the log in seq order, recomputing every hash. Reads columns, not ORM objects, so
     what is checked is what is stored."""
     statement = select(
-        EventLog.seq, EventLog.id, EventLog.occurred_at, EventLog.actor_id, EventLog.event_type,
-        EventLog.entity_type, EventLog.entity_id, EventLog.payload, EventLog.prev_hash,
+        EventLog.seq,
+        EventLog.id,
+        EventLog.occurred_at,
+        EventLog.actor_id,
+        EventLog.event_type,
+        EventLog.entity_type,
+        EventLog.entity_id,
+        EventLog.payload,
+        EventLog.prev_hash,
         EventLog.hash,
     ).order_by(EventLog.seq)
     expected_prev = GENESIS_HASH

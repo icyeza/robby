@@ -8,13 +8,15 @@ from typing import Any
 from sqlalchemy import CHAR, Index, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from robby.models.base import Base, CreatedAt, UUIDPK
+from robby.models.base import UUIDPK, Base, CreatedAt
 
 
 class RuleSet(Base):
     __tablename__ = "rule_set"
     __table_args__ = (
-        Index("uq_rule_set_one_active", "is_active", unique=True, postgresql_where=text("is_active")),
+        Index(
+            "uq_rule_set_one_active", "is_active", unique=True, postgresql_where=text("is_active")
+        ),
     )
 
     id: Mapped[UUIDPK]

@@ -42,7 +42,9 @@ def test_csp_forbids_inline_code_and_framing() -> None:
     assert "unsafe-inline" not in CSP
 
 
-def test_demo_mode_shows_the_example_data_banner(settings: Settings, connection: Connection) -> None:
+def test_demo_mode_shows_the_example_data_banner(
+    settings: Settings, connection: Connection
+) -> None:
     demo_app = make_test_app(settings.model_copy(update={"demo": True}), connection)
     with TestClient(demo_app) as demo_client:
         assert "example-banner" in demo_client.get("/no-such-page").text
@@ -64,13 +66,19 @@ def test_server_errors_are_styled_and_hide_details(app: FastAPI) -> None:
 def test_navigation_matches_the_mockup_extension() -> None:
     labels = {role: [(item.label, item.path) for item in items] for role, items in NAV.items()}
     assert labels == {
-        Role.CLINICIAN: [("New admission", "/admissions/new"), ("Recent admissions", "/admissions")],
+        Role.CLINICIAN: [
+            ("New admission", "/admissions/new"),
+            ("Recent admissions", "/admissions"),
+        ],
         Role.FACILITY_ADMIN: [
-            ("Audit report", "/audit"), ("Unclassified records", "/audit/unclassified"),
+            ("Audit report", "/audit"),
+            ("Unclassified records", "/audit/unclassified"),
             ("Users", "/admin/users"),
         ],
         Role.MODEL_CUSTODIAN: [
-            ("Models", "/models"), ("Monitoring", "/monitoring"), ("Approval log", "/approval-log"),
+            ("Models", "/models"),
+            ("Monitoring", "/monitoring"),
+            ("Approval log", "/approval-log"),
         ],
         Role.NATIONAL_REVIEWER: [("National overview", "/national")],
         Role.SYSTEM_ADMIN: [("Facilities", "/admin/facilities"), ("Users", "/admin/users")],

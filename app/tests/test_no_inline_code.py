@@ -25,7 +25,9 @@ def assert_no_inline_code(html: str, page: str) -> None:
         assert not pattern.search(html), f"{name} on {page}"
 
 
-@pytest.mark.parametrize("path", ["/login", "/session-ended", "/session-ended?reason=absolute", "/no-such-page"])
+@pytest.mark.parametrize(
+    "path", ["/login", "/session-ended", "/session-ended?reason=absolute", "/no-such-page"]
+)
 def test_public_pages(client: TestClient, path: str) -> None:
     assert_no_inline_code(client.get(path).text, path)
 
@@ -35,16 +37,27 @@ def test_system_administrator_pages(client: TestClient, db: Session, settings: S
     facility = make_facility(db)
     make_user(db, role=Role.FACILITY_ADMIN, facility=facility)
     db.commit()
-    for path in ("/admin/facilities?add=1", "/admin/users?add=1", "/account/password", "/admissions/new"):
+    for path in (
+        "/admin/facilities?add=1",
+        "/admin/users?add=1",
+        "/account/password",
+        "/admissions/new",
+    ):
         assert_no_inline_code(client.get(path).text, path)
     created = client.post(
         "/admin/users",
-        data={"csrf_token": csrf_for(settings, row), "username": "mw.inline", "role": "clinician",
-              "facility_id": str(facility.id)},
+        data={
+            "csrf_token": csrf_for(settings, row),
+            "username": "mw.inline",
+            "role": "clinician",
+            "facility_id": str(facility.id),
+        },
     )
     assert created.status_code == 200
     assert_no_inline_code(created.text, "password shown")
-    invalid = client.post("/admin/facilities", data={"csrf_token": csrf_for(settings, row), "code": "x"})
+    invalid = client.post(
+        "/admin/facilities", data={"csrf_token": csrf_for(settings, row), "code": "x"}
+    )
     assert invalid.status_code == 400
     assert_no_inline_code(invalid.text, "facility form errors")
 

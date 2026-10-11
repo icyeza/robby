@@ -66,8 +66,14 @@ def test_adding_a_facility_with_its_first_administrator(
     token = as_system_admin(client, db, settings)
     response = client.post(
         "/admin/facilities",
-        data={"csrf_token": token, "name": "Facility K", "code": "FK", "district": "District 9",
-              "admin_username": "fa.k01", "model_facility_key": "Site A"},
+        data={
+            "csrf_token": token,
+            "name": "Facility K",
+            "code": "FK",
+            "district": "District 9",
+            "admin_username": "fa.k01",
+            "model_facility_key": "Site A",
+        },
     )
     assert response.status_code == 200
     assert "Temporary password for fa.k01" in response.text
@@ -105,8 +111,13 @@ def test_a_taken_administrator_username_adds_nothing(
     db.commit()
     response = client.post(
         "/admin/facilities",
-        data={"csrf_token": token, "name": "Facility T", "code": "FT", "district": "D",
-              "admin_username": "taken.name"},
+        data={
+            "csrf_token": token,
+            "name": "Facility T",
+            "code": "FT",
+            "district": "D",
+            "admin_username": "taken.name",
+        },
     )
     assert response.status_code == 400
     assert "This username is already taken." in response.text
@@ -120,7 +131,9 @@ def test_deactivating_a_facility_stops_its_accounts(
     facility = make_facility(db)
     clinician = make_user(db, role=Role.CLINICIAN, facility=facility)
     db.commit()
-    response = client.post(f"/admin/facilities/{facility.id}/deactivate", data={"csrf_token": token})
+    response = client.post(
+        f"/admin/facilities/{facility.id}/deactivate", data={"csrf_token": token}
+    )
     assert response.status_code == 303
     db.refresh(facility)
     db.refresh(clinician)
@@ -133,12 +146,16 @@ def test_deactivating_a_facility_stops_its_accounts(
 def test_unknown_facility_is_not_found(client: TestClient, db: Session, settings: Settings) -> None:
     token = as_system_admin(client, db, settings)
     for facility_id in (str(uuid.uuid4()), "not-a-uuid"):
-        response = client.post(f"/admin/facilities/{facility_id}/deactivate", data={"csrf_token": token})
+        response = client.post(
+            f"/admin/facilities/{facility_id}/deactivate", data={"csrf_token": token}
+        )
         assert response.status_code == 404
 
 
 def test_actions_need_the_csrf_token(client: TestClient, db: Session, settings: Settings) -> None:
     as_system_admin(client, db, settings)
-    response = client.post("/admin/facilities", data={"name": "Facility X", "code": "FX", "district": "D"})
+    response = client.post(
+        "/admin/facilities", data={"name": "Facility X", "code": "FX", "district": "D"}
+    )
     assert response.status_code == 403
     assert db.scalar(select(Facility).where(Facility.code == "FX")) is None
