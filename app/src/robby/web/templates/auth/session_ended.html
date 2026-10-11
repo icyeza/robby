@@ -1,0 +1,9 @@
+{% extends "auth/_login_layout.html" %}
+{% block title %}Session ended{% endblock %}
+{% block notice %}
+{% if reason == "absolute" %}
+<div class="notice warn">Your session ended after {{ absolute_hours }} hours. Sign in again. Anything not saved before the session ended was not kept.</div>
+{% else %}
+<div class="notice warn">Your session ended after {{ idle_minutes }} minutes without activity. Sign in again. Anything not saved before the session ended was not kept.</div>
+{% endif %}
+{% endblock %}
