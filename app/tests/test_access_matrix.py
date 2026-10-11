@@ -10,12 +10,13 @@ from robby.config import Settings
 from robby.models import Role
 from robby.web.nav import landing_path
 from robby.web.placeholders import PLACEHOLDER_PAGES
-from tests.factories import make_user
-from tests.webutil import sign_in_client
+from tests.factories import make_facility, make_user
+from tests.webutil import csrf_for, sign_in_client
 
 PAGES: list[tuple[str, frozenset[Role]]] = [
     (path, frozenset({role})) for path, _title, role in PLACEHOLDER_PAGES
 ]
+PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -63,3 +64,30 @@ def test_placeholder_pages_say_not_available_and_show_no_data(
     assert "Not available yet" in response.text
     assert '<a class="on" aria-current="page" href="/admissions/new">New admission</a>' in response.text
     assert "<table" not in response.text
+
+
+POST_ACTIONS: list[tuple[str, frozenset[Role]]] = [
+    ("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})),
+    ("/admin/facilities/{facility}/deactivate", frozenset({Role.SYSTEM_ADMIN})),
+]
+
+
+def forbidden_posts() -> list[tuple[str, Role]]:
+    return [(path, role) for path, allowed in POST_ACTIONS for role in Role if role not in allowed]
+
+
+@pytest.mark.parametrize(("path", "role"), forbidden_posts(), ids=lambda value: str(value))
+def test_actions_are_refused_to_other_roles(
+    client: TestClient, db: Session, settings: Settings, path: str, role: Role
+) -> None:
+    facility = make_facility(db)
+    target = make_user(db, role=Role.CLINICIAN, facility=facility)
+    row = sign_in_client(client, db, settings, make_user(db, role=role))
+    url = path.format(facility=facility.id, user=target.id)
+    response = client.post(url, data={"csrf_token": csrf_for(settings, row), "name": "Facility X",
+                                      "code": "FX", "district": "D", "username": "nobody.new",
+                                      "role": "clinician"})
+    assert response.status_code == 403
+    db.refresh(facility)
+    db.refresh(target)
+    assert facility.active and target.active

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Facilities{% endblock %}
+{% block content %}
+<div class="titlebar tight"><h1>Facilities</h1><a class="btn btn-p btn-sm push" href="/admin/facilities?add=1" data-open="add-facility">Add facility</a></div>
+<p class="lede">Facilities taking part, and who administers each.</p>
+
+<section class="tablecard">
+  <table>
+    <thead><tr><th>Facility</th><th>Code</th><th>District</th><th>Administrators</th><th class="r">Active users</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr><td><b>{{ row.facility.name }}</b></td><td>{{ row.facility.code }}</td><td>{{ row.facility.district }}</td><td>{{ row.administrators | join(", ") or "—" }}</td><td class="r num">{{ row.active_users }}</td><td>{% if row.facility.active %}<span class="st done">Active</span>{% else %}<span class="st retired">Deactivated</span>{% endif %}</td><td class="r actions-cell">{% if row.facility.active %}{{ ui.post_link("/admin/facilities/" ~ row.facility.id ~ "/deactivate", "Deactivate") }}{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No facilities yet. Add the first one.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Each facility administrator creates and deactivates the accounts for their own facility. Deactivating a facility stops its accounts from signing in; its records are kept.</div>
+</section>
+
+<div class="dialog-backdrop{% if open_dialog %} open{% endif %}" id="add-facility">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="aft">
+    <form method="post" action="/admin/facilities">
+      <h2 id="aft">Add facility</h2>
+      <div class="body">
+        {{ ui.csrf_input() }}
+        {{ ui.field("name", "Facility name", form.name, error=errors.name) }}
+        {{ ui.field("code", "Facility code", form.code, error=errors.code, help="2 to 6 capital letters; starts every admission code, e.g. FA-0001.") }}
+        {{ ui.field("district", "District", form.district, error=errors.district) }}
+        {{ ui.field("admin_username", "Facility administrator username", form.admin_username, error=errors.admin_username, help="Optional. Creates this account with a temporary password.") }}
+        {{ ui.field("model_facility_key", "Model facility key", form.model_facility_key, error=errors.model_facility_key, help="Optional. The facility's label in the model's training data; leave blank if the model has not seen this facility.") }}
+      </div>
+      <div class="foot"><a class="btn-g" href="/admin/facilities" data-close>Cancel</a><button class="btn btn-p" type="submit">Create</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
