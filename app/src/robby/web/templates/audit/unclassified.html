@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Unclassified records{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/report.css">
+<div class="crumbs"><a href="/audit">Audit report</a> / Unclassified records</div>
+<h1>Unclassified records</h1>
+<p class="lede">Births from {{ fmt.day(period.start) }} to {{ fmt.day(period.end) }} that could not be given a Robson group. They are counted in the audit report as their own row.</p>
+{% if period.error %}<div class="notice warn">⚠ {{ period.error }}</div>{% endif %}
+
+<div class="tiles">
+  {% for label, n in tiles %}
+  <div class="tile"><div class="k">{{ label }}</div><div class="v">{{ n }}</div><div class="s">records</div></div>
+  {% else %}
+  <div class="tile"><div class="k">Unclassified births</div><div class="v">0</div><div class="s">in this period</div></div>
+  {% endfor %}
+</div>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>{{ total }} record{{ "" if total == 1 else "s" }}</h2></div>
+  <table class="wide">
+    <thead><tr><th>Code</th><th>Admitted</th><th>Reason</th><th>Fields involved</th></tr></thead>
+    <tbody>
+    {% for line in lines %}
+      <tr><td><b>{{ line.code }}</b></td><td>{{ line.admitted }}</td><td>{{ line.reason }}</td><td>{{ line.fields }}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No unclassified births in this period.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if last_page > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="?page={{ page - 1 }}&amp;from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}">Previous</a>{% endif %}
+    <span>Page {{ page }} of {{ last_page }}</span>
+    {% if page < last_page %}<a href="?page={{ page + 1 }}&amp;from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+  <div class="tc-foot">Showing {{ shown_from }}–{{ shown_to }} of {{ total }}. Records carry no patient identifiers. Administrators cannot edit records; clinicians correct them through the correction flow. A record with several missing fields is counted once under each reason.</div>
+</section>
+{% endblock %}

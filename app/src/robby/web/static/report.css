@@ -1,0 +1,210 @@
+/* Robson Readiness: report pages (audit, national). Bar widths and tick positions are classes
+   because the Content-Security-Policy forbids inline styles. w{n}: fill width n%; t{n}: tick at n%. */
+.filters form{display:contents}
+.filters .fixedval{height:40px;display:flex;align-items:center;font-size:14px;font-weight:600}
+.filters .btn.push{height:40px}
+td.left{text-align:left}
+.pager{display:flex;gap:16px;padding:12px 22px;font-size:14px}
+.tile .s a{color:inherit}
+.bar .fill.w0{width:0%}
+.bar .fill.w1{width:1%}
+.bar .fill.w2{width:2%}
+.bar .fill.w3{width:3%}
+.bar .fill.w4{width:4%}
+.bar .fill.w5{width:5%}
+.bar .fill.w6{width:6%}
+.bar .fill.w7{width:7%}
+.bar .fill.w8{width:8%}
+.bar .fill.w9{width:9%}
+.bar .fill.w10{width:10%}
+.bar .fill.w11{width:11%}
+.bar .fill.w12{width:12%}
+.bar .fill.w13{width:13%}
+.bar .fill.w14{width:14%}
+.bar .fill.w15{width:15%}
+.bar .fill.w16{width:16%}
+.bar .fill.w17{width:17%}
+.bar .fill.w18{width:18%}
+.bar .fill.w19{width:19%}
+.bar .fill.w20{width:20%}
+.bar .fill.w21{width:21%}
+.bar .fill.w22{width:22%}
+.bar .fill.w23{width:23%}
+.bar .fill.w24{width:24%}
+.bar .fill.w25{width:25%}
+.bar .fill.w26{width:26%}
+.bar .fill.w27{width:27%}
+.bar .fill.w28{width:28%}
+.bar .fill.w29{width:29%}
+.bar .fill.w30{width:30%}
+.bar .fill.w31{width:31%}
+.bar .fill.w32{width:32%}
+.bar .fill.w33{width:33%}
+.bar .fill.w34{width:34%}
+.bar .fill.w35{width:35%}
+.bar .fill.w36{width:36%}
+.bar .fill.w37{width:37%}
+.bar .fill.w38{width:38%}
+.bar .fill.w39{width:39%}
+.bar .fill.w40{width:40%}
+.bar .fill.w41{width:41%}
+.bar .fill.w42{width:42%}
+.bar .fill.w43{width:43%}
+.bar .fill.w44{width:44%}
+.bar .fill.w45{width:45%}
+.bar .fill.w46{width:46%}
+.bar .fill.w47{width:47%}
+.bar .fill.w48{width:48%}
+.bar .fill.w49{width:49%}
+.bar .fill.w50{width:50%}
+.bar .fill.w51{width:51%}
+.bar .fill.w52{width:52%}
+.bar .fill.w53{width:53%}
+.bar .fill.w54{width:54%}
+.bar .fill.w55{width:55%}
+.bar .fill.w56{width:56%}
+.bar .fill.w57{width:57%}
+.bar .fill.w58{width:58%}
+.bar .fill.w59{width:59%}
+.bar .fill.w60{width:60%}
+.bar .fill.w61{width:61%}
+.bar .fill.w62{width:62%}
+.bar .fill.w63{width:63%}
+.bar .fill.w64{width:64%}
+.bar .fill.w65{width:65%}
+.bar .fill.w66{width:66%}
+.bar .fill.w67{width:67%}
+.bar .fill.w68{width:68%}
+.bar .fill.w69{width:69%}
+.bar .fill.w70{width:70%}
+.bar .fill.w71{width:71%}
+.bar .fill.w72{width:72%}
+.bar .fill.w73{width:73%}
+.bar .fill.w74{width:74%}
+.bar .fill.w75{width:75%}
+.bar .fill.w76{width:76%}
+.bar .fill.w77{width:77%}
+.bar .fill.w78{width:78%}
+.bar .fill.w79{width:79%}
+.bar .fill.w80{width:80%}
+.bar .fill.w81{width:81%}
+.bar .fill.w82{width:82%}
+.bar .fill.w83{width:83%}
+.bar .fill.w84{width:84%}
+.bar .fill.w85{width:85%}
+.bar .fill.w86{width:86%}
+.bar .fill.w87{width:87%}
+.bar .fill.w88{width:88%}
+.bar .fill.w89{width:89%}
+.bar .fill.w90{width:90%}
+.bar .fill.w91{width:91%}
+.bar .fill.w92{width:92%}
+.bar .fill.w93{width:93%}
+.bar .fill.w94{width:94%}
+.bar .fill.w95{width:95%}
+.bar .fill.w96{width:96%}
+.bar .fill.w97{width:97%}
+.bar .fill.w98{width:98%}
+.bar .fill.w99{width:99%}
+.bar .fill.w100{width:100%}
+.bar .ref.t0{left:calc(0% - 1px)}
+.bar .ref.t1{left:calc(1% - 1px)}
+.bar .ref.t2{left:calc(2% - 1px)}
+.bar .ref.t3{left:calc(3% - 1px)}
+.bar .ref.t4{left:calc(4% - 1px)}
+.bar .ref.t5{left:calc(5% - 1px)}
+.bar .ref.t6{left:calc(6% - 1px)}
+.bar .ref.t7{left:calc(7% - 1px)}
+.bar .ref.t8{left:calc(8% - 1px)}
+.bar .ref.t9{left:calc(9% - 1px)}
+.bar .ref.t10{left:calc(10% - 1px)}
+.bar .ref.t11{left:calc(11% - 1px)}
+.bar .ref.t12{left:calc(12% - 1px)}
+.bar .ref.t13{left:calc(13% - 1px)}
+.bar .ref.t14{left:calc(14% - 1px)}
+.bar .ref.t15{left:calc(15% - 1px)}
+.bar .ref.t16{left:calc(16% - 1px)}
+.bar .ref.t17{left:calc(17% - 1px)}
+.bar .ref.t18{left:calc(18% - 1px)}
+.bar .ref.t19{left:calc(19% - 1px)}
+.bar .ref.t20{left:calc(20% - 1px)}
+.bar .ref.t21{left:calc(21% - 1px)}
+.bar .ref.t22{left:calc(22% - 1px)}
+.bar .ref.t23{left:calc(23% - 1px)}
+.bar .ref.t24{left:calc(24% - 1px)}
+.bar .ref.t25{left:calc(25% - 1px)}
+.bar .ref.t26{left:calc(26% - 1px)}
+.bar .ref.t27{left:calc(27% - 1px)}
+.bar .ref.t28{left:calc(28% - 1px)}
+.bar .ref.t29{left:calc(29% - 1px)}
+.bar .ref.t30{left:calc(30% - 1px)}
+.bar .ref.t31{left:calc(31% - 1px)}
+.bar .ref.t32{left:calc(32% - 1px)}
+.bar .ref.t33{left:calc(33% - 1px)}
+.bar .ref.t34{left:calc(34% - 1px)}
+.bar .ref.t35{left:calc(35% - 1px)}
+.bar .ref.t36{left:calc(36% - 1px)}
+.bar .ref.t37{left:calc(37% - 1px)}
+.bar .ref.t38{left:calc(38% - 1px)}
+.bar .ref.t39{left:calc(39% - 1px)}
+.bar .ref.t40{left:calc(40% - 1px)}
+.bar .ref.t41{left:calc(41% - 1px)}
+.bar .ref.t42{left:calc(42% - 1px)}
+.bar .ref.t43{left:calc(43% - 1px)}
+.bar .ref.t44{left:calc(44% - 1px)}
+.bar .ref.t45{left:calc(45% - 1px)}
+.bar .ref.t46{left:calc(46% - 1px)}
+.bar .ref.t47{left:calc(47% - 1px)}
+.bar .ref.t48{left:calc(48% - 1px)}
+.bar .ref.t49{left:calc(49% - 1px)}
+.bar .ref.t50{left:calc(50% - 1px)}
+.bar .ref.t51{left:calc(51% - 1px)}
+.bar .ref.t52{left:calc(52% - 1px)}
+.bar .ref.t53{left:calc(53% - 1px)}
+.bar .ref.t54{left:calc(54% - 1px)}
+.bar .ref.t55{left:calc(55% - 1px)}
+.bar .ref.t56{left:calc(56% - 1px)}
+.bar .ref.t57{left:calc(57% - 1px)}
+.bar .ref.t58{left:calc(58% - 1px)}
+.bar .ref.t59{left:calc(59% - 1px)}
+.bar .ref.t60{left:calc(60% - 1px)}
+.bar .ref.t61{left:calc(61% - 1px)}
+.bar .ref.t62{left:calc(62% - 1px)}
+.bar .ref.t63{left:calc(63% - 1px)}
+.bar .ref.t64{left:calc(64% - 1px)}
+.bar .ref.t65{left:calc(65% - 1px)}
+.bar .ref.t66{left:calc(66% - 1px)}
+.bar .ref.t67{left:calc(67% - 1px)}
+.bar .ref.t68{left:calc(68% - 1px)}
+.bar .ref.t69{left:calc(69% - 1px)}
+.bar .ref.t70{left:calc(70% - 1px)}
+.bar .ref.t71{left:calc(71% - 1px)}
+.bar .ref.t72{left:calc(72% - 1px)}
+.bar .ref.t73{left:calc(73% - 1px)}
+.bar .ref.t74{left:calc(74% - 1px)}
+.bar .ref.t75{left:calc(75% - 1px)}
+.bar .ref.t76{left:calc(76% - 1px)}
+.bar .ref.t77{left:calc(77% - 1px)}
+.bar .ref.t78{left:calc(78% - 1px)}
+.bar .ref.t79{left:calc(79% - 1px)}
+.bar .ref.t80{left:calc(80% - 1px)}
+.bar .ref.t81{left:calc(81% - 1px)}
+.bar .ref.t82{left:calc(82% - 1px)}
+.bar .ref.t83{left:calc(83% - 1px)}
+.bar .ref.t84{left:calc(84% - 1px)}
+.bar .ref.t85{left:calc(85% - 1px)}
+.bar .ref.t86{left:calc(86% - 1px)}
+.bar .ref.t87{left:calc(87% - 1px)}
+.bar .ref.t88{left:calc(88% - 1px)}
+.bar .ref.t89{left:calc(89% - 1px)}
+.bar .ref.t90{left:calc(90% - 1px)}
+.bar .ref.t91{left:calc(91% - 1px)}
+.bar .ref.t92{left:calc(92% - 1px)}
+.bar .ref.t93{left:calc(93% - 1px)}
+.bar .ref.t94{left:calc(94% - 1px)}
+.bar .ref.t95{left:calc(95% - 1px)}
+.bar .ref.t96{left:calc(96% - 1px)}
+.bar .ref.t97{left:calc(97% - 1px)}
+.bar .ref.t98{left:calc(98% - 1px)}
+.bar .ref.t99{left:calc(99% - 1px)}
+.bar .ref.t100{left:calc(100% - 1px)}

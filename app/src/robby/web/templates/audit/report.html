@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}{% if readonly %}{{ facility.name }} · Robson report{% else %}Audit report{% endif %}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/report.css">
+{% if readonly %}
+<div class="crumbs"><a href="/national">National overview</a> / {{ facility.name }}</div>
+<h1>{{ facility.name }} · Robson report</h1>
+{% else %}
+<h1>Robson audit report</h1>
+{% endif %}
+<p class="lede">Who gives birth here, and how often each group has a cesarean, compared with a reference population.</p>
+
+{% if readonly %}
+<div class="notice"><b>Read-only view for national reviewers.</b> Figures are aggregates; individual admissions are not available.</div>
+{% endif %}
+{% if period.error %}<div class="notice warn">⚠ {{ period.error }}</div>{% endif %}
+
+<div class="filters">
+  <form method="get" action="{{ request.url.path }}">
+    <div class="f"><label>Facility</label><div class="fixedval">{{ facility.name }}</div></div>
+    <div class="f"><label for="from">From</label><input id="from" name="from" type="date" value="{{ period.start.isoformat() }}"></div>
+    <div class="f"><label for="to">To</label><input id="to" name="to" type="date" value="{{ period.end.isoformat() }}"></div>
+    {% if refs %}{{ ui.segmented("ref", "Compare with", ref_options, reference.id) }}{% endif %}
+    <button class="btn btn-s btn-sm" type="submit">Apply</button>
+  </form>
+  {% if not readonly %}
+  <form method="get" action="/audit/export.csv">
+    <div class="f"><label for="month">Month</label><select id="month" name="month">{% for m in months %}<option value="{{ m.strftime('%Y-%m') }}">{{ fmt.month_name(m) }}</option>{% endfor %}</select></div>
+    <button class="btn btn-s btn-sm push" type="submit">Export monthly report (CSV)</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if reference %}
+<p class="muted">Reference: {{ reference.name }} ({{ reference.version_label }}) · {{ reference.citation }} · {{ reference.population }}</p>
+{% else %}
+<div class="notice">No reference set loaded. The figures below are this facility's own; nothing is compared.</div>
+{% endif %}
+
+<div class="tiles">
+  <div class="tile"><div class="k">Births in period</div><div class="v">{{ fmt.count(report.births) }}</div><div class="s">Deliveries with a recorded outcome</div></div>
+  <div class="tile"><div class="k">Cesarean rate</div><div class="v">{{ fmt.pct(report.cs_rate) }}</div><div class="s">{{ fmt.count(report.cesareans) }} cesareans</div></div>
+  <div class="tile"><div class="k">Largest contributor</div><div class="v">{% if report.largest_group %}Group {{ report.largest_group }}{% else %}—{% endif %}</div><div class="s">{% if report.largest_group %}{{ fmt.pct(report.largest_share) }} of all cesareans{% else %}No cesareans in period{% endif %}</div></div>
+  <div class="tile"><div class="k">Could not be classified</div><div class="v">{{ fmt.count(report.residual.births) }}</div><div class="s">{{ fmt.pct(report.unclassified_pct) }} of births{% if not readonly %} · <a href="/audit/unclassified?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}">see why</a>{% endif %}</div></div>
+</div>
+{% if report.awaiting %}<p class="muted">{{ fmt.count(report.awaiting) }} admissions in this period are awaiting an outcome. They are not counted in any rate below.</p>{% endif %}
+
+<section class="key">
+  <h2>What stands out</h2>
+  <ul>{% for lead, rest in stands_out %}<li><b>{{ lead }}</b>{{ rest }}</li>{% endfor %}</ul>
+</section>
+
+<section class="tablecard">
+  <div class="tc-h">
+    <h2>By Robson group</h2>
+    <div class="lg"><span><i class="sw"></i>This facility</span>{% if reference %}<span><i class="tk"></i>Reference ({{ reference.name }})</span>{% endif %}</div>
+  </div>
+  <table class="wide">
+    <thead><tr><th>Group</th><th></th><th>Group size · % of births</th><th>Cesarean rate in group</th><th class="r">Share of all cesareans</th><th class="r">Absolute contribution</th><th>Reading</th></tr></thead>
+    <tbody>
+    {% for r in report.rows %}
+      <tr><td><span class="gnum">{{ r.group }}</span></td><td class="gdef">{{ definitions[r.group] }}</td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(r.size_pct) }}{% if r.ref_size is not none %}; reference: {{ r.ref_size }}%{% endif %}"><div class="fill w{{ r.size_w or 0 }}"></div>{% if r.size_t is not none %}<div class="ref t{{ r.size_t }}"></div>{% endif %}</div><span class="num">{{ fmt.pct(r.size_pct) }}</span><span class="diff">{{ fmt.signed(r.size_diff) }}</span></div></td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(r.rate_pct) }}{% if r.ref_rate is not none %}; reference: {{ r.ref_rate }}%{% endif %}"><div class="fill w{{ r.rate_w or 0 }}"></div>{% if r.rate_t is not none %}<div class="ref t{{ r.rate_t }}"></div>{% endif %}</div><span class="num">{{ fmt.pct(r.rate_pct) }}</span><span class="diff">{{ fmt.signed(r.rate_diff) }}</span></div></td>
+        <td class="r num">{{ fmt.pct(r.share_of_cs_pct) }}</td><td class="r num">{{ fmt.pct(r.contribution_pct) }}</td>
+        <td>{% if r.larger_group %}<span class="flag size">▲ Larger group</span>{% endif %}{% if r.larger_group and r.higher_rate %}<br>{% endif %}{% if r.higher_rate %}<span class="flag rate">▲ Higher rate</span>{% endif %}{% if not (r.larger_group or r.higher_rate) %}{% if reference %}<span class="muted">{% if r.births == 0 %}No births{% else %}Close to reference{% endif %}</span>{% else %}<span class="muted">—</span>{% endif %}{% endif %}</td></tr>
+    {% endfor %}
+    {% set u = report.residual %}
+      <tr class="unc" id="unc"><td><span class="gnum">Unclassified</span></td><td class="gdef">Missing or conflicting Robson fields</td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(u.size_pct) }}; no reference"><div class="fill w{{ u.size_w or 0 }}"></div></div><span class="num">{{ fmt.pct(u.size_pct) }}</span><span class="diff">no ref.</span></div></td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(u.rate_pct) }}; no reference"><div class="fill w{{ u.rate_w or 0 }}"></div></div><span class="num">{{ fmt.pct(u.rate_pct) }}</span><span class="diff">no ref.</span></div></td>
+        <td class="r num">{{ fmt.pct(u.share_of_cs_pct) }}</td><td class="r num">{{ fmt.pct(u.contribution_pct) }}</td>
+        <td>{% if report.unclassified_high %}<span class="chip warn">⚠ Check data quality</span>{% else %}<span class="muted">Counted, not dropped</span>{% endif %}{% if not readonly %}<br><a href="/audit/unclassified?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}">See records</a>{% endif %}</td></tr>
+    </tbody>
+  </table>
+  <div class="tc-foot">Group size: the facility's share of births in the group; the black tick is the reference share (axis 0–45%, or 0–100% when a share is larger). Cesarean rate: cesareans ÷ births in the group (axis 0–100%). Share of all cesareans: the group's cesareans ÷ all cesareans. Absolute contribution: the group's cesareans ÷ all births. Flags: group size at least 3 points above the reference, or rate at least 10 points above (rates are not flagged below 10 births in a group). Births are current admissions with a recorded delivery outcome in the period. Unclassified records are counted and never dropped.</div>
+</section>
+
+{% if not readonly and recent_exports %}
+<section class="tablecard">
+  <div class="tc-h"><h2>Recent exports</h2></div>
+  <table>
+    <thead><tr><th>Month</th><th>Exported</th><th>File checksum (SHA-256)</th></tr></thead>
+    <tbody>{% for e in recent_exports %}<tr><td>{{ fmt.month_name(e.period_month) }}</td><td>{{ e.exported_at | local_dt }}</td><td class="num">{{ e.file_sha256[:16] }}…</td></tr>{% endfor %}</tbody>
+  </table>
+  <div class="tc-foot">The export layout (version v1) is Robby's own and has not yet been confirmed against the national monthly submission.</div>
+</section>
+{% endif %}
+{% endblock %}

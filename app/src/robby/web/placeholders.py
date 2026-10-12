@@ -12,14 +12,9 @@ from robby.models import Role
 from robby.web.render import render
 
 PLACEHOLDER_PAGES: tuple[tuple[str, str, Role], ...] = (
-    ("/admissions/new", "New admission", Role.CLINICIAN),
-    ("/admissions", "Recent admissions", Role.CLINICIAN),
-    ("/audit", "Audit report", Role.FACILITY_ADMIN),
-    ("/audit/unclassified", "Unclassified records", Role.FACILITY_ADMIN),
     ("/models", "Models", Role.MODEL_CUSTODIAN),
     ("/monitoring", "Monitoring", Role.MODEL_CUSTODIAN),
     ("/approval-log", "Approval log", Role.MODEL_CUSTODIAN),
-    ("/national", "National overview", Role.NATIONAL_REVIEWER),
 )
 
 
