@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from robby.audit.national import router as national_router
 from robby.audit.routes import router as audit_router
 from robby.auth.routes import router as auth_router
+from robby.clinical.routes import router as clinical_router
 from robby.config import Settings, get_settings
 from robby.db import get_sessionmaker
 from robby.facilities.routes import router as facilities_router
@@ -28,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(facilities_router)
     app.include_router(users_router)
+    app.include_router(clinical_router)
     app.include_router(audit_router)
     app.include_router(national_router)
     app.include_router(build_placeholder_router())

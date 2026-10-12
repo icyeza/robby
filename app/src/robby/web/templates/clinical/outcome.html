@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Record outcome{% endblock %}
+{% block body %}
+{% include "partials/_header.html" %}
+<main class="page narrow">
+  {% include "partials/_banner.html" %}
+  <div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }} / Outcome</div>
+  <h1>Record outcome</h1>
+  <p class="lede">{{ admission.code }} · admitted {{ admission.admitted_at | local_dt }}{% if group %} · Robson group {{ group }}{% endif %}</p>
+
+  <form class="sec" method="post" action="/admissions/{{ admission.code }}/outcome">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      {% if errors.get('_form') %}<div class="errbox top" role="alert"><b>⚠</b> {{ errors['_form'] }}</div>{% endif %}
+      <div class="f seg-gap{% if errors.get('mode') %} conflict{% endif %}">
+        <span class="label" id="l-mode">Mode of delivery</span>
+        <div class="seg" role="radiogroup" aria-labelledby="l-mode">
+          {% for value, text in delivery_options %}<label><input type="radio" name="mode" value="{{ value }}"{% if values.get('mode') == value %} checked{% endif %}><span>{{ text }}</span></label>{% endfor %}
+        </div>
+        {% if errors.get('mode') %}<div class="msg">{{ errors['mode'] }}</div>{% endif %}
+      </div>
+      <div class="row">
+        <div class="f{% if errors.get('delivered_at') %} conflict{% endif %}">
+          <label for="i-delivered_at">Delivered at</label>
+          <input id="i-delivered_at" name="delivered_at" type="text" value="{{ values.get('delivered_at', '') }}" autocomplete="off">
+          {% if errors.get('delivered_at') %}<div class="msg">{{ errors['delivered_at'] }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="notice">Outcomes are used to check how well the readiness signal matches what happens. They are not used to assess staff.</div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Save outcome</button><a class="btn-g" href="/admissions">Cancel</a></div>
+    </div>
+  </form>
+</main>
+{% endblock %}

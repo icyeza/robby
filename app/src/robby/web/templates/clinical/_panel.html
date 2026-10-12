@@ -1,0 +1,36 @@
+{# The Robson panel beside the form. Replaced by htmx on every change (POST /admissions/preview). #}
+<aside class="panel{% if panel.state == 'conflict' %} conflict{% endif %}" id="robson-panel" aria-live="polite" data-missing="{{ panel.need_fields | join(' ') if panel.state == 'partial' else '' }}" data-conflict="{{ panel.need_fields | join(' ') if panel.state == 'conflict' else '' }}">
+  <div class="panel-h"><span>Robson group</span><span class="live" data-live><i></i><span>Live</span></span></div>
+  <div class="panel-b">
+    <p class="state">{{ panel.heading }}</p>
+    <div class="strip compact">
+      {% for g in range(1, 11) %}
+      {% if panel.state == 'resolved' %}<div class="{{ 'on' if g == panel.group else 'out' }}">{{ g }}</div>
+      {% elif panel.state == 'partial' %}<div class="{{ 'poss' if g in panel.candidates else 'out' }}">{{ g }}</div>
+      {% else %}<div>{{ g }}</div>{% endif %}
+      {% endfor %}
+    </div>
+    {% if panel.state == 'partial' and panel.need_title %}
+    <div class="need">
+      <div class="k">{{ panel.need_title }}</div>
+      <div class="v">{{ panel.need_value }}</div>
+      {% if panel.need_why %}<div class="why">{{ panel.need_why }}</div>{% endif %}
+      {% for f in panel.need_fields %}<a href="#f-{{ f }}">Go to {{ field_names[f] | lower }} ↑</a>{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+    {% elif panel.state == 'conflict' %}
+    <div class="need bad">
+      <div class="k">{{ panel.need_title }}</div>
+      <div class="v">{{ panel.need_value | capitalize }}</div>
+      <div class="why">{{ panel.need_why }}</div>
+      {% for f in panel.need_fields %}<a href="#f-{{ f }}">Go to {{ field_names[f] | lower }} ↑</a>{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+    {% if panel.rows %}
+    <ul class="trace">
+      {% for r in panel.rows %}<li><span class="{{ r.kind }}">{{ '✓' if r.kind == 'ck' else '?' }}</span><span>{{ r.label }}</span><span class="val">{{ r.value }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  <div class="panel-foot">{{ panel.foot }}</div>
+</aside>

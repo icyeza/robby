@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/admissions">Admissions</a> / {% if mode == 'correct' %}<a href="/admissions/{{ admission.code }}">{{ admission.code }}</a> / Correction{% else %}New{% endif %}</div>
+<h1>{{ heading }}</h1>
+{% if mode == 'correct' %}
+<div class="notice warn"><b>You are correcting {{ admission.code }}.</b> The original stays on record and will be marked as replaced. The corrected admission gets a new code.</div>
+{% else %}
+<p class="lede">Fill in what you have. The Robson group is worked out as you go.</p>
+{% endif %}
+{% include "clinical/_form.html" %}
+{% endblock %}

@@ -24,6 +24,11 @@ def format_local(value: datetime | None, zone: ZoneInfo) -> str:
     return value.astimezone(zone).strftime("%d %b %Y, %H:%M")
 
 
+def format_local_short(value: datetime | None, zone: ZoneInfo) -> str:
+    """'05 Oct, 14:20' for list rows."""
+    return "" if value is None else value.astimezone(zone).strftime("%d %b, %H:%M")
+
+
 def build_templates(settings: Settings) -> Jinja2Templates:
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
@@ -32,5 +37,6 @@ def build_templates(settings: Settings) -> Jinja2Templates:
         lstrip_blocks=True,
     )
     env.filters["local_dt"] = partial(format_local, zone=settings.zone)
+    env.filters["local_dt_short"] = partial(format_local_short, zone=settings.zone)
     env.globals["role_label"] = role_label
     return Jinja2Templates(env=env)

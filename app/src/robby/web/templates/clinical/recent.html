@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Recent admissions{% endblock %}
+{% block content %}
+<div class="titlebar"><h1>Recent admissions</h1><span class="meta">{{ who.place }} · last 72 hours</span><a class="btn btn-p btn-sm btn-push" href="/admissions/new">New admission</a></div>
+
+<section class="tablecard">
+  <table>
+    <thead><tr><th>Code</th><th>Admitted</th><th>Robson group</th><th class="r">Readiness signal</th><th>Outcome</th><th></th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr{% if row.replaced_by %} class="replaced"{% endif %}>
+        <td>{% if row.replaced_by %}{{ row.admission.code }}{% else %}<b>{{ row.admission.code }}</b>{% endif %}</td>
+        <td>{{ row.admission.admitted_at | local_dt_short }}</td>
+        <td>{% if row.group %}<span class="gnum">{{ row.group }}</span>{% else %}<span class="gnum">—</span>{% endif %}</td>
+        {% if row.percent is not none %}<td class="r num signal-cell">{{ row.percent }} in 100</td>{% else %}<td class="r muted signal-cell">{{ 'no group' if not row.group else 'not available' }}</td>{% endif %}
+        <td>{% if row.replaced_by %}Replaced by {{ row.replaced_by }}{% elif row.outcome %}<span class="st done">{{ 'Cesarean' if row.outcome.mode.value == 'cesarean' else 'Vaginal' }}</span>{% else %}<span class="st awaiting">Awaiting outcome</span>{% endif %}</td>
+        <td class="r">
+          {% if not row.group and not row.replaced_by %}<a href="/admissions/{{ row.admission.code }}/correct">Resolve</a>
+          {% else %}<a href="/admissions/{{ row.admission.code }}">View</a>{% if not row.outcome and not row.replaced_by %} · <a href="/admissions/{{ row.admission.code }}/outcome">Record outcome</a>{% endif %}{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No admissions in the last 72 hours.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Admissions are listed by code only; no names or patient numbers are stored. Older admissions are available to the facility administrator.</div>
+</section>
+{% endblock %}

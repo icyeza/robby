@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Admission {{ admission.code }}{% endblock %}
+{% block content %}
+{% set panel = view.panel %}
+<div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }}</div>
+<div class="titlebar">
+  <h1>Admission result</h1>
+  <span class="meta">{{ admission.code }} · Admitted {{ admission.admitted_at | local_dt }}{% if admission.maternal_age %} · Age {{ admission.maternal_age }}{% endif %}{% if admission.gestational_age_weeks %} · {{ admission.gestational_age_weeks | int }} weeks{% endif %}</span>
+  <span class="saved">✓ Saved {{ view.saved_at }}</span>
+</div>
+{% if view.replaces %}
+<div class="notice warn"><b>Replaces {{ view.replaces.code }}.</b> Reason: {{ admission.correction_reason }} {{ view.replaces.code }} stays on record, marked as replaced.</div>
+{% endif %}
+{% if view.replaced_by %}
+<div class="notice warn"><b>Replaced by <a href="/admissions/{{ view.replaced_by.code }}">{{ view.replaced_by.code }}</a>.</b> This admission stays on record. Use the corrected admission for outcomes and corrections.</div>
+{% endif %}
+
+<div class="grid-result">
+  <section class="card">
+    <div class="card-h"><span>Robson classification</span></div>
+    <div class="card-b">
+      {% if panel.state == 'resolved' %}
+      <div class="rg"><span class="rg-num">{{ panel.group }}</span>{% if panel.subgroup %}<span class="rg-sub">subgroup {{ panel.subgroup }}</span>{% endif %}</div>
+      <p class="rg-name">{{ panel.group_name }}{% if panel.subgroup_name %} ({{ panel.subgroup_name }}){% endif %}</p>
+      {% else %}
+      <div class="unavailable">
+        <b>No Robson group assigned</b>
+        {% if panel.state == 'conflict' %}The entered values contradict each other: {{ panel.need_value | lower }}. {{ panel.need_why }}
+        {% else %}Not enough was entered to decide the group{% if panel.need_value %}; still needed: {{ panel.need_value | lower }}{% endif %}.
+        {% endif %}
+        <div class="resolve"><a class="btn btn-p btn-sm" href="/admissions/{{ admission.code }}/correct">Resolve</a></div>
+      </div>
+      {% endif %}
+      <div class="strip">
+        {% for g in range(1, 11) %}<div{% if panel.state == 'resolved' and g == panel.group %} class="on"{% elif panel.state == 'partial' and g in panel.candidates %} class="poss"{% endif %}>{{ g }}</div>{% endfor %}
+      </div>
+      <div class="strip-cap"><span class="c12">Nulliparous</span><span class="c35">Multiparous</span><span class="c67">Breech</span><span>Multiple</span><span>Transverse</span><span>Preterm</span></div>
+      {% if panel.rows %}
+      <p class="why-h">{% if panel.state == 'resolved' %}Why group {{ panel.group }}{% else %}What is known{% endif %}</p>
+      <ul class="trace">
+        {% for r in panel.rows %}<li><span class="{{ r.kind }}">{{ '✓' if r.kind == 'ck' else '?' }}</span><span>{{ r.label }}</span><span class="val">{{ r.value }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if panel.footnote %}<div class="ruleset">{{ panel.footnote }}</div>{% endif %}
+    </div>
+  </section>
+
+  {% if view.percent is not none %}
+  <section class="card signal">
+    <div class="card-h"><span>Readiness signal · group {{ panel.group }} · under current practice</span></div>
+    <div class="card-b">
+      <p class="signal-lead">Of 100 women like her admitted to facilities like this one, about {{ view.percent }} had a cesarean.</p>
+      <svg class="fig-defs" aria-hidden="true"><symbol id="fig" viewBox="0 0 12 22"><circle cx="6" cy="4" r="3.4"/><path d="M6 8.6c-2.6 0-4.2 1.9-4.6 4.6L.9 18.6c-.1.9.5 1.5 1.3 1.5h7.6c.8 0 1.4-.6 1.3-1.5l-.5-5.4C10.2 10.5 8.6 8.6 6 8.6z"/></symbol></svg>
+      <div class="icon-array" role="img" aria-label="{{ view.percent }} of 100 women had a cesarean">
+        {% for i in range(100) %}<svg viewBox="0 0 12 22" class="{{ 'on' if i < view.percent else 'off' }}" aria-hidden="true"><use href="#fig"/></svg>{% endfor %}
+      </div>
+      <div class="legend">
+        <span><i class="on"></i>Delivered by cesarean ({{ view.percent }})</span>
+        <span><i class="off"></i>Delivered vaginally ({{ 100 - view.percent }})</span>
+      </div>
+      <div class="frame"><b>This describes what usually happens here. It is not a judgement of what ought to happen.</b> Use it to plan theatre and staff readiness. It is not a recommendation for or against cesarean.</div>
+      <dl class="facts">
+        <dt>Model</dt><dd>{{ view.model_label }} · active since {{ view.active_since }}</dd>
+        {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given | join(", ") }} · <a href="/admissions/{{ admission.code }}/correct">Add them</a></dd>{% endif %}
+      </dl>
+    </div>
+  </section>
+  {% else %}
+  <section class="card">
+    <div class="card-h"><span>Readiness signal</span></div>
+    <div class="card-b">
+      <div class="unavailable">
+        <b>Readiness signal unavailable</b>
+        {% if panel.state != 'resolved' %}A readiness signal is only shown together with a Robson group. Resolve the group first.
+        {% elif view.model_active %}The model could not produce a signal for this admission, so only the classification is shown. The Robson group on the left is complete and saved.
+        {% else %}No model is active at the moment, so only the classification is shown. The Robson group on the left is complete and saved.{% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<section class="card spaced">
+  <div class="card-h"><span>Screening recorded</span></div>
+  <div class="card-b kv3">
+    <div><div class="n-k">Blood pressure</div>{% if view.screening.bp.reason %}<div class="n-v warn">Not measured · {{ view.screening.bp.reason }}</div>{% else %}<div class="n-v">{{ view.screening.bp.text }}</div>{% endif %}</div>
+    <div><div class="n-k">Proteinuria</div>{% if view.screening.protein.reason %}<div class="n-v warn">Not measured · {{ view.screening.protein.reason }}</div>{% else %}<div class="n-v">{{ view.screening.protein.text }}</div>{% endif %}</div>
+    <div><div class="n-k">Glucose</div>{% if view.screening.glucose.reason %}<div class="n-v warn">Not measured · {{ view.screening.glucose.reason }}</div>{% else %}<div class="n-v">{{ view.screening.glucose.text }}</div>{% endif %}</div>
+  </div>
+</section>
+
+{% if view.outcome %}
+<div class="notice">Outcome recorded: <b>{{ view.outcome_text }}</b> on {{ view.outcome.delivered_at | local_dt }}.</div>
+{% endif %}
+
+<div class="actions">
+  <a class="btn btn-p" href="/admissions/new">New admission</a>
+  {% if not view.replaced_by %}
+  <a class="btn btn-s" href="/admissions/{{ admission.code }}/correct">Record a correction</a>
+  {% if not view.outcome %}<a class="btn btn-s" href="/admissions/{{ admission.code }}/outcome">Record outcome</a>{% endif %}
+  {% endif %}
+  <a class="btn-g" href="#" data-print>Print</a>
+</div>
+{% endblock %}
