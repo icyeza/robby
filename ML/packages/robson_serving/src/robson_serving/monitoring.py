@@ -35,6 +35,7 @@ REFERENCE_FORMAT = 2
 REFERENCE_BINS = 10
 MIN_CELL = 5
 MISSING_KEY = "missing"
+INTEGER_SHARE = 0.5  # whole-number share from which a feature counts as integer-valued
 PSI_THRESHOLD = 0.2
 PSI_FLOOR = 1e-4
 MISSING_SHIFT_THRESHOLD = 0.15  # absolute change in the share of unrecorded values
@@ -107,7 +108,8 @@ def reference_distributions(
     """Bucket proportions per feature of ``frame`` (the training population's model frame).
 
     Format 2. Numeric: interior cut points at the deciles of the recorded values (``edges``; a
-    value on an edge falls in the lower bin); when every recorded value is a whole number the
+    value on an edge falls in the lower bin). When most recorded values (``INTEGER_SHARE``) are
+    whole numbers (a few fractions, e.g. weeks plus days, are binned by their integer part) the
     cuts are moved to half-integers (``"integer": true``) so each whole number maps to exactly
     one bucket and none is structurally empty. Categorical: one bucket per level. Buckets
     cover the observed values only and sum to 1; the share of unrecorded values is stored
@@ -121,7 +123,7 @@ def reference_distributions(
         if kind == NUMERIC:
             recorded = pd.to_numeric(values, errors="coerce").dropna().to_numpy(dtype=np.float64)
             cuts = np.linspace(0.0, 1.0, n_bins + 1)[1:-1]
-            if len(recorded) and bool(np.all(recorded == np.round(recorded))):
+            if len(recorded) and float(np.mean(recorded == np.round(recorded))) >= INTEGER_SHARE:
                 low, high = recorded.min(), recorded.max()
                 raw = np.floor(np.quantile(recorded, cuts))
                 edges = np.unique(raw[(raw >= low) & (raw < high)]) + 0.5

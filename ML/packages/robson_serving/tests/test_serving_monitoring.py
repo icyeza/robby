@@ -221,3 +221,11 @@ def test_shadow_compare_needs_both_outcomes() -> None:
     df = pd.DataFrame({"p_active": [0.2, 0.3], "p_candidate": [0.2, 0.3], "cs": [0, 0]})
     with pytest.raises(ValueError, match="both outcomes"):
         shadow_compare(df)
+
+
+def test_mostly_whole_numbers_with_a_few_fractions_are_still_integer_aligned() -> None:
+    rng = np.random.default_rng(3)
+    weeks = rng.integers(36, 43, 1000).astype(float)
+    weeks[:80] += 2 / 7  # weeks plus days
+    entry = reference_distributions(pd.DataFrame({"x": weeks}), {"x": NUMERIC})["features"]["x"]
+    assert entry["integer"] is True and all(e % 1 == 0.5 for e in entry["edges"])
