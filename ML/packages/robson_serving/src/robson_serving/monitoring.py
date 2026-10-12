@@ -31,13 +31,23 @@ from robson_serving.stats import ConvergenceError, clip_probabilities, fit_logis
 
 FloatArray = npt.NDArray[np.float64]
 
-REFERENCE_FORMAT = 1
+REFERENCE_FORMAT = 2
 REFERENCE_BINS = 10
 MIN_CELL = 5
 MISSING_KEY = "missing"
 PSI_THRESHOLD = 0.2
 PSI_FLOOR = 1e-4
-DRIFT_COLUMNS = ("feature", "n", "psi", "flagged")
+MISSING_SHIFT_THRESHOLD = 0.15  # absolute change in the share of unrecorded values
+DRIFT_COLUMNS = (
+    "feature",
+    "n",
+    "psi",
+    "flagged",
+    "missing_reference",
+    "missing_live",
+    "missing_shift",
+    "missing_flagged",
+)
 MIN_N = 50
 MIN_EVENTS = 10
 OK = "ok"
@@ -96,9 +106,13 @@ def reference_distributions(
 ) -> dict[str, Any]:
     """Bucket proportions per feature of ``frame`` (the training population's model frame).
 
-    Numeric: interior cut points at the deciles of the recorded values (``edges``; a value on
-    an edge falls in the lower bin) plus a ``missing`` bucket. Categorical: one bucket per
-    level plus ``missing``. Buckets under ``min_cell`` rows are merged into the largest.
+    Format 2. Numeric: interior cut points at the deciles of the recorded values (``edges``; a
+    value on an edge falls in the lower bin); when every recorded value is a whole number the
+    cuts are moved to half-integers (``"integer": true``) so each whole number maps to exactly
+    one bucket and none is structurally empty. Categorical: one bucket per level. Buckets
+    cover the observed values only and sum to 1; the share of unrecorded values is stored
+    separately as ``missing`` (0 when under ``min_cell`` rows). Buckets under ``min_cell``
+    rows are merged into the largest.
     """
     features: dict[str, Any] = {}
     for name, kind in kinds.items():
@@ -107,7 +121,13 @@ def reference_distributions(
         if kind == NUMERIC:
             recorded = pd.to_numeric(values, errors="coerce").dropna().to_numpy(dtype=np.float64)
             cuts = np.linspace(0.0, 1.0, n_bins + 1)[1:-1]
-            edges = np.unique(np.quantile(recorded, cuts)) if len(recorded) else np.array([])
+            if len(recorded) and bool(np.all(recorded == np.round(recorded))):
+                low, high = recorded.min(), recorded.max()
+                raw = np.floor(np.quantile(recorded, cuts))
+                edges = np.unique(raw[(raw >= low) & (raw < high)]) + 0.5
+                entry["integer"] = True
+            else:
+                edges = np.unique(np.quantile(recorded, cuts)) if len(recorded) else np.array([])
             entry["edges"] = [float(edge) for edge in edges]
             keys = _numeric_keys(values, entry["edges"])
         elif kind == CATEGORICAL:
@@ -115,10 +135,12 @@ def reference_distributions(
         else:
             raise ValueError(f"{name}: unknown kind {kind!r}")
         counts = Counter(keys)
+        n_missing = counts.pop(MISSING_KEY, 0)
         ordered = {key: counts[key] for key in sorted(counts, key=_key_order)}
-        total = len(keys)
+        observed = sum(ordered.values())
+        entry["missing"] = n_missing / len(keys) if n_missing >= min_cell else 0.0
         entry["buckets"] = [
-            {"members": members, "proportion": count / total}
+            {"members": members, "proportion": count / observed}
             for members, count in _merge_small(ordered, min_cell)
         ]
         features[name] = entry
@@ -132,33 +154,87 @@ def population_stability_index(expected: Sequence[float], observed: Sequence[flo
     return float(np.sum((o - e) * np.log(o / e)))
 
 
-def feature_drift(
-    features_df: pd.DataFrame, reference: Mapping[str, Any], threshold: float = PSI_THRESHOLD
-) -> pd.DataFrame:
-    """PSI of each reference feature in ``features_df``; flagged when PSI > ``threshold``.
+def _observed_reference(entry: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], float]:
+    """Observed-value buckets (renormalised to sum to 1) and the reference missing share.
 
-    Values are bucketed exactly as the reference was; a value in no reference bucket (an
-    unseen level) counts in an extra bucket whose reference proportion is 0. A feature
-    absent from ``features_df`` reports n = 0, PSI NaN, not flagged.
+    Format 2 stores them that way already. A format 1 entry carries a ``missing`` bucket among
+    the others: it is dropped and the rest renormalised; the missing share is known only when
+    that bucket stood alone (otherwise NaN).
+    """
+    if "missing" in entry:
+        return list(entry["buckets"]), float(entry["missing"])
+    missing = math.nan
+    buckets = []
+    for b in entry["buckets"]:
+        members = [m for m in b["members"] if m != MISSING_KEY]
+        if len(members) < len(b["members"]):
+            if not members:
+                missing = float(b["proportion"])
+                continue
+        buckets.append({"members": members, "proportion": float(b["proportion"])})
+    if math.isnan(missing) and not any(MISSING_KEY in b["members"] for b in entry["buckets"]):
+        missing = 0.0
+    total = sum(b["proportion"] for b in buckets)
+    return [{**b, "proportion": b["proportion"] / total} for b in buckets], missing
+
+
+def feature_drift(
+    features_df: pd.DataFrame,
+    reference: Mapping[str, Any],
+    threshold: float = PSI_THRESHOLD,
+    missing_threshold: float = MISSING_SHIFT_THRESHOLD,
+) -> pd.DataFrame:
+    """PSI of each reference feature over the observed (non-missing) values of ``features_df``.
+
+    Reference proportions are renormalised over the observed values and ``n`` counts the
+    non-missing live values; ``flagged`` is PSI > ``threshold``. Values are bucketed exactly
+    as the reference was; a value in no reference bucket (an unseen level) counts in an extra
+    bucket whose reference proportion is 0. How often the value is recorded is reported
+    separately: ``missing_reference``, ``missing_live``, their difference ``missing_shift``
+    and ``missing_flagged`` when its absolute value exceeds ``missing_threshold``. A feature
+    absent from ``features_df`` (or with no observed value) reports n = 0, PSI NaN, not flagged.
     """
     rows = []
     for name, entry in reference["features"].items():
+        empty = {
+            "feature": name,
+            "n": 0,
+            "psi": math.nan,
+            "flagged": False,
+            "missing_reference": math.nan,
+            "missing_live": math.nan,
+            "missing_shift": math.nan,
+            "missing_flagged": False,
+        }
         if name not in features_df.columns or features_df.empty:
-            rows.append({"feature": name, "n": 0, "psi": math.nan, "flagged": False})
+            rows.append(empty)
             continue
         values = features_df[name]
         if entry["kind"] == NUMERIC:
-            keys = _numeric_keys(values, entry["edges"])
+            all_keys = _numeric_keys(values, entry["edges"])
         else:
-            keys = _categorical_keys(values)
-        buckets = entry["buckets"]
+            all_keys = _categorical_keys(values)
+        keys = [k for k in all_keys if k != MISSING_KEY]
+        missing_live = 1.0 - len(keys) / len(all_keys)
+        buckets, missing_reference = _observed_reference(entry)
+        shift = missing_live - missing_reference
+        row = {
+            **empty,
+            "missing_reference": missing_reference,
+            "missing_live": missing_live,
+            "missing_shift": shift,
+            "missing_flagged": bool(abs(shift) > missing_threshold),
+        }
+        if not keys:
+            rows.append(row)
+            continue
         bucket_of = {member: i for i, b in enumerate(buckets) for member in b["members"]}
         counts = np.zeros(len(buckets) + 1)
         for key in keys:
             counts[bucket_of.get(key, len(buckets))] += 1
         expected = [float(b["proportion"]) for b in buckets] + [0.0]
         psi = population_stability_index(expected, [float(c) / len(keys) for c in counts])
-        rows.append({"feature": name, "n": len(keys), "psi": psi, "flagged": psi > threshold})
+        rows.append({**row, "n": len(keys), "psi": psi, "flagged": psi > threshold})
     return pd.DataFrame(rows, columns=list(DRIFT_COLUMNS))
 
 

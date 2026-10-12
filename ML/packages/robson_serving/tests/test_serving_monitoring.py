@@ -14,15 +14,15 @@ from robson_serving.monitoring import (
 from robson_serving.stats import fit_logistic, logit
 
 
-def test_numeric_reference_uses_decile_edges_and_a_missing_bucket() -> None:
-    frame = pd.DataFrame({"x": [*range(100), *([np.nan] * 10)]})
+def test_numeric_reference_uses_decile_edges_and_a_separate_missing_share() -> None:
+    frame = pd.DataFrame({"x": [*(np.arange(100) + 0.5), *([np.nan] * 10)]})
     entry = reference_distributions(frame, {"x": NUMERIC})["features"]["x"]
-    assert entry["edges"] == pytest.approx([9.9, 19.8, 29.7, 39.6, 49.5, 59.4, 69.3, 79.2, 89.1])
-    assert [b["members"] for b in entry["buckets"]] == [[f"bin:{i}"] for i in range(10)] + [
-        ["missing"]
-    ]
+    assert entry["edges"] == pytest.approx(
+        [10.4, 20.3, 30.2, 40.1, 50.0, 59.9, 69.8, 79.7, 89.6], abs=1e-9
+    )
+    assert [b["members"] for b in entry["buckets"]] == [[f"bin:{i}"] for i in range(10)]
     assert sum(b["proportion"] for b in entry["buckets"]) == pytest.approx(1.0)
-    assert entry["buckets"][-1]["proportion"] == pytest.approx(10 / 110)
+    assert entry["missing"] == pytest.approx(10 / 110)
 
 
 def test_small_buckets_are_merged_into_the_largest() -> None:
@@ -30,10 +30,67 @@ def test_small_buckets_are_merged_into_the_largest() -> None:
     reference = reference_distributions(
         pd.DataFrame({"s": pd.Series(values, dtype=object)}), {"s": CATEGORICAL}
     )
-    buckets = reference["features"]["s"]["buckets"]
-    assert [b["members"] for b in buckets] == [["level:a", "level:c"], ["level:b"], ["missing"]]
-    assert [b["proportion"] for b in buckets] == pytest.approx([53 / 80, 20 / 80, 7 / 80])
-    assert reference["min_cell"] == 5
+    entry = reference["features"]["s"]
+    buckets = entry["buckets"]
+    assert [b["members"] for b in buckets] == [["level:a", "level:c"], ["level:b"]]
+    assert [b["proportion"] for b in buckets] == pytest.approx([53 / 73, 20 / 73])
+    assert entry["missing"] == pytest.approx(7 / 80)
+    assert reference["min_cell"] == 5 and reference["format"] == 2
+
+
+def test_whole_number_features_get_integer_aligned_edges() -> None:
+    rng = np.random.default_rng(1)
+    weeks = rng.integers(30, 43, 2000).astype(float)
+    frame = pd.DataFrame({"x": np.append(weeks, [np.nan] * 900)})
+    entry = reference_distributions(frame, {"x": NUMERIC})["features"]["x"]
+    assert entry["integer"] is True
+    assert all(e % 1 == 0.5 for e in entry["edges"])
+    keys = {int(w): _bin(w, entry["edges"]) for w in range(30, 43)}
+    members = {m for b in entry["buckets"] for m in b["members"]}
+    assert set(keys.values()) == members  # every bucket holds at least one whole number
+    assert all(b["proportion"] > 0 for b in entry["buckets"])
+
+
+def _bin(value: float, edges: list[float]) -> str:
+    return f"bin:{int(np.searchsorted(np.asarray(edges), value, side='left'))}"
+
+
+def test_psi_uses_observed_values_and_reports_the_missing_shift_separately() -> None:
+    rng = np.random.default_rng(2)
+    recorded = rng.integers(30, 43, 700).astype(float)
+    reference_frame = pd.DataFrame({"x": np.append(recorded, [np.nan] * 300)})
+    reference = reference_distributions(reference_frame, {"x": NUMERIC})
+    live = pd.DataFrame({"x": rng.integers(30, 43, 400).astype(float)})
+    row = feature_drift(live, reference).iloc[0]
+    assert row["psi"] < 0.1 and not bool(row["flagged"]) and row["n"] == 400
+    assert row["missing_reference"] == pytest.approx(0.3)
+    assert row["missing_live"] == 0.0
+    assert row["missing_shift"] == pytest.approx(-0.3)
+    assert bool(row["missing_flagged"])
+    same = feature_drift(reference_frame, reference).iloc[0]
+    assert same["psi"] == pytest.approx(0.0, abs=1e-12) and same["n"] == 700
+    assert not bool(same["missing_flagged"])
+
+
+def test_format_1_references_still_drive_the_drift() -> None:
+    reference = {
+        "format": 1,
+        "min_cell": 5,
+        "features": {
+            "x": {
+                "kind": NUMERIC,
+                "edges": [1.0],
+                "buckets": [
+                    {"members": ["bin:0"], "proportion": 0.35},
+                    {"members": ["bin:1"], "proportion": 0.35},
+                    {"members": ["missing"], "proportion": 0.3},
+                ],
+            }
+        },
+    }
+    row = feature_drift(pd.DataFrame({"x": [1.0, 1.0, 2.0, 2.0]}), reference).iloc[0]
+    assert row["psi"] == pytest.approx(0.0, abs=1e-12)
+    assert row["missing_reference"] == pytest.approx(0.3)
 
 
 def test_psi_is_zero_on_the_reference_and_matches_a_hand_value() -> None:
