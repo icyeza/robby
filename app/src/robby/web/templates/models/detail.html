@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Model {{ model.version_label }}{% endblock %}
+{% macro signed(v, places) %}{{ ("%+." ~ places ~ "f") | format(v) | replace("-", "−") }}{% endmacro %}
+{% macro value(m, v) %}{% if m.key == "brier" %}{{ "%.3f" | format(v) }}{% elif m.key == "calibration_in_the_large" %}{{ signed(v, 2) }}{% else %}{{ "%.2f" | format(v) }}{% endif %}{% endmacro %}
+{% macro bar(v, alt=false) -%}
+<svg class="mbar{% if alt %} alt{% endif %}" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="100" height="10"/><rect class="fill" width="{{ [[(v - 0.5) * 200, 0] | max, 100] | min | round(1) }}" height="10"/></svg>
+{%- endmacro %}
+{% block content %}
+<div class="crumbs"><a href="/models">Models</a> / {{ model.version_label }}</div>
+<div class="titlebar">
+  <h1>Model {{ model.version_label }}</h1><span class="st {{ model.state.value }}">{{ state_label }}</span>
+  {% if evidence.status == "ready" %}<span class="meta">Compared with active {{ evidence.active_label }} on {{ evidence.n }} admissions with recorded outcomes, {{ evidence.period }}</span>{% endif %}
+</div>
+{% if done %}<div class="notice" role="status"><b>Recorded.</b> {{ model.version_label }} was {{ done }}. The approval is in the <a href="/approval-log">Approval log</a>.</div>{% endif %}
+{% if errors.form and not open_dialog %}<div class="errbox top" role="alert">{{ errors.form }}</div>{% endif %}
+
+{% if evidence.status == "ready" %}
+<div class="tiles">
+  {% for m in evidence.metrics %}
+  <div class="tile"><div class="k">{{ m.label }}</div><div class="v">{{ value(m, m.candidate) }}</div>
+    <div class="s">Active {{ evidence.active_label }}: {{ value(m, m.active) }}{% if m.key == "calibration_slope" %} · ideal 1.00{% elif m.key == "calibration_in_the_large" %} · ideal 0.00{% elif m.key == "brier" %} · lower is better{% endif %}</div>
+    <div class="s">Difference {{ signed(m.difference, 3) }} (95% CI {{ signed(m.low, 3) }} to {{ signed(m.high, 3) }})</div></div>
+  {% endfor %}
+</div>
+<section class="tablecard">
+  <div class="tc-h"><h2>Discrimination by facility</h2><div class="lg"><span><i class="sw"></i>{{ model.version_label }} shadow</span><span><i class="sw alt"></i>{{ evidence.active_label }} active</span></div></div>
+  <table>
+    <thead><tr><th>Facility</th><th class="r">Admissions</th><th>AUC (axis 0.5–1.0)</th></tr></thead>
+    <tbody>
+    {% for r in evidence.facilities %}
+      <tr><td>{{ r.level }}</td><td class="r num">{{ r.n }}</td><td>
+      {% if r.ready and r.candidate_auc is not none and r.active_auc is not none %}
+        <div class="cell">{{ bar(r.candidate_auc) }}<span class="num">{{ "%.2f" | format(r.candidate_auc) }}</span></div>
+        <div class="cell gap">{{ bar(r.active_auc, true) }}<span class="num">{{ "%.2f" | format(r.active_auc) }}</span></div>
+      {% else %}<span class="muted">Not enough yet</span>{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">A facility needs at least 50 admissions with at least 10 of each outcome before figures are shown.</div>
+</section>
+<section class="tablecard">
+  <div class="tc-h"><h2>Calibration by Robson group</h2><div class="lg"><span>Observed vs mean predicted cesarean rate</span></div></div>
+  <table>
+    <thead><tr><th>Group</th><th class="r">Admissions</th><th class="r">Observed</th><th class="r">{{ model.version_label }} predicted</th><th class="r">{{ evidence.active_label }} predicted</th></tr></thead>
+    <tbody>
+    {% for r in evidence.groups %}
+      <tr><td><span class="gnum">{{ r.level if r.level != "missing" else "?" }}</span></td><td class="r num">{{ r.n }}</td>
+      {% if r.ready %}<td class="r num">{{ "%.0f" | format(r.observed * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.candidate_mean * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.active_mean * 100) }}%</td>{% else %}<td class="r muted" colspan="3">Not enough yet</td>{% endif %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Groups with fewer than 50 admissions, or fewer than 10 of either outcome, show no figures.</div>
+</section>
+<section class="card">
+  <div class="card-h"><span>Calibration plot</span></div>
+  <div class="card-b calcard">
+    {{ plot | safe }}
+    <div class="calkey"><span class="lg"><span><i class="sw"></i>{{ model.version_label }} shadow</span><span><i class="sw alt"></i>{{ evidence.active_label }} active</span></span><span class="muted">Dashed line: perfect calibration. Bins with fewer than 20 admissions are not drawn.</span></div>
+  </div>
+</section>
+{% elif evidence.status in ("not_enough", "no_active") %}
+<div class="notice" role="status"><b>{{ evidence.message }}</b>{% if evidence.status == "not_enough" %} The shadow model scores every new admission; comparison figures appear once enough deliveries have been recorded. Nothing is estimated before then.{% endif %}</div>
+{% else %}
+<div class="notice">{{ evidence.message }}</div>
+{% endif %}
+
+<section class="card">
+  <div class="card-h"><span>Version facts</span></div>
+  <div class="card-b">
+    <dl class="facts">
+      <dt>Algorithm</dt><dd>{{ algorithm }}, {{ calibration | lower }} calibration</dd>
+      <dt>Beats Robson baseline</dt><dd>{{ beats }}</dd>
+      <dt>Feature set</dt><dd>{{ model.feature_set }} ({{ features }} inputs)</dd>
+      <dt>Training window</dt><dd>{{ trained }}</dd>
+      <dt>Rule set</dt><dd>{{ rule_set }}</dd>
+      <dt>Artefact hash</dt><dd><code>{{ model.artefact_hash[:8] }}…{{ model.artefact_hash[-4:] }}</code></dd>
+      <dt>Registered</dt><dd>{{ model.registered_at | local_dt }}{% if registered_by %} by {{ registered_by }}{% endif %}</dd>
+      {% if approved_by %}<dt>Last approved</dt><dd>{{ model.approved_at | local_dt }} by {{ approved_by }}</dd>{% endif %}
+    </dl>
+  </div>
+</section>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Approval history</h2></div>
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Change</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for t, who in history %}
+      <tr><td>{{ t.at | local_dt }}</td><td><b>{{ who }}</b></td><td>{{ t.from_state.value | capitalize if t.from_state else "New" }} → {{ t.to_state.value | capitalize }}</td><td>“{{ t.reason }}”</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No approvals yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="actions">
+  {% for d in dialogs %}
+    <a class="btn {{ 'btn-p' if d.primary else 'btn-s' }}" href="/models/{{ model.version_label }}?dialog={{ d.action }}" data-open="dlg-{{ d.action }}">{% if d.action == "rollback" %}Roll back to {{ model.version_label }}{% elif d.action == "shadow" %}Move {{ model.version_label }} to shadow{% elif d.action == "promote" %}Promote {{ model.version_label }} to active{% else %}Retire {{ model.version_label }}{% endif %}</a>
+  {% endfor %}
+  {% if rollback_to %}
+    <a class="btn btn-s" href="/models/{{ rollback_to.version_label }}?dialog=rollback">Roll back active version to {{ rollback_to.version_label }}</a>
+  {% endif %}
+</div>
+
+{% for d in dialogs %}
+{% set mine = open_dialog == d.action %}
+<div class="dialog-backdrop{% if mine %} open{% endif %}" id="dlg-{{ d.action }}">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dt-{{ d.action }}">
+    <form method="post" action="/models/{{ model.version_label }}/transition">
+      <h2 id="dt-{{ d.action }}">{{ d.title }}</h2>
+      <div class="body">
+        <p>{{ d.text }}</p>
+        {% if mine and errors.form %}<div class="errbox" role="alert">{{ errors.form }}</div>{% endif %}
+        {{ ui.csrf_input() }}
+        <input type="hidden" name="action" value="{{ d.action }}">
+        <div class="f{% if mine and errors.approver_name %} conflict{% endif %}"><label for="ap-{{ d.action }}">Approved by</label><input id="ap-{{ d.action }}" name="approver_name" type="text" autocomplete="off" value="{{ form.approver_name if mine else '' }}"{% if mine and errors.approver_name %} aria-invalid="true"{% endif %}><div class="help">Type your username ({{ username }}) to confirm.</div>{% if mine and errors.approver_name %}<div class="msg">{{ errors.approver_name }}</div>{% endif %}</div>
+        <div class="f{% if mine and errors.reason %} conflict{% endif %}"><label for="rs-{{ d.action }}">Reason</label><textarea id="rs-{{ d.action }}" name="reason" rows="3" maxlength="1000"{% if mine and errors.reason %} aria-invalid="true"{% endif %}>{{ form.reason if mine else "" }}</textarea><div class="help">Do not include patient details.</div>{% if mine and errors.reason %}<div class="msg">{{ errors.reason }}</div>{% endif %}</div>
+      </div>
+      <div class="foot"><a class="btn-g" href="/models/{{ model.version_label }}" data-close>Cancel</a><button class="btn {{ 'btn-p' if d.primary else 'btn-s' }}" type="submit">{{ d.button }}</button></div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

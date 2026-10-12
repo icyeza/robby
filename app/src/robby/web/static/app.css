@@ -55,3 +55,30 @@ form.inline{display:inline}
 .seg-gap{margin-bottom:18px}
 .actions.tight{margin-top:6px}
 .unavailable .resolve{margin-top:14px}
+
+/* ---- model governance ---- */
+.mbar{flex:1;height:14px;min-width:80px;display:block}
+.mbar .track{fill:var(--track)}
+.mbar .fill{fill:var(--brand)}
+.mbar.alt .fill{fill:var(--fig)}
+.cell.gap{margin-top:4px}
+.small{font-size:12.5px}
+.actions{margin-bottom:24px}
+.dialog .errbox{margin-bottom:12px}
+.dialog textarea{width:100%}
+.calcard{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.calplot{width:340px;max-width:100%;height:auto}
+.calkey{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.calkey .lg{margin-left:0}
+.cal-bg{fill:#fff;stroke:var(--line)}
+.cal-grid{stroke:var(--line);stroke-width:.5}
+.cal-ideal{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:4 3}
+.cal-tick,.cal-axis{font-size:9px;fill:var(--ink-3)}
+.cal-cand{fill:var(--brand)}
+.cal-cand-line{fill:none;stroke:var(--brand);stroke-width:1.5}
+.cal-active{fill:var(--fig)}
+.cal-active-line{fill:none;stroke:var(--fig);stroke-width:1.5}
+.verify{margin-bottom:20px}
+.verify-b{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.verify-ok{color:var(--ok);font-weight:600;margin-top:4px}
+.verify-bad{color:var(--error);font-weight:700;margin-top:4px}

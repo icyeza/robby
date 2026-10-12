@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Approval log{% endblock %}
+{% block content %}
+<h1>Approval log</h1>
+<p class="lede">Every recorded approval, correction and account change. Entries cannot be edited or deleted.</p>
+
+<form class="filters" method="get" action="/approval-log">
+  <div class="f"><label for="date_from">From</label><input id="date_from" name="date_from" type="date" value="{{ date_from }}"></div>
+  <div class="f"><label for="date_to">To</label><input id="date_to" name="date_to" type="date" value="{{ date_to }}"></div>
+  <div class="f"><span class="label">Type</span>
+    <div class="seg" role="radiogroup" aria-label="Type">
+      {% for key, label in groups %}<label><input type="radio" name="type" value="{{ key }}"{% if key == group %} checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+    </div>
+  </div>
+  <button class="btn btn-s" type="submit">Apply</button>
+</form>
+
+<section class="card verify">
+  <div class="card-b verify-b">
+    <div>
+      <b>Log integrity</b>
+      {% if verdict %}
+        <div class="{{ 'verify-ok' if verdict[0] else 'verify-bad' }}" role="status">{{ verdict[1] }}</div>
+        <div class="muted small">Last checked {{ verified_at | local_dt }}</div>
+      {% else %}
+        <div class="muted">Not checked yet.</div>
+      {% endif %}
+    </div>
+    <form method="post" action="/approval-log/verify"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-s" type="submit">Verify the log</button></form>
+  </div>
+</section>
+
+<section class="tablecard">
+  <table class="wide">
+    <thead><tr><th>When</th><th>Who</th><th>Role</th><th>Action</th><th>Item</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr><td>{{ r.when | local_dt }}</td><td><b>{{ r.who }}</b></td><td>{{ r.role }}</td><td>{{ r.action }}</td><td>{{ r.item }}</td><td>{% if r.reason %}“{{ r.reason }}”{% else %}—{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No entries in this period.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Newest first. Showing {{ rows | length }} of {{ total }} entries in this period.{% if total > rows | length %} Narrow the dates to see older entries.{% endif %}</div>
+</section>
+{% endblock %}

@@ -16,6 +16,8 @@ from tests.webutil import csrf_for, sign_in_client
 PAGES: list[tuple[str, frozenset[Role]]] = [
     (path, frozenset({role})) for path, _title, role in PLACEHOLDER_PAGES
 ]
+PAGES.append(("/models", frozenset({Role.MODEL_CUSTODIAN})))
+PAGES.append(("/approval-log", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
 

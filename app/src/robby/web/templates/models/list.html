@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Models{% endblock %}
+{% block content %}
+<h1>Models</h1>
+<p class="lede">Every registered version and its state. Only one version is active at a time; a shadow version scores admissions in the background without being shown.</p>
+<section class="tablecard">
+  <table>
+    <thead><tr><th>Version</th><th>State</th><th>Algorithm</th><th>Trained on</th><th>Calibration</th><th>Beats Robson baseline</th><th>Registered</th><th></th></tr></thead>
+    <tbody>
+    {% for m in rows %}
+      <tr><td><b>{{ m.label }}</b></td><td><span class="st {{ m.state }}">{{ m.state_label }}</span></td><td>{{ m.algorithm }}</td><td>{{ m.trained }}</td><td>{{ m.calibration }}</td><td>{{ m.beats }}</td><td>{{ m.registered | local_dt_short }}</td><td class="r"><a href="/models/{{ m.label }}">Details</a></td></tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">No model is registered yet. A model custodian registers one with <code>robby-admin model register &lt;folder&gt;</code>.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Versions are registered from the ML pipeline as candidates. Moving a version to shadow or active, or rolling back, needs a recorded approval.</div>
+</section>
+{% endblock %}
