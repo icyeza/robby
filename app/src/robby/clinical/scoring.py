@@ -96,6 +96,23 @@ class ModelRuntime:
         row = db.scalar(select(ModelVersion).where(ModelVersion.state == ModelState.ACTIVE))
         if row is None:
             return None
+        return self._loaded(row, rule_set_id, engine_rules)
+
+    def shadows(
+        self, db: Session, rule_set_id: Any, engine_rules: EngineRuleSet
+    ) -> list[ActiveModel]:
+        """Every shadow model that can be loaded (those that cannot are skipped and logged)."""
+        rows = db.scalars(
+            select(ModelVersion)
+            .where(ModelVersion.state == ModelState.SHADOW)
+            .order_by(ModelVersion.registered_at)
+        )
+        loaded = (self._loaded(row, rule_set_id, engine_rules) for row in rows)
+        return [model for model in loaded if model is not None]
+
+    def _loaded(
+        self, row: ModelVersion, rule_set_id: Any, engine_rules: EngineRuleSet
+    ) -> ActiveModel | None:
         key = (row.id, rule_set_id)
         scorer = self._scorers.get(key)
         if scorer is not None:
@@ -110,7 +127,7 @@ class ModelRuntime:
                     path = self.artefact_dir / path
                 scorer = self._loader(path, rule_set=engine_rules)
             except Exception:
-                logger.exception("Active model %s could not be loaded", row.version_label)
+                logger.exception("Model %s could not be loaded", row.version_label)
                 self._failed[key] = time.monotonic()
                 return None
             self._scorers[key] = scorer

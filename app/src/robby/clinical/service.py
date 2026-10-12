@@ -147,6 +147,9 @@ def save_admission(
                 prediction = None
                 state = "failed"
 
+    if result.status == "resolved":
+        _score_shadows(db, runtime, admission, parsed, facility, rule_row.id, engine_rules)
+
     payload: dict[str, Any] = {
         "code": admission.code,
         "facility": facility.code,
@@ -168,6 +171,46 @@ def save_admission(
         payload,
     )
     return Saved(admission, classification, prediction, state)
+
+
+def _score_shadows(
+    db: Session,
+    runtime: scoring.ModelRuntime,
+    admission: Admission,
+    parsed: Parsed,
+    facility: Facility,
+    rule_set_id: Any,
+    engine_rules: Any,
+) -> None:
+    """Score the admission with every shadow model. Stored, never shown to clinicians; nothing
+    that goes wrong here may cost the clinician the admission."""
+    try:
+        with db.begin_nested():
+            shadows = runtime.shadows(db, rule_set_id, engine_rules)
+    except Exception:
+        logger.exception("Could not list shadow models")
+        return
+    for model in shadows:
+        try:
+            with db.begin_nested():
+                scored = scoring.score(model, parsed, facility)
+                db.add(
+                    Prediction(
+                        admission_id=admission.id,
+                        model_id=scored.model_id,
+                        mode=PredictionMode.SHADOW,
+                        probability=scored.probability,
+                        feature_vector=scored.feature_vector,
+                    )
+                )
+                db.flush()
+        except Exception as exc:
+            logger.warning(
+                "Shadow model %s failed on %s: %s",
+                model.row.version_label,
+                admission.code,
+                type(exc).__name__,
+            )
 
 
 # ---------------------------------------------------------------- reading
