@@ -165,6 +165,15 @@ is a labelled placeholder ("DEMO placeholder reference"), not a published source
 `../ML/artefacts/packaged/readiness-v1.0` (override with `--model-dir`); without it, admissions are
 saved without predictions.
 
+The optional "other details" of the demo admissions are sampled from the marginal distributions stored
+with the packaged model (`reference_distributions.json`), so the input-drift check starts quiet; about
+1.5% of admissions have none (a larger share would itself register as drift against the training data).
+As an intentional demo story, antenatal visits are shifted to the low side for the most recent weeks, so
+the monitoring page shows exactly one such drift alert. Gestational age is also always flagged: the
+reference has about a third of its values missing, which no resolved admission can reproduce. The load also
+registers a copy of the packaged model as candidate `readiness-v1.1` (not activated), so the Models page
+shows an Active and a Candidate model for the promote and rollback walkthrough.
+
 ## Tests and checks
 
 The suite needs a running PostgreSQL and a role with `CREATEDB`. Each run creates a throwaway

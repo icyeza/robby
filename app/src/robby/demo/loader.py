@@ -13,6 +13,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -52,6 +53,7 @@ DEMO_PASSWORD = "demo-password-123"  # demo database only
 DEFAULT_SEED = 20261012
 DEFAULT_ADMISSIONS = 700
 DEFAULT_MODEL_DIR = APP_ROOT.parent / "ML" / "artefacts" / "packaged" / "readiness-v1.0"
+CANDIDATE_LABEL = "readiness-v1.1"
 DEMO_ARTEFACT_DIR = APP_ROOT / "artefacts" / "demo"  # git-ignored
 
 # DEMO PLACEHOLDER reference numbers: invented, loaded into the demo database only, and not to
@@ -161,8 +163,8 @@ def _model_facility_keys(model_dir: Path) -> list[str]:
     return []
 
 
-def _register_model(url: str, model_dir: Path, actor: str) -> None:
-    """The same command as `robby-admin model register --activate`, run against the demo DB."""
+def _register_model(url: str, model_dir: Path, actor: str, *, activate: bool = True) -> None:
+    """The same command as `robby-admin model register [--activate]`, run against the demo DB."""
     manifest = json.loads((model_dir / "manifest.json").read_text(encoding="utf-8"))
     shutil.rmtree(DEMO_ARTEFACT_DIR / str(manifest["version_label"]), ignore_errors=True)
     DEMO_ARTEFACT_DIR.mkdir(parents=True, exist_ok=True)
@@ -171,11 +173,27 @@ def _register_model(url: str, model_dir: Path, actor: str) -> None:
     env["ROBBY_ARTEFACT_DIR"] = str(DEMO_ARTEFACT_DIR)
     command = [
         sys.executable, "-c", "from robby.cli import app; app()",
-        "model", "register", str(model_dir), "--activate", "--actor", actor,
+        "model", "register", str(model_dir), "--actor", actor,
     ]  # fmt: skip
+    if activate:
+        command.append("--activate")
     done = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         raise DemoError(f"Model registration failed: {done.stderr.strip() or done.stdout.strip()}")
+
+
+def _register_candidate(url: str, model_dir: Path, actor: str) -> str:
+    """A copy of the packaged model registered (not activated) as candidate readiness-v1.1, so
+    the Models page always has an Active and a Candidate model for the promote/rollback walkthrough."""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / CANDIDATE_LABEL
+        shutil.copytree(model_dir, copy)
+        manifest_path = copy / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version_label"] = CANDIDATE_LABEL
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        _register_model(url, copy, actor, activate=False)
+    return CANDIDATE_LABEL
 
 
 def _create_accounts(
@@ -286,11 +304,14 @@ def load_demo(
     if use_model and model_dir is not None:
         _register_model(plain, model_dir, "custodian")
         say("Registered and activated the packaged model (development activation).")
+        _register_candidate(plain, model_dir, "custodian")
+        say(f"Registered a copy as candidate {CANDIDATE_LABEL}.")
     else:
         summary.notes.append("No model artefact found: admissions are saved without predictions.")
     runtime = scoring.ModelRuntime(DEMO_ARTEFACT_DIR)
 
-    _fill(factory, runtime, rng, admissions, summary, say)
+    sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
+    _fill(factory, runtime, rng, admissions, summary, say, sampler)
 
     with factory() as db:
         try:
@@ -320,6 +341,7 @@ def _fill(
     n: int,
     summary: Summary,
     say: Callable[[str], Any],
+    sampler: generate.DetailSampler | None = None,
 ) -> None:
     now = utcnow()
     times = sorted(now - timedelta(days=rng.uniform(1.6, 90)) for _ in range(max(n - 12, 0)))
@@ -341,7 +363,9 @@ def _fill(
         for i, at in enumerate(times):
             fi = rng.choices(range(len(facilities)), weights=generate.FACILITY_WEIGHTS)[0]
             facility, user = facilities[fi], clinicians[facilities[fi].id]
-            parsed = generate.make_parsed(rng, at, fi)
+            parsed = generate.make_parsed(
+                rng, at, fi, sampler, low_anc=at >= now - timedelta(days=generate.SHIFT_DAYS)
+            )
             if i in flawed:
                 parsed = generate.make_flawed(rng, parsed)
             saved = save_admission(db, runtime, user, parsed)

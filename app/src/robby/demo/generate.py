@@ -3,55 +3,105 @@ and exists nowhere else in the application."""
 
 from __future__ import annotations
 
+import json
+import math
 import random
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
+from typing import Any
 
 from robby.clinical.form import Parsed
 
-FACILITY_WEIGHTS = (0.34, 0.26, 0.22, 0.18)
+# Roughly the facility mix of the training data (the model keys are sorted by name).
+FACILITY_WEIGHTS = (0.235, 0.096, 0.326, 0.343)
 # Demo-only offsets added to the model probability when sampling outcomes.
 FACILITY_OFFSETS = (0.0, 0.08, -0.03, 0.02)
 FALLBACK_CS_RATE = 0.28  # outcome probability when no prediction exists (demo only)
 
-_EDUCATION = (
-    "Complete Primary school",
-    "Completed secondary school",
-    "Did not complete primary school",
-    "University education or more",
-)
-_INSURANCE = ("Mutuel", "Mutuel", "Mutuel", "RSSB", "None", "Others")
+DETAILS_GIVEN = 0.985  # share of admissions with the optional details filled in (see README)
+SHIFT_DAYS = 35  # the demo story: antenatal visits drop in the most recent weeks
+SHIFT_FIELD = "anc_contacts"
+# Inputs the admission form asks for elsewhere or derives (not "other details").
+_NOT_DETAILS = frozenset(
+    {
+        "gestational_age_weeks", "ga_band_lower", "ga_band_upper", "parity", "previous_cs_count",
+        "plurality", "fetal_presentation", "maternal_age", "onset_of_labour", "facility_id",
+    }
+)  # fmt: skip
 
 
 def _pick(rng: random.Random, options: tuple[object, ...], weights: tuple[float, ...]) -> object:
     return rng.choices(options, weights=weights)[0]
 
 
-def _details(rng: random.Random, parity: int) -> dict[str, int | float | str]:
-    if rng.random() > 0.55:
-        return {}
-    out: dict[str, int | float | str] = {
-        "height_cm": round(rng.gauss(160, 6)),
-        "weight_kg": round(rng.gauss(66, 9)),
-        "residency": rng.choice(("Rural", "Urban")),
-        "anc_contacts": rng.choices((1, 2, 3, 4), weights=(0.05, 0.1, 0.25, 0.6))[0],
-    }
-    out["height_cm"] = min(max(int(out["height_cm"]), 135), 190)
-    out["weight_kg"] = min(max(int(out["weight_kg"]), 42), 130)
-    if rng.random() < 0.7:
-        out["insurance_type"] = rng.choice(_INSURANCE)
-    if rng.random() < 0.5:
-        out["education_level"] = rng.choice(_EDUCATION)
-    if rng.random() < 0.3:
-        out["hiv_positive"] = "Yes" if rng.random() < 0.04 else "No"
-    if rng.random() < 0.3:
-        out["gravidity"] = parity + 1 + (1 if rng.random() < 0.12 else 0)
-    return out
+class DetailSampler:
+    """Draws the optional details from the marginal distributions stored with the model
+    (feature_schema.json and reference_distributions.json), so the demo looks like its
+    training population. Spellings and levels are the trained ones."""
+
+    def __init__(self, model_dir: Path) -> None:
+        schema = json.loads((model_dir / "feature_schema.json").read_text(encoding="utf-8"))
+        reference = json.loads(
+            (model_dir / "reference_distributions.json").read_text(encoding="utf-8")
+        )["features"]
+        self.fields: list[tuple[dict[str, Any], dict[str, Any]]] = [
+            (item, reference[item["name"]])
+            for item in schema.get("inputs", [])
+            if item["name"] not in _NOT_DETAILS and item["name"] in reference
+        ]
+
+    def sample(self, rng: random.Random, *, low_anc: bool = False) -> dict[str, int | float | str]:
+        out: dict[str, int | float | str] = {}
+        for item, entry in self.fields:
+            name = item["name"]
+            if low_anc and name == SHIFT_FIELD:
+                out[name] = rng.choices((1, 2, 3, 4), weights=(0.1, 0.15, 0.2, 0.55))[0]
+                continue
+            buckets = entry["buckets"]
+            bucket = rng.choices(buckets, weights=[b["proportion"] for b in buckets])[0]
+            members = [m for m in bucket["members"] if m != "missing"]
+            if not members:
+                continue  # not recorded, as in the training data
+            member = members[0]
+            if member.startswith("level:"):
+                out[name] = member.removeprefix("level:")
+            else:
+                out[name] = self._number(rng, item, entry["edges"], int(member.removeprefix("bin:")))
+        return out
+
+    @staticmethod
+    def _number(
+        rng: random.Random, item: dict[str, Any], edges: list[float], index: int
+    ) -> int | float:
+        """A value that falls in bin `index` (bins are right-closed: edge[i-1] < v <= edge[i])."""
+        lo, hi = item.get("range") or (None, None)
+        step = (edges[1] - edges[0]) if len(edges) > 1 else 1.0
+        low = edges[index - 1] if index > 0 else edges[0] - 2 * step
+        high = edges[index] if index < len(edges) else edges[-1] + 2 * step
+        if lo is not None:
+            low = max(low, lo)
+        if hi is not None:
+            high = min(high, hi)
+        whole = all(float(e).is_integer() for e in edges)
+        if item["kind"] == "integer" or whole:
+            first = int(math.ceil(low)) if index == 0 else int(math.floor(low)) + 1
+            last = max(int(math.floor(high)), first)
+            return rng.randint(first, last)
+        value = round(rng.uniform(low, high), 1)
+        return min(max(value, round(low + 0.1, 1)), high)
 
 
-def make_parsed(rng: random.Random, admitted_at: datetime, facility_index: int) -> Parsed:
-    """One plausible, complete admission."""
+def make_parsed(
+    rng: random.Random,
+    admitted_at: datetime,
+    facility_index: int,
+    sampler: DetailSampler | None = None,
+    *,
+    low_anc: bool = False,
+) -> Parsed:
+    """One plausible, complete admission. With a sampler, ~90% have the optional details."""
     parity = _pick(rng, (0, 1, 2, 3, 4, 5), (0.38, 0.24, 0.17, 0.11, 0.06, 0.04))
     assert isinstance(parity, int)
     base_age = 23.5 if parity == 0 else 25 + 2.2 * parity
@@ -79,6 +129,12 @@ def make_parsed(rng: random.Random, admitted_at: datetime, facility_index: int) 
     else:
         onset = "spontaneous"
 
+    details: dict[str, int | float | str] = {}
+    if sampler is not None and rng.random() < DETAILS_GIVEN:
+        details = sampler.sample(rng, low_anc=low_anc)
+        if "gravidity" in details:  # consistent with parity: at least one pregnancy per birth
+            details["gravidity"] = parity + 1 + (1 if rng.random() < 0.1 else 0)
+
     hypertensive = rng.random() < 0.10
     if hypertensive:
         sys_bp, dia_bp = rng.randint(140, 175), rng.randint(90, 112)
@@ -105,7 +161,7 @@ def make_parsed(rng: random.Random, admitted_at: datetime, facility_index: int) 
         diastolic=dia_bp,
         proteinuria=protein,
         glucose=glucose,
-        details=_details(rng, parity),
+        details=details,
     )
     # Screening not done, with the reason the form asks for.
     if rng.random() < 0.06:

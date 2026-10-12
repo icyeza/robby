@@ -147,7 +147,8 @@ def active_model(db: Session) -> ModelVersion | None:
 
 
 def _frame(db: Session, model: ModelVersion, since: datetime) -> pd.DataFrame:
-    """Active-mode predictions of the model on current (not superseded) admissions."""
+    """Active-mode predictions of the model on current (not superseded) admissions, dated by the
+    admission time (not by when the prediction row was written)."""
     newer = aliased(Admission)
     group = (
         select(Classification.robson_group)
@@ -158,7 +159,7 @@ def _frame(db: Session, model: ModelVersion, since: datetime) -> pd.DataFrame:
     )
     rows = db.execute(
         select(
-            Prediction.created_at.label("scored_at"),
+            Admission.admitted_at.label("scored_at"),
             Prediction.probability,
             Prediction.feature_vector,
             Facility.code.label("facility"),
@@ -172,7 +173,7 @@ def _frame(db: Session, model: ModelVersion, since: datetime) -> pd.DataFrame:
         .where(
             Prediction.model_id == model.id,
             Prediction.mode == PredictionMode.ACTIVE,
-            Prediction.created_at >= since,
+            Admission.admitted_at >= since,
             ~exists().where(newer.supersedes_id == Admission.id),
         )
     ).all()
@@ -252,7 +253,7 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
                 Alert(
                     f"outcomes:{code}:{bucket}",
                     f"{part['facility_name'].iloc[0]}: outcomes recorded for {_pct(share)} of "
-                    f"admissions scored 3 or more days ago (limit {_pct(OUTCOME_LIMIT)}).",
+                    f"admissions made 3 or more days ago (limit {_pct(OUTCOME_LIMIT)}).",
                     since,
                 )
             )
@@ -369,7 +370,7 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
             f"{recorded:,}",
             "No admissions old enough yet"
             if fraction is None
-            else f"{_pct(fraction)} of those scored 3+ days ago",
+            else f"{_pct(fraction)} of those admitted 3+ days ago",
         ),
         citl_tile,
         Tile(
