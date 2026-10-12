@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
     "robson-engine",
+    "robson-serving",
     "sqlalchemy>=2.0",
     "typer>=0.27.3",
     "tzdata>=2026.5",
@@ -52,7 +53,7 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 packages = ["robby"]
-mypy_path = "src,../ML/packages/robson_engine/src"
+mypy_path = "src,../ML/packages/robson_engine/src,../ML/packages/robson_serving/src"
 disallow_untyped_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
@@ -68,6 +69,7 @@ addopts = "-q --strict-markers --import-mode=importlib"
 
 [tool.uv.sources]
 robson-engine = { path = "../ML/packages/robson_engine", editable = true }
+robson-serving = { path = "../ML/packages/robson_serving", editable = true }
 
 [dependency-groups]
 dev = [

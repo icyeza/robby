@@ -3,9 +3,10 @@
 The web application of the Robson Readiness system: Robson classification at admission and a
 readiness signal for maternity teams. Server-rendered FastAPI + Jinja2 + htmx over PostgreSQL 16.
 
-This folder is its own uv project. It depends on `../ML/packages/robson_engine` (path
-dependency; the serving package `robson_serving` is added to the dependencies in a later step of
-this sub-project) and never on the ML training code (`robson_ml`).
+This folder is its own uv project. It depends on `../ML/packages/robson_engine` and
+`../ML/packages/robson_serving` (editable path dependencies; the app declares both itself) and
+never on the ML training code (`robson_ml`) or its stack. `tests/test_serving_contract.py` loads a
+synthetic packaged artefact and runs the golden check.
 
 ## What is here (sub-project 1)
 
