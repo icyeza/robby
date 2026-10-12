@@ -37,6 +37,7 @@ Environment variables win over the file.
 | `ROBBY_RULE_SET_PATH` | rule set shipped in `robson_engine` | Robson rule set YAML for `robby-admin rules load` |
 | `ROBBY_ARTEFACT_DIR` | `artefacts` | Where registered model artefacts live (used from sub-project 2) |
 | `ROBBY_DEMO` | `false` | Shows the example-data banner (demo database only) |
+| `ROBBY_RECONCILE_INTERVAL_MINUTES` | `15` | How often the app reconciles predictions with recorded outcomes in the background; `0` turns the in-app job off |
 | `ROBBY_TEST_DATABASE_URL` | (tests only) | Server for the test suite; the database name is a prefix |
 
 ## Development on Windows (Git Bash)
@@ -118,8 +119,30 @@ The production role does not need `CREATEDB`.
 | `uv run robby-admin create-system-admin --username NAME` | Creates a system administrator (the first account); asks for the password twice (at least 10 characters). `--password` skips the prompt, but then the password is visible in the shell history |
 | `uv run robby-admin db upgrade [REVISION]` | `alembic upgrade` (default `head`) against `ROBBY_DATABASE_URL` |
 | `uv run robby-admin rules load [--path FILE]` | Validates a rule set YAML (structure and checksum) and makes it the active rule set; refuses changed content under an existing version label |
+| `uv run robby-admin reconcile` | Joins every prediction to the outcome of its admission (following corrections) in `reconciled_outcome`; safe to repeat; logs one `reconciliation.run` event with counts |
 | `uv run robby-admin events verify` | Recomputes the event-log hash chain; exit code 1 if it is broken |
 | `uv run alembic revision -m "..."` | New migration (hand-written; see `migrations/versions/0001_initial.py`) |
+
+## Reconciliation and monitoring
+
+Monitoring (`/monitoring`) and the calibration figures need each prediction joined to the outcome of
+its admission. Two ways to run that job; use one:
+
+- **In the app (default).** Each Uvicorn process starts a background task that reconciles every
+  `ROBBY_RECONCILE_INTERVAL_MINUTES` (15). A PostgreSQL advisory lock means several workers never
+  run it at once; a failure is logged and the app carries on. Quiet runs write no event.
+- **systemd timer.** Set `ROBBY_RECONCILE_INTERVAL_MINUTES=0` and run `robby-admin reconcile` from
+  a timer (for example every 15 minutes).
+
+Alerts are computed when the page is opened (no alerts table): calibration drift per facility over
+28 days (mean predicted against observed differs by more than 5 points, with at least 50 outcomes
+and 10 of each kind), input drift (PSI above 0.20 against the active model's
+`reference_distributions.json`, from at least 50 recently scored admissions), and a facility with
+outcomes recorded for under 70% of admissions scored 3 or more days ago (at least 20 such
+admissions). "Acknowledge" writes a `monitoring.alert_acknowledged` event; the alert key contains
+the ISO week, so an acknowledged alert that is still present reappears the next week. The
+readiness board (`/readiness`, clinicians and facility administrators) shows a unit-level expected
+cesarean count for the facility's admissions of the last 24 hours without an outcome.
 
 ## Demo mode
 

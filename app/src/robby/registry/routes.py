@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.errors import FormErrors, NotAllowed, NotFound
 from robby.models import AppUser, ModelState, ModelTransition, ModelVersion, Role
+from robby.monitoring import service as monitoring
 from robby.registry.evidence import build_evidence, calibration_svg
 from robby.registry.transitions import RULES, actions_for, apply_transition
 from robby.web.csrf import CsrfChecked
@@ -164,7 +165,15 @@ def models_page(request: Request, db: DbDep, current: Custodian) -> Response:
         }
         for m in rows
     ]
-    return render(request, "models/list.html", current=current, rows=display)
+    try:
+        open_alerts = monitoring.build(
+            db, artefact_dir=request.app.state.settings.artefact_dir
+        ).open_alerts
+    except Exception:  # the models page must not depend on monitoring
+        open_alerts = 0
+    return render(
+        request, "models/list.html", current=current, rows=display, open_alerts=open_alerts
+    )
 
 
 def _detail(

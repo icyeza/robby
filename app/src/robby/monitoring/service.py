@@ -43,6 +43,7 @@ DRIFT_MIN = stats.MIN_N
 DRIFT_LIMIT = stats.PSI_THRESHOLD
 DRIFT_AXIS = 0.4
 DRIFT_SHOWN = 10
+DRIFT_ALERTS_EACH = 3  # more flagged inputs than this are raised as one summary alert
 MINUS = "−"  # noqa: RUF001
 
 FEATURE_LABELS = {
@@ -315,31 +316,44 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
             f"days; at least {DRIFT_MIN} are needed to compare inputs with the training data."
         )
     else:
-        table = stats.feature_drift(pd.DataFrame(list(frame["features"])), reference)
+        features = pd.DataFrame(list(frame["features"]))
+        # an input never recorded in the recent window is not collected here: not a shift
+        features = features.loc[:, features.notna().any(axis=0)]
+        table = stats.feature_drift(features, reference)
         table = table[table["n"] > 0].sort_values("psi", ascending=False)
         result.drift_total = len(table)
         result.drift_flagged = int(table["flagged"].sum())
-        for r in table.itertuples():
-            psi = float(r.psi)
-            if r.flagged:
+        flagged = table[table["flagged"]]
+        if 0 < len(flagged) <= DRIFT_ALERTS_EACH:
+            for r in flagged.itertuples():
                 alerts.append(
                     Alert(
                         f"drift:{r.feature}:{bucket}",
                         f"Input drift: {feature_label(r.feature).lower()} distribution has "
-                        f"shifted (PSI {psi:.2f}, limit {DRIFT_LIMIT:.2f}).",
+                        f"shifted (PSI {float(r.psi):.2f}, limit {DRIFT_LIMIT:.2f}).",
                         since,
                     )
                 )
-            if len(result.drift) < max(DRIFT_SHOWN, result.drift_flagged):
-                result.drift.append(
-                    DriftRow(
-                        r.feature,
-                        feature_label(r.feature),
-                        psi,
-                        min(100, round(psi / DRIFT_AXIS * 100)),
-                        bool(r.flagged),
-                    )
+        elif len(flagged) > DRIFT_ALERTS_EACH:
+            top = ", ".join(feature_label(f).lower() for f in flagged["feature"].head(3))
+            alerts.append(
+                Alert(
+                    f"drift:summary:{bucket}",
+                    f"Input drift: {len(flagged)} inputs have shifted past the limit "
+                    f"{DRIFT_LIMIT:.2f} (largest: {top}). See the table below.",
+                    since,
                 )
+            )
+        for r in table.head(max(DRIFT_SHOWN, result.drift_flagged)).itertuples():
+            result.drift.append(
+                DriftRow(
+                    r.feature,
+                    feature_label(r.feature),
+                    float(r.psi),
+                    min(100, round(float(r.psi) / DRIFT_AXIS * 100)),
+                    bool(r.flagged),
+                )
+            )
 
     acked = _acknowledgements(db, [a.key for a in alerts])
     for a in alerts:

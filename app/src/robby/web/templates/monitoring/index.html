@@ -46,7 +46,7 @@
     {% endfor %}
     </tbody>
   </table>
-  <div class="tc-foot">PSI (population stability index) compares the spread of an input over the last 30 days with the data the model was trained on. Higher means a bigger shift. Showing the {{ m.drift | length }} largest of {{ m.drift_total }} inputs checked; {{ m.drift_flagged }} above the limit.</div>
+  <div class="tc-foot">PSI (population stability index) compares the spread of an input over the last 30 days with the data the model was trained on. Higher means a bigger shift. Showing the {{ m.drift | length }} largest of {{ m.drift_total }} inputs checked; {{ m.drift_flagged }} above the limit. Inputs not recorded at all in this period are left out.</div>
   {% else %}
   <div class="empty">{{ m.drift_note or "No data yet." }}</div>
   {% endif %}

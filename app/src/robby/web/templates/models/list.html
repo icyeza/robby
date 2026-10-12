@@ -3,6 +3,8 @@
 {% block content %}
 <h1>Models</h1>
 <p class="lede">Every registered version and its state. Only one version is active at a time; a shadow version scores admissions in the background without being shown.</p>
+{% if open_alerts %}<div class="notice warn">⚠ {{ open_alerts }} open alert{{ '' if open_alerts == 1 else 's' }} — <a href="/monitoring">review</a></div>
+{% endif %}
 <section class="tablecard">
   <table>
     <thead><tr><th>Version</th><th>State</th><th>Algorithm</th><th>Trained on</th><th>Calibration</th><th>Beats Robson baseline</th><th>Registered</th><th></th></tr></thead>
