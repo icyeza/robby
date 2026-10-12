@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Monitoring{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/report.css">
+<link rel="stylesheet" href="/static/monitoring.css">
+<h1>Monitoring{% if m.model %} · {{ m.model.version_label }} active{% endif %}</h1>
+<p class="lede">How the active model is doing on recent admissions with recorded outcomes. Alerts appear when performance or inputs move past set limits.</p>
+
+{% if not m.model %}
+<div class="notice warn">⚠ There is no active model, so there is nothing to monitor yet.</div>
+{% endif %}
+
+<div class="tiles">
+  {% for t in m.tiles %}
+  <div class="tile"><div class="k">{{ t.k }}</div><div class="v">{{ t.v }}</div><div class="s">{% if t.warn %}⚠ {% endif %}{{ t.s }}</div></div>
+  {% endfor %}
+</div>
+
+<h2 class="sect">Alerts</h2>
+{% for a in m.alerts %}
+  {% if a.acknowledged %}
+  <div class="alert resolved"><span aria-hidden="true">✓</span><div class="a-t">{{ a.text }}<div class="a-d">Acknowledged{% if a.acknowledged_by %} by {{ a.acknowledged_by }}{% endif %} on {{ a.acknowledged_on | local_dt }}. It is raised again next week if it is still present.</div></div></div>
+  {% else %}
+  <div class="alert"><span aria-hidden="true">⚠</span><div class="a-t">{{ a.text }}<div class="a-d">Week of {{ a.since.strftime("%d %b %Y") }}</div></div>
+    <form method="post" action="/monitoring/alerts/acknowledge">{{ ui.csrf_input() }}<input type="hidden" name="key" value="{{ a.key }}"><button class="btn btn-s btn-sm" type="submit">Acknowledge</button></form></div>
+  {% endif %}
+{% else %}
+  <div class="alert resolved"><span aria-hidden="true">✓</span><div class="a-t">{% if m.model %}No alerts at the moment.{% else %}Alerts start once a model is active.{% endif %}</div></div>
+{% endfor %}
+<div class="gap"></div>
+
+<section class="tablecard">
+  <div class="tc-h">
+    <h2>Input drift (PSI, last 30 days vs training)</h2>
+    <div class="lg"><span><i class="sw"></i>PSI</span><span><i class="tk"></i>Limit 0.20</span></div>
+  </div>
+  {% if m.drift %}
+  <table class="wide">
+    <thead><tr><th>Input</th><th>PSI (axis 0–0.4)</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in m.drift %}
+      <tr><td><b>{{ r.label }}</b></td>
+        <td><div class="cell"><div class="bar" title="PSI: {{ '%.2f' % r.psi }}; limit: 0.20"><div class="fill w{{ r.width }}"></div><div class="ref t50"></div></div><span class="num">{{ '%.2f' % r.psi }}</span></div></td>
+        <td>{% if r.flagged %}<span class="chip warn">⚠ Above limit</span>{% else %}Within limit{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">PSI (population stability index) compares the spread of an input over the last 30 days with the data the model was trained on. Higher means a bigger shift. Showing the {{ m.drift | length }} largest of {{ m.drift_total }} inputs checked; {{ m.drift_flagged }} above the limit.</div>
+  {% else %}
+  <div class="empty">{{ m.drift_note or "No data yet." }}</div>
+  {% endif %}
+</section>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Calibration by facility (last 28 days)</h2></div>
+  {% if m.facilities %}
+  <table>
+    <thead><tr><th>Facility</th><th class="r">Admissions with outcome</th><th class="r">Observed</th><th class="r">Mean predicted</th><th class="r">Difference</th></tr></thead>
+    <tbody>
+    {% for f in m.facilities %}
+      <tr><td><b>{{ f.name }}</b></td><td class="r num">{{ f.n }}</td>
+        {% if f.n %}
+        <td class="r num">{{ '%.0f' % (f.observed * 100) }}%</td><td class="r num">{{ '%.0f' % (f.predicted * 100) }}%</td>
+        <td class="r num">{% if f.diff_pts > 0 %}+{% elif f.diff_pts < 0 %}−{% endif %}{{ f.diff_pts | abs }} pts {% if f.flagged %}<span class="chip warn">⚠</span>{% elif not f.enough %}<span class="chip">Too few to judge</span>{% endif %}</td>
+        {% else %}<td class="r muted" colspan="3">Not enough data</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">Not enough data yet: no admissions with a recorded outcome in the last 28 days.</div>
+  {% endif %}
+  <div class="tc-foot">Observed: share of these admissions that ended in a cesarean. Mean predicted: the model's average predicted probability for the same admissions. Difference in percentage points. A facility is judged only with at least 50 outcomes and 10 of each kind. Outcomes count once they are reconciled with their predictions (every few minutes).</div>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+/* Monitoring and readiness board. No inline styles (Content-Security-Policy). */
+h2.sect{font-size:19px;margin:0 0 10px}
+.gap{margin-bottom:20px}
+.alert form{margin:0}
+.empty{padding:18px 22px;color:var(--ink-3);font-size:14px}
+.tiles.tiles-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.lead-line{font-size:16px;margin:0 0 20px;color:var(--ink-2)}
+.lead-line b{color:var(--ink)}
+tr.total td{border-top:2px solid var(--line)}
+@media (max-width:720px){.tiles.tiles-3{grid-template-columns:1fr}}

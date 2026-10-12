@@ -69,10 +69,12 @@ def test_navigation_matches_the_mockup_extension() -> None:
         Role.CLINICIAN: [
             ("New admission", "/admissions/new"),
             ("Recent admissions", "/admissions"),
+            ("Readiness board", "/readiness"),
         ],
         Role.FACILITY_ADMIN: [
             ("Audit report", "/audit"),
             ("Unclassified records", "/audit/unclassified"),
+            ("Readiness board", "/readiness"),
             ("Users", "/admin/users"),
         ],
         Role.MODEL_CUSTODIAN: [

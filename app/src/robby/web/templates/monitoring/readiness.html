@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Readiness board{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/monitoring.css">
+<div class="titlebar"><h1>Readiness board</h1><span class="meta">{{ facility.name }} · admitted in the last 24 hours · as of {{ board.now | local_dt_short }}</span></div>
+
+<div class="notice">This is a unit-level planning figure from the readiness model under current practice. It says nothing about any individual woman and is not a recommendation for or against cesarean.</div>
+
+<div class="tiles tiles-3">
+  <div class="tile"><div class="k">Expected cesareans</div>
+    {% if board.included %}<div class="v">about {{ '%.1f' % board.expected }}</div><div class="s">likely {{ board.low }} to {{ board.high }} (90% interval)</div>
+    {% else %}<div class="v">—</div><div class="s">Nothing to count yet</div>{% endif %}</div>
+  <div class="tile"><div class="k">Admissions included</div><div class="v">{{ board.included }}</div><div class="s">No outcome yet, group and estimate available</div></div>
+  <div class="tile"><div class="k">Admissions not included</div><div class="v">{{ board.not_included }}</div><div class="s">{% if board.not_included %}No Robson group yet, or no estimate{% else %}None{% endif %}</div></div>
+</div>
+
+{% if board.included %}
+<p class="lead-line">Expected cesareans among women currently admitted: <b>about {{ '%.1f' % board.expected }}</b> (likely {{ board.low }} to {{ board.high }}), counting {{ board.included }} admission{{ '' if board.included == 1 else 's' }}{% if board.not_included %}; {{ board.not_included }} more {{ 'is' if board.not_included == 1 else 'are' }} not counted{% endif %}.</p>
+{% elif board.awaiting %}
+<p class="lead-line">{{ board.awaiting }} admission{{ '' if board.awaiting == 1 else 's' }} awaiting an outcome, none with a Robson group and estimate yet, so no figure is shown.</p>
+{% else %}
+<p class="lead-line">No admissions in the last 24 hours are awaiting an outcome.</p>
+{% endif %}
+
+<section class="tablecard">
+  <div class="tc-h"><h2>By Robson group</h2></div>
+  {% if board.groups %}
+  <table>
+    <thead><tr><th>Robson group</th><th class="r">Admissions</th><th class="r">Expected cesareans</th></tr></thead>
+    <tbody>
+    {% for g in board.groups %}
+      <tr><td><span class="gnum">{{ g.group }}</span></td><td class="r num">{{ g.n }}</td><td class="r num">{{ '%.1f' % g.expected }}</td></tr>
+    {% endfor %}
+      <tr class="total"><td><b>All groups</b></td><td class="r num"><b>{{ board.included }}</b></td><td class="r num"><b>{{ '%.1f' % board.expected }}</b></td></tr>
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No admissions to show.</div>
+  {% endif %}
+  <div class="tc-foot">Counts admissions to this unit in the last 24 hours that are not replaced by a correction and have no recorded outcome. The interval runs from the 5th to the 95th percentile of the number of cesareans if each estimate is right. No names, codes or individual estimates appear here.</div>
+</section>
+{% endblock %}

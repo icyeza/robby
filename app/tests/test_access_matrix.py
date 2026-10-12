@@ -18,6 +18,8 @@ PAGES: list[tuple[str, frozenset[Role]]] = [
 ]
 PAGES.append(("/models", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/approval-log", frozenset({Role.MODEL_CUSTODIAN})))
+PAGES.append(("/monitoring", frozenset({Role.MODEL_CUSTODIAN})))
+PAGES.append(("/readiness", frozenset({Role.CLINICIAN, Role.FACILITY_ADMIN})))
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
 
@@ -65,11 +67,14 @@ def test_every_role_can_change_its_password(
 def test_placeholder_pages_say_not_available_and_show_no_data(
     client: TestClient, db: Session, settings: Settings
 ) -> None:
+    if not PLACEHOLDER_PAGES:
+        pytest.skip("no placeholder pages left")
     sign_in_client(client, db, settings, make_user(db, role=Role.MODEL_CUSTODIAN))
-    response = client.get("/monitoring")
-    assert "<title>Monitoring · Robson Readiness</title>" in response.text
+    path, title, _role = PLACEHOLDER_PAGES[0]
+    response = client.get(path)
+    assert f"<title>{title} · Robson Readiness</title>" in response.text
     assert "Not available yet" in response.text
-    assert '<a class="on" aria-current="page" href="/monitoring">Monitoring</a>' in response.text
+    assert f'<a class="on" aria-current="page" href="{path}">{title}</a>' in response.text
     assert "<table" not in response.text
 
 

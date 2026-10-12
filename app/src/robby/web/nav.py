@@ -30,10 +30,12 @@ NAV: dict[Role, tuple[NavItem, ...]] = {
     Role.CLINICIAN: (
         NavItem("New admission", "/admissions/new"),
         NavItem("Recent admissions", "/admissions"),
+        NavItem("Readiness board", "/readiness"),
     ),
     Role.FACILITY_ADMIN: (
         NavItem("Audit report", "/audit"),
         NavItem("Unclassified records", "/audit/unclassified"),
+        NavItem("Readiness board", "/readiness"),
         NavItem("Users", "/admin/users"),
     ),
     Role.MODEL_CUSTODIAN: (
