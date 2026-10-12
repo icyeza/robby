@@ -345,6 +345,27 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
                     since,
                 )
             )
+        shifted = table[table["missing_flagged"]]
+        for r in shifted.head(DRIFT_ALERTS_EACH).itertuples():
+            direction = "less" if r.missing_shift < 0 else "more"
+            alerts.append(
+                Alert(
+                    f"missing:{r.feature}:{bucket}",
+                    f"Input recording: {feature_label(r.feature).lower()} is recorded "
+                    f"{direction} often than in the training data "
+                    f"({abs(float(r.missing_shift)) * 100:.0f} points).",
+                    since,
+                )
+            )
+        if len(shifted) > DRIFT_ALERTS_EACH:
+            alerts.append(
+                Alert(
+                    f"missing:summary:{bucket}",
+                    f"Input recording: {len(shifted)} inputs are recorded at a different rate "
+                    "than in the training data.",
+                    since,
+                )
+            )
         for r in table.head(max(DRIFT_SHOWN, result.drift_flagged)).itertuples():
             result.drift.append(
                 DriftRow(

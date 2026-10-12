@@ -59,6 +59,8 @@ class DetailSampler:
             if low_anc and name == SHIFT_FIELD:
                 out[name] = rng.choices((1, 2, 3, 4), weights=(0.1, 0.15, 0.2, 0.55))[0]
                 continue
+            if rng.random() < float(entry.get("missing", 0.0)):
+                continue  # not recorded, as in the training data (format 2)
             buckets = entry["buckets"]
             bucket = rng.choices(buckets, weights=[b["proportion"] for b in buckets])[0]
             members = [m for m in bucket["members"] if m != "missing"]
@@ -68,14 +70,15 @@ class DetailSampler:
             if member.startswith("level:"):
                 out[name] = member.removeprefix("level:")
             else:
-                out[name] = self._number(rng, item, entry["edges"], int(member.removeprefix("bin:")))
+                out[name] = self._number(rng, item, entry, int(member.removeprefix("bin:")))
         return out
 
     @staticmethod
     def _number(
-        rng: random.Random, item: dict[str, Any], edges: list[float], index: int
+        rng: random.Random, item: dict[str, Any], entry: dict[str, Any], index: int
     ) -> int | float:
         """A value that falls in bin `index` (bins are right-closed: edge[i-1] < v <= edge[i])."""
+        edges = entry["edges"]
         lo, hi = item.get("range") or (None, None)
         step = (edges[1] - edges[0]) if len(edges) > 1 else 1.0
         low = edges[index - 1] if index > 0 else edges[0] - 2 * step
@@ -84,7 +87,7 @@ class DetailSampler:
             low = max(low, lo)
         if hi is not None:
             high = min(high, hi)
-        whole = all(float(e).is_integer() for e in edges)
+        whole = bool(entry.get("integer")) or all(float(e).is_integer() for e in edges)
         if item["kind"] == "integer" or whole:
             first = int(math.ceil(low)) if index == 0 else int(math.floor(low)) + 1
             last = max(int(math.floor(high)), first)
