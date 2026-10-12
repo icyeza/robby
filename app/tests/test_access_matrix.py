@@ -63,14 +63,11 @@ def test_every_role_can_change_its_password(
 def test_placeholder_pages_say_not_available_and_show_no_data(
     client: TestClient, db: Session, settings: Settings
 ) -> None:
-    sign_in_client(client, db, settings, make_user(db, role=Role.CLINICIAN))
-    response = client.get("/admissions/new")
-    assert "<title>New admission · Robson Readiness</title>" in response.text
+    sign_in_client(client, db, settings, make_user(db, role=Role.MODEL_CUSTODIAN))
+    response = client.get("/monitoring")
+    assert "<title>Monitoring · Robson Readiness</title>" in response.text
     assert "Not available yet" in response.text
-    assert (
-        '<a class="on" aria-current="page" href="/admissions/new">New admission</a>'
-        in response.text
-    )
+    assert '<a class="on" aria-current="page" href="/monitoring">Monitoring</a>' in response.text
     assert "<table" not in response.text
 
 
