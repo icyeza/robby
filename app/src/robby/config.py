@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     secure_cookies: bool = True
     timezone: str = "Africa/Kigali"
     demo: bool = False
+    reconcile_interval_minutes: int = Field(default=15, ge=0)
 
     @field_validator("database_url")
     @classmethod

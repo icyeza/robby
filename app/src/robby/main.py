@@ -1,5 +1,9 @@
 """FastAPI application factory. Run: uv run uvicorn robby.main:create_app --factory"""
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
@@ -10,6 +14,7 @@ from robby.clinical.routes import router as clinical_router
 from robby.config import Settings, get_settings
 from robby.db import get_sessionmaker
 from robby.facilities.routes import router as facilities_router
+from robby.monitoring.reconcile import reconcile_loop
 from robby.users.routes import router as users_router
 from robby.web.errors import install_error_handlers
 from robby.web.placeholders import build_placeholder_router
@@ -19,7 +24,27 @@ from robby.web.templating import STATIC_DIR, build_templates
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    app = FastAPI(title="Robson Readiness", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        task = None
+        if settings.reconcile_interval_minutes > 0:
+            task = asyncio.create_task(
+                reconcile_loop(app.state.sessionmaker, settings.reconcile_interval_minutes)
+            )
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+
+    app = FastAPI(
+        title="Robson Readiness",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
     app.state.settings = settings
     app.state.templates = build_templates(settings)
     app.state.sessionmaker = get_sessionmaker(settings.database_url)

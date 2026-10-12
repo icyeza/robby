@@ -127,3 +127,17 @@ def events_verify() -> None:
         err=True,
     )
     raise typer.Exit(code=1)
+
+
+@app.command("reconcile")
+def reconcile_command() -> None:
+    """Join predictions to recorded outcomes (reconciled_outcome); safe to run repeatedly."""
+    from robby.monitoring.reconcile import reconcile
+
+    with open_session() as db:
+        counts = reconcile(db)
+        db.commit()
+    typer.echo(
+        f"Reconciled {counts['reconciled']} new predictions; {counts['total']} in total, "
+        f"{counts['awaiting']} awaiting an outcome."
+    )
