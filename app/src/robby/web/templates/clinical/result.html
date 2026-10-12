@@ -21,7 +21,7 @@
     <div class="card-b">
       {% if panel.state == 'resolved' %}
       <div class="rg"><span class="rg-num">{{ panel.group }}</span>{% if panel.subgroup %}<span class="rg-sub">subgroup {{ panel.subgroup }}</span>{% endif %}</div>
-      <p class="rg-name">{{ panel.group_name }}{% if panel.subgroup_name %} ({{ panel.subgroup_name }}){% endif %}</p>
+      <p class="rg-name">{{ panel.group_name }}</p>
       {% else %}
       <div class="unavailable">
         <b>No Robson group assigned</b>
@@ -62,7 +62,7 @@
       <div class="frame"><b>This describes what usually happens here. It is not a judgement of what ought to happen.</b> Use it to plan theatre and staff readiness. It is not a recommendation for or against cesarean.</div>
       <dl class="facts">
         <dt>Model</dt><dd>{{ view.model_label }} · active since {{ view.active_since }}</dd>
-        {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given | join(", ") }} · <a href="/admissions/{{ admission.code }}/correct">Add them</a></dd>{% endif %}
+        {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given[:4] | join(", ") }}{% if view.not_given | length > 4 %} and {{ view.not_given | length - 4 }} more{% endif %} · <a href="/admissions/{{ admission.code }}/correct">Add them</a></dd>{% endif %}
       </dl>
     </div>
   </section>

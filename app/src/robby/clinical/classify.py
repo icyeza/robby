@@ -193,7 +193,7 @@ def panel_view(
         view.rows = _open_rows(entries, inputs, cands) if len(cands) < 10 else []
         if len(cands) >= 10:
             view.state = "empty"
-            view.heading = "Waiting for the Robson fields"
+            view.heading = "No group yet"
         view.need_fields = list(resolving)
         if len(resolving) == 1:
             view.need_title = "One field decides it"
