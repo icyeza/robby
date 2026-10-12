@@ -23,6 +23,7 @@ ML/
 ├── api/                FastAPI service: Robson classification + readiness probability (Swagger UI)
 ├── src/robson_ml/      the ML code the notebooks call (one module per step, see below)
 ├── packages/robson_engine/  the WHO Robson Ten-Group rule engine (its own small package)
+├── packages/robson_serving/ serving runtime: model loader, feature rows, calibration, monitoring
 ├── configs/            settings read by the code (see below)
 ├── tests/              pytest suite, including a synthetic-data copy of the whole pipeline
 └── scripts/            notebook runner and helpers
@@ -40,7 +41,7 @@ is under a data-sharing agreement).
 | Features and leakage audit | `features`, `leakage`, `feature_sets`, `populations` |
 | Models | `models/` (one file per model: baselines B0-B3, logistic, elastic net, CART, random forest, SVM, XGBoost, MLP, FT-Transformer) |
 | Evaluation | `splits`, `evaluate`, `calibration`, `metrics`, `select`, `preregistration`, `tracking` |
-| Interpretation and deployment | `explain`, `deploy` |
+| Interpretation and deployment | `explain`, `deploy`, `package` |
 | Audit analyses (notebook 04) | `casemix`, `missingness`, `cmodel`, `references`, `audit_offline` |
 | Figures, notebook set-up and command line | `figures`, `plots`, `reporting`, `notebook`, `cli` |
 
@@ -88,6 +89,7 @@ uv run robson-ml profile         # data-quality profile
 uv run robson-ml leakage         # leakage screens for the feature registry
 uv run robson-ml run configs/experiments/main_models.yaml   # train + evaluate (logged to MLflow)
 uv run robson-ml fit-deploy configs/deployment.yaml         # fit the deployment model
+uv run robson-ml package artefacts/readiness-v1.0 --out artefacts/packaged/readiness-v1.0  # package it for serving
 ROBSON_NOTEBOOK_MODE=real uv run python scripts/run_notebook.py --mode real \
     --notebook notebooks/02_model_training.ipynb --output reports/notebooks/02.executed.ipynb
 ```

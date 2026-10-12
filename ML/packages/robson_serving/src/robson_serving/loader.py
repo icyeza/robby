@@ -100,7 +100,11 @@ class Scorer:
 
     def score(self, records: Sequence[Mapping[str, Any]] | pd.DataFrame) -> list[float]:
         """Probabilities for canonical admissions (a list of dicts or a DataFrame)."""
-        items = records.to_dict("records") if isinstance(records, pd.DataFrame) else list(records)
+        items: list[Mapping[str, Any]] = (
+            [{str(k): v for k, v in r.items()} for r in records.to_dict("records")]
+            if isinstance(records, pd.DataFrame)
+            else list(records)
+        )
         rows = [self.build_row(item) for item in items]
         return self.predict(self.model_frame(rows))
 

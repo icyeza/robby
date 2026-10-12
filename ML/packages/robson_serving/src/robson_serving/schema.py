@@ -200,6 +200,8 @@ def normalise_admission(admission: Mapping[str, Any], schema: FeatureSchema) -> 
         field.name: _value(field, admission.get(field.name), schema) for field in schema.inputs
     }
     if set(GA_BAND_FIELDS) <= record.keys():
+        lower: Any
+        upper: Any
         lower, upper = (record[name] for name in GA_BAND_FIELDS)
         if (lower is None) != (upper is None):
             raise SchemaError(BAND, "a gestational-age band needs both bounds or neither")

@@ -157,7 +157,7 @@ def feature_drift(
         for key in keys:
             counts[bucket_of.get(key, len(buckets))] += 1
         expected = [float(b["proportion"]) for b in buckets] + [0.0]
-        psi = population_stability_index(expected, counts / len(keys))
+        psi = population_stability_index(expected, [float(c) / len(keys) for c in counts])
         rows.append({"feature": name, "n": len(keys), "psi": psi, "flagged": psi > threshold})
     return pd.DataFrame(rows, columns=list(DRIFT_COLUMNS))
 
