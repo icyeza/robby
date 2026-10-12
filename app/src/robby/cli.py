@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from robby import events
 from robby.audit.cli_references import references_app
 from robby.config import get_settings
+from robby.demo.cli import demo_app
 from robby.db import get_sessionmaker
 from robby.errors import FormErrors
 from robby.migrate import upgrade
@@ -32,6 +33,7 @@ app.add_typer(rules_app, name="rules")
 app.add_typer(events_app, name="events")
 app.add_typer(model_app, name="model")
 app.add_typer(references_app, name="references")
+app.add_typer(demo_app, name="demo")
 
 
 @db_app.callback()

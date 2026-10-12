@@ -121,6 +121,27 @@ The production role does not need `CREATEDB`.
 | `uv run robby-admin events verify` | Recomputes the event-log hash chain; exit code 1 if it is broken |
 | `uv run alembic revision -m "..."` | New migration (hand-written; see `migrations/versions/0001_initial.py`) |
 
+## Demo mode
+
+A complete, synthetic example (4 demo hospitals, ~700 admissions over 90 days, outcomes, corrections,
+audit and national pages) lives in a SEPARATE database named `<your database>_demo` (for example
+`robby_demo`) on the same server. Clinical rows and the event log cannot be deleted, so demo data is
+never mixed into the real database; the commands refuse any database whose name does not end in `_demo`.
+
+```bash
+uv run robby-admin demo load            # create, migrate, fill (about 2 minutes); --admissions, --seed, --force, --database-url
+sh scripts/demo.sh                      # serve it on http://127.0.0.1:8100 with the "Example data" banner
+uv run robby-admin demo purge --yes     # drop the demo database
+```
+
+Everything is created through the real services (classification, the packaged model for predictions,
+events and the hash chain). Outcomes are sampled from the model probability with a per-facility offset.
+Sign in with `clinician.da` ... `clinician.dd`, `admin.da` ... `admin.dd`, `custodian`, `reviewer` or
+`sysadmin`; the password for all demo accounts is `demo-password-123`. The reference table in the demo
+is a labelled placeholder ("DEMO placeholder reference"), not a published source. The model is read from
+`../ML/artefacts/packaged/readiness-v1.0` (override with `--model-dir`); without it, admissions are
+saved without predictions.
+
 ## Tests and checks
 
 The suite needs a running PostgreSQL and a role with `CREATEDB`. Each run creates a throwaway
