@@ -47,7 +47,7 @@
     <tbody>
     {% for r in evidence.groups %}
       <tr><td><span class="gnum">{{ r.level if r.level != "missing" else "?" }}</span></td><td class="r num">{{ r.n }}</td>
-      {% if r.ready %}<td class="r num">{{ "%.0f" | format(r.observed * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.candidate_mean * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.active_mean * 100) }}%</td>{% else %}<td class="r muted" colspan="3">Not enough yet</td>{% endif %}</tr>
+      {% if r.ready %}<td class="r num">{{ "%.0f" | format(r.observed * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.candidate_mean * 100) }}%</td><td class="r num">{{ "%.0f" | format(r.active_mean * 100) }}%</td>{% else %}<td class="muted" colspan="3">Not enough yet</td>{% endif %}</tr>
     {% endfor %}
     </tbody>
   </table>

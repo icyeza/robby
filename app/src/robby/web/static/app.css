@@ -82,3 +82,4 @@ form.inline{display:inline}
 .verify-b{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .verify-ok{color:var(--ok);font-weight:600;margin-top:4px}
 .verify-bad{color:var(--error);font-weight:700;margin-top:4px}
+.card + .tablecard,.tablecard + .card{margin-top:20px}
