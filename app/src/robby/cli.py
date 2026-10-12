@@ -11,10 +11,12 @@ from robson_engine import RuleSetError
 from sqlalchemy.orm import Session
 
 from robby import events
+from robby.audit.cli_references import references_app
 from robby.config import get_settings
 from robby.db import get_sessionmaker
 from robby.errors import FormErrors
 from robby.migrate import upgrade
+from robby.registry.dev_register import model_app
 from robby.models import Role
 from robby.rulesets import RuleSetConflict, load_rule_set_file
 from robby.users.service import create_user
@@ -28,6 +30,8 @@ events_app = typer.Typer(no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(rules_app, name="rules")
 app.add_typer(events_app, name="events")
+app.add_typer(model_app, name="model")
+app.add_typer(references_app, name="references")
 
 
 @db_app.callback()

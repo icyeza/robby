@@ -61,7 +61,9 @@ class Admission(Base):
     admitted_at: Mapped[datetime]
     source: Mapped[AdmissionSource] = mapped_column(pg_enum(AdmissionSource, "admission_source"))
     entered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
-    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admission.id"))
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("admission.id"), index=True
+    )
     correction_reason: Mapped[str | None]
     parity: Mapped[int | None]
     previous_cs_count: Mapped[int | None]
@@ -122,7 +124,9 @@ class Classification(Base):
         ARRAY(Text), default=list, server_default=text("'{}'")
     )
     trace: Mapped[dict[str, Any]]
-    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("classification.id"))
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("classification.id"), index=True
+    )
     created_at: Mapped[CreatedAt]
 
 
@@ -132,7 +136,7 @@ class DeliveryOutcome(Base):
     id: Mapped[UUIDPK]
     admission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admission.id"), unique=True)
     mode: Mapped[DeliveryMode] = mapped_column(pg_enum(DeliveryMode, "delivery_mode"))
-    delivered_at: Mapped[datetime]
+    delivered_at: Mapped[datetime] = mapped_column(index=True)
     recorded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     created_at: Mapped[CreatedAt]
 

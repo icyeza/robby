@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CHAR, CheckConstraint, ForeignKey, Numeric, func
+from sqlalchemy import CHAR, CheckConstraint, ForeignKey, Index, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from robby.models.base import UUIDPK, Base, CreatedAt
@@ -15,6 +15,7 @@ from robby.models.enums import ReferenceKind, pg_enum
 
 class ReferenceSet(Base):
     __tablename__ = "reference_set"
+    __table_args__ = (UniqueConstraint("name", "version_label"),)
 
     id: Mapped[UUIDPK]
     name: Mapped[str]
@@ -50,6 +51,7 @@ class ExportRecord(Base):
     __tablename__ = "export_record"
     __table_args__ = (
         CheckConstraint("EXTRACT(DAY FROM period_month) = 1", name="period_is_month_start"),
+        Index("ix_export_record_facility_id_period_month", "facility_id", "period_month"),
     )
 
     id: Mapped[UUIDPK]
