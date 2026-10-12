@@ -345,9 +345,11 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
                     since,
                 )
             )
-        shifted = table[table["missing_flagged"]]
+        # only a drop in recording is an alert: values recorded more often than in the
+        # training data (e.g. required on the form) are an improvement, not a problem
+        shifted = table[table["missing_flagged"] & (table["missing_shift"] > 0)]
         for r in shifted.head(DRIFT_ALERTS_EACH).itertuples():
-            direction = "less" if r.missing_shift < 0 else "more"
+            direction = "less"
             alerts.append(
                 Alert(
                     f"missing:{r.feature}:{bucket}",

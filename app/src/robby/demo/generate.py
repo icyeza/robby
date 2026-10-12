@@ -107,8 +107,8 @@ def make_parsed(
     """One plausible, complete admission. With a sampler, ~90% have the optional details."""
     parity = _pick(rng, (0, 1, 2, 3, 4, 5), (0.38, 0.24, 0.17, 0.11, 0.06, 0.04))
     assert isinstance(parity, int)
-    base_age = 23.5 if parity == 0 else 25 + 2.2 * parity
-    age = int(min(max(round(rng.gauss(base_age, 4.5)), 15), 45))
+    base_age = 23.5 if parity == 0 else 25 + 3.0 * parity
+    age = int(min(max(round(rng.gauss(base_age, 6.5)), 15), 45))
     previous_cs = 0
     if parity > 0 and rng.random() < 0.13 + (0.03 if facility_index == 1 else 0):
         previous_cs = 1 if rng.random() < 0.8 else min(parity, 2 + (rng.random() < 0.2))
@@ -116,10 +116,10 @@ def make_parsed(
         rng, ("cephalic", "breech", "transverse", "oblique"), (0.95, 0.035, 0.012, 0.003)
     )
     plurality = 2 if rng.random() < 0.025 else 1
-    if rng.random() < 0.12:
+    if rng.random() < 0.05:
         ga = rng.randint(28, 36)
     else:
-        ga_pick = _pick(rng, (37, 38, 39, 40, 41, 42), (0.08, 0.14, 0.28, 0.32, 0.16, 0.02))
+        ga_pick = _pick(rng, (37, 38, 39, 40, 41, 42), (0.06, 0.14, 0.28, 0.38, 0.13, 0.01))
         assert isinstance(ga_pick, int)
         ga = ga_pick
     elective = 0.35 if previous_cs else (0.6 if presentation != "cephalic" else 0.1)
