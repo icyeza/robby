@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 from robby import events
 from robby.audit.cli_references import references_app
 from robby.config import get_settings
-from robby.demo.cli import demo_app
 from robby.db import get_sessionmaker
+from robby.demo.cli import demo_app
 from robby.errors import FormErrors
 from robby.migrate import upgrade
-from robby.registry.dev_register import model_app
 from robby.models import Role
+from robby.registry.dev_register import model_app
 from robby.rulesets import RuleSetConflict, load_rule_set_file
 from robby.users.service import create_user
 
