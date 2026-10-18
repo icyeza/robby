@@ -1,0 +1,182 @@
+---
+title: Robson Readiness application database (migrations 0001-0003)
+---
+erDiagram
+    facility {
+        uuid id PK
+        text name UK
+        text code UK "2-6 capital letters"
+        text district
+        text model_facility_key "facility level the model knows"
+        bool active
+    }
+    app_user {
+        uuid id PK
+        text username UK "lowercase"
+        text password_hash "argon2id"
+        enum role "clinician, facility_admin, model_custodian, national_reviewer, system_admin"
+        uuid facility_id FK "set only for clinician and facility_admin"
+        bool active
+        int failed_logins
+    }
+    user_session {
+        uuid id PK
+        uuid user_id FK
+        char64 token_hash UK "SHA-256 of the cookie token"
+        timestamptz expires_at
+        timestamptz revoked_at
+    }
+    rule_set {
+        uuid id PK
+        text version_label UK
+        char64 checksum
+        jsonb definition
+        bool is_active "at most one true"
+    }
+    admission_counter {
+        uuid facility_id PK, FK
+        int next "next admission code number"
+    }
+    admission {
+        uuid id PK
+        uuid facility_id FK
+        text code UK "e.g. DA-0042"
+        timestamptz admitted_at
+        enum source "form, fhir, import"
+        uuid entered_by FK "required unless source is fhir"
+        uuid supersedes_id FK "set on a correction"
+        text correction_reason "required with supersedes_id"
+        text patient_number "required unless source is fhir"
+        text patient_name "required unless source is fhir"
+        int parity
+        int previous_cs_count
+        int plurality
+        text fetal_presentation
+        numeric gestational_age_weeks
+        text onset_of_labour
+        int maternal_age
+        int systolic_bp
+        int diastolic_bp
+        text proteinuria
+        numeric glucose_mmol
+        jsonb details "optional model inputs"
+    }
+    screening_omission {
+        uuid admission_id PK, FK
+        enum field PK "blood_pressure, proteinuria, glucose"
+        enum reason "why it was not measured"
+    }
+    classification {
+        uuid id PK
+        uuid admission_id FK "unique with rule_set_id"
+        uuid rule_set_id FK
+        enum status "resolved, partial, conflict"
+        int robson_group "1-10, set when resolved"
+        text subgroup
+        int_array candidates
+        jsonb trace "rules checked"
+        uuid supersedes_id FK
+    }
+    model_version {
+        uuid id PK
+        text version_label UK
+        text algorithm
+        text feature_set
+        char64 artefact_hash
+        text artefact_path
+        jsonb manifest
+        enum state "candidate, shadow, active, retired; one active"
+        uuid registered_by FK
+        uuid approved_by FK
+    }
+    model_transition {
+        uuid id PK
+        uuid model_id FK
+        enum from_state
+        enum to_state
+        uuid actor_id FK
+        text reason "not blank"
+        timestamptz at
+    }
+    prediction {
+        uuid id PK
+        uuid admission_id FK "unique with model_id"
+        uuid model_id FK
+        enum mode "active, shadow"
+        numeric probability "0 to 1"
+        jsonb feature_vector "exact row scored"
+        uuid supersedes_id FK
+    }
+    delivery_outcome {
+        uuid id PK
+        uuid admission_id FK, UK
+        enum mode "vaginal_spontaneous, vaginal_assisted, cesarean"
+        timestamptz delivered_at
+        uuid recorded_by FK
+    }
+    reconciled_outcome {
+        uuid id PK
+        uuid prediction_id FK, UK
+        uuid delivery_outcome_id FK
+        bool cesarean
+        timestamptz reconciled_at
+    }
+    reference_set {
+        uuid id PK
+        text name UK "unique with version_label"
+        enum kind "vogel, c_model"
+        text citation
+        text version_label UK
+        uuid loaded_by FK
+    }
+    reference_value {
+        uuid reference_set_id PK, FK
+        int robson_group PK "1-10"
+        numeric group_size_pct
+        numeric cs_rate_pct
+    }
+    event_log {
+        bigint seq PK
+        uuid id UK
+        timestamptz occurred_at
+        uuid actor_id FK "null for the system"
+        text event_type "e.g. admission.created, admissions.imported"
+        text entity_type "polymorphic, no FK"
+        uuid entity_id "polymorphic, no FK"
+        jsonb payload "never a patient name or number"
+        char64 prev_hash
+        char64 hash UK "hash chain"
+    }
+    export_record {
+        uuid id PK
+        uuid facility_id FK
+        date period_month "first day of the month"
+        uuid exported_by FK
+        char64 file_sha256
+    }
+
+    facility |o--o{ app_user : "staff of"
+    app_user ||--o{ user_session : "signs in with"
+    facility ||--o| admission_counter : "numbers codes with"
+    facility ||--o{ admission : "admits"
+    app_user |o--o{ admission : "enters"
+    admission |o--o| admission : "supersedes"
+    admission ||--o{ screening_omission : "has"
+    admission ||--o{ classification : "classified by"
+    rule_set ||--o{ classification : "applied in"
+    classification |o--o| classification : "supersedes"
+    app_user |o--o{ model_version : "registers or approves"
+    model_version ||--o{ model_transition : "moved by"
+    app_user ||--o{ model_transition : "acts in"
+    admission ||--o{ prediction : "scored as"
+    model_version ||--o{ prediction : "produces"
+    prediction |o--o| prediction : "supersedes"
+    admission ||--o| delivery_outcome : "ends in"
+    app_user ||--o{ delivery_outcome : "records"
+    prediction ||--o| reconciled_outcome : "reconciled in"
+    delivery_outcome ||--o{ reconciled_outcome : "matched to"
+    reference_set ||--o{ reference_value : "contains"
+    app_user |o--o{ reference_set : "loads"
+    app_user |o--o{ event_log : "acts in"
+    facility ||--o{ export_record : "exported for"
+    app_user ||--o{ export_record : "exports"
