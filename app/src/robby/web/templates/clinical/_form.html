@@ -50,6 +50,25 @@
     {% endif %}
 
     <section class="sec">
+      <div class="sec-h"><h2>Patient</h2><span class="hint">Shown only to clinicians at this facility</span></div>
+      <div class="sec-b">
+        <div class="row">
+          <div class="f{% if errors.get('patient_number') %} conflict{% endif %}" id="f-patient_number">
+            <label for="i-patient_number">Patient number</label>
+            <input id="i-patient_number" name="patient_number" type="text" value="{{ values.get('patient_number', '') }}" data-required="patient number" autocomplete="off">
+            <div class="help">Hospital patient or file number</div>
+            {% if errors.get('patient_number') %}<div class="msg">{{ errors['patient_number'] }}</div>{% endif %}
+          </div>
+          <div class="f{% if errors.get('patient_name') %} conflict{% endif %}" id="f-patient_name">
+            <label for="i-patient_name">Patient name</label>
+            <input id="i-patient_name" name="patient_name" type="text" value="{{ values.get('patient_name', '') }}" data-required="patient name" autocomplete="off">
+            {% if errors.get('patient_name') %}<div class="msg">{{ errors['patient_name'] }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
       <div class="sec-h"><span class="sec-n">1</span><h2>Admission and Robson fields</h2><span class="hint">Needed for the Robson group</span></div>
       <div class="sec-b">
         <div class="row three">

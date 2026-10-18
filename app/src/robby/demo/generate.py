@@ -32,6 +32,21 @@ _NOT_DETAILS = frozenset(
 )  # fmt: skip
 
 
+# Invented patient names, obviously synthetic (the "Demo-" surnames); no real person is used.
+DEMO_FIRST_NAMES = (
+    "Amani", "Bwiza", "Cyiza", "Dusabe", "Ganza", "Hirwa", "Ineza", "Keza",
+    "Mahoro", "Nziza", "Rukundo", "Shema", "Teta", "Umwiza",
+)  # fmt: skip
+DEMO_SURNAMES = (
+    "Demo-Abera", "Demo-Byiza", "Demo-Gatete", "Demo-Kamana", "Demo-Mugabo",
+    "Demo-Nshuti", "Demo-Rugero", "Demo-Uwera",
+)  # fmt: skip
+
+
+def demo_patient_name(rng: random.Random) -> str:
+    return f"{rng.choice(DEMO_FIRST_NAMES)} {rng.choice(DEMO_SURNAMES)}"
+
+
 def _pick(rng: random.Random, options: tuple[object, ...], weights: tuple[float, ...]) -> object:
     return rng.choices(options, weights=weights)[0]
 
@@ -89,8 +104,8 @@ class DetailSampler:
             high = min(high, hi)
         whole = bool(entry.get("integer")) or all(float(e).is_integer() for e in edges)
         if item["kind"] == "integer" or whole:
-            first = int(math.ceil(low)) if index == 0 else int(math.floor(low)) + 1
-            last = max(int(math.floor(high)), first)
+            first = math.ceil(float(low)) if index == 0 else math.floor(float(low)) + 1
+            last = max(math.floor(float(high)), first)
             return rng.randint(first, last)
         value = round(rng.uniform(low, high), 1)
         return min(max(value, round(low + 0.1, 1)), high)
@@ -102,9 +117,14 @@ def make_parsed(
     facility_index: int,
     sampler: DetailSampler | None = None,
     *,
+    patient_number: str,
+    name_rng: random.Random,
     low_anc: bool = False,
 ) -> Parsed:
-    """One plausible, complete admission. With a sampler, ~90% have the optional details."""
+    """One plausible, complete admission. With a sampler, ~90% have the optional details.
+
+    The name is drawn from its own generator, so adding names left the clinical values (and
+    the demo's drift story) exactly as they were for a given seed."""
     parity = _pick(rng, (0, 1, 2, 3, 4, 5), (0.38, 0.24, 0.17, 0.11, 0.06, 0.04))
     assert isinstance(parity, int)
     base_age = 23.5 if parity == 0 else 25 + 3.0 * parity
@@ -152,6 +172,8 @@ def make_parsed(
     glucose = Decimal(str(round(min(max(rng.gauss(5.0, 0.9), 2.8), 14.0), 1)))
 
     parsed = Parsed(
+        patient_number=patient_number,
+        patient_name=demo_patient_name(name_rng),
         admitted_at=admitted_at,
         maternal_age=age,
         ga_weeks=ga,

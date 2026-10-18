@@ -146,6 +146,8 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
         admitted_at=utcnow(),
         source=AdmissionSource.FORM,
         entered_by=clinician.id,
+        patient_number=f"T-{next(_sequence):04d}",
+        patient_name="Test Patient",
         parity=0,
     )
     omission = ScreeningOmission(

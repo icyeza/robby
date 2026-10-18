@@ -13,7 +13,14 @@ from robby import events
 from robby.config import Settings
 from robby.demo import cli as demo_cli
 from robby.demo import loader
-from robby.models import Admission, AppUser, DeliveryOutcome, Facility, ReferenceSet
+from robby.models import (
+    Admission,
+    AdmissionSource,
+    AppUser,
+    DeliveryOutcome,
+    Facility,
+    ReferenceSet,
+)
 from tests.dbutil import server_url_from_env
 
 runner = CliRunner()
@@ -26,6 +33,22 @@ def demo_url() -> Iterator[URL]:
         yield url
     finally:
         loader.drop_database(url)
+
+
+def assert_demo_patients(db: Session) -> None:
+    """Every form admission has a number and a name; numbers are unique per facility among
+    original rows, and a correction keeps the number of the row it replaces."""
+    rows = list(db.scalars(select(Admission).where(Admission.source == AdmissionSource.FORM)))
+    assert rows
+    assert all(r.patient_number and r.patient_name for r in rows)
+    originals = [(r.facility_id, r.patient_number) for r in rows if r.supersedes_id is None]
+    assert len(originals) == len(set(originals))
+    by_id = {r.id: r for r in rows}
+    corrections = [r for r in rows if r.supersedes_id is not None]
+    assert corrections
+    for r in corrections:
+        assert r.patient_number == by_id[r.supersedes_id].patient_number
+        assert r.patient_name == by_id[r.supersedes_id].patient_name
 
 
 def test_demo_load_refusals_and_purge(
@@ -49,6 +72,7 @@ def test_demo_load_refusals_and_purge(
         reference = db.scalars(select(ReferenceSet)).one()
         assert reference.name == "DEMO placeholder reference"
         assert events.verify(db).ok
+        assert_demo_patients(db)
     engine.dispose()
 
     with pytest.raises(loader.DemoError, match="already has data"):

@@ -108,6 +108,8 @@ def birth(
         entered_by=user.id,
         supersedes_id=supersedes.id if supersedes else None,
         correction_reason="fix" if supersedes else None,
+        patient_number=f"P-{code}",
+        patient_name="Test Patient",
     )
     db.add(adm)
     db.flush()

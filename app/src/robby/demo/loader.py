@@ -184,7 +184,8 @@ def _register_model(url: str, model_dir: Path, actor: str, *, activate: bool = T
 
 def _register_candidate(url: str, model_dir: Path, actor: str) -> str:
     """A copy of the packaged model registered (not activated) as candidate readiness-v1.1, so
-    the Models page always has an Active and a Candidate model for the promote/rollback walkthrough."""
+    the Models page always has an Active and a Candidate model for the promote/rollback
+    walkthrough."""
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / CANDIDATE_LABEL
         shutil.copytree(model_dir, copy)
@@ -311,7 +312,7 @@ def load_demo(
     runtime = scoring.ModelRuntime(DEMO_ARTEFACT_DIR)
 
     sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
-    _fill(factory, runtime, rng, admissions, summary, say, sampler)
+    _fill(factory, runtime, rng, admissions, summary, say, sampler, random.Random(seed + 1))
 
     with factory() as db:
         try:
@@ -342,8 +343,11 @@ def _fill(
     summary: Summary,
     say: Callable[[str], Any],
     sampler: generate.DetailSampler | None = None,
+    name_rng: random.Random | None = None,
 ) -> None:
     now = utcnow()
+    name_rng = name_rng or random.Random()
+    issued: Counter[str] = Counter()  # patient numbers issued per facility
     times = sorted(now - timedelta(days=rng.uniform(1.6, 90)) for _ in range(max(n - 12, 0)))
     times += sorted(now - timedelta(hours=rng.uniform(0.5, 36)) for _ in range(min(12, n)))
     awaiting_from = max(n - 12, 0)
@@ -363,8 +367,15 @@ def _fill(
         for i, at in enumerate(times):
             fi = rng.choices(range(len(facilities)), weights=generate.FACILITY_WEIGHTS)[0]
             facility, user = facilities[fi], clinicians[facilities[fi].id]
+            issued[facility.code] += 1
             parsed = generate.make_parsed(
-                rng, at, fi, sampler, low_anc=at >= now - timedelta(days=generate.SHIFT_DAYS)
+                rng,
+                at,
+                fi,
+                sampler,
+                patient_number=f"{facility.code}-P-{issued[facility.code]:05d}",
+                name_rng=name_rng,
+                low_anc=at >= now - timedelta(days=generate.SHIFT_DAYS),
             )
             if i in flawed:
                 parsed = generate.make_flawed(rng, parsed)

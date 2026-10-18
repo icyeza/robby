@@ -3,6 +3,7 @@ page, degradation without a model, corrections and facility scoping."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ from robby.models import (
     ScreeningOmission,
 )
 from robby.rulesets import load_rule_set_file
-from tests.factories import make_facility, make_model_version, make_user
+from tests.factories import events_of, make_facility, make_model_version, make_user
 from tests.webutil import csrf_for, sign_in_client
 
 
@@ -59,6 +60,8 @@ class StubScorer:
 
 
 GOOD: dict[str, str] = {
+    "patient_number": "ZQ-99",
+    "patient_name": "Zzyzx Testname",
     "admitted_at": "",  # filled with "now" per test
     "maternal_age": "29",
     "gestational_age_weeks": "39",
@@ -238,3 +241,70 @@ def test_outcome_and_facility_scoping(
     assert client.get(f"/admissions/{code}").status_code == 404
     assert client.get(f"/admissions/{code}/outcome").status_code == 404
     assert code not in client.get("/admissions").text
+
+
+def test_patient_identifiers_are_saved_on_the_admission(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    response = post_form(client, world, patient_number=" DA/77-1 ", patient_name="  Uwase   Marie ")
+    assert response.status_code == 303
+    admission = db.scalar(select(Admission))
+    assert admission is not None
+    assert (admission.patient_number, admission.patient_name) == ("DA/77-1", "Uwase Marie")
+
+
+def test_a_missing_patient_number_is_not_saved(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    response = post_form(client, world, patient_number="")
+    assert response.status_code == 400 and "Enter the patient number." in response.text
+    assert db.scalar(select(Admission)) is None
+
+
+def test_a_correction_carries_and_can_change_the_patient_name(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    post_form(client, world)
+    original = db.scalar(select(Admission))
+    assert original is not None
+    page = client.get(f"/admissions/{original.code}/correct")
+    assert 'value="ZQ-99"' in page.text and 'value="Zzyzx Testname"' in page.text
+    done = post_form(
+        client,
+        world,
+        f"/admissions/{original.code}/correct",
+        patient_name="Zzyzx Renamed",
+        correction_reason="Name misspelt",
+    )
+    assert done.status_code == 303
+    db.expire_all()
+    rows = list(db.scalars(select(Admission).order_by(Admission.created_at)))
+    assert [(r.patient_number, r.patient_name) for r in rows] == [
+        ("ZQ-99", "Zzyzx Testname"),
+        ("ZQ-99", "Zzyzx Renamed"),
+    ]
+
+
+def test_identifiers_stay_out_of_events_and_features(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    activate_model(db)
+    post_form(client, world)
+    original = db.scalar(select(Admission))
+    assert original is not None
+    post_form(
+        client,
+        world,
+        f"/admissions/{original.code}/correct",
+        patient_number="ZQ-100",
+        correction_reason="Wrong file number",
+    )
+    payloads = [e.payload for e in events_of(db, "admission.created")]
+    payloads += [e.payload for e in events_of(db, "admission.corrected")]
+    assert len(payloads) == 2
+    for text in (json.dumps(p) for p in payloads):
+        assert "ZQ-99" not in text and "ZQ-100" not in text and "Zzyzx" not in text
+    predictions = list(db.scalars(select(Prediction)))
+    assert predictions
+    for prediction in predictions:
+        assert not any("patient" in key for key in prediction.feature_vector)

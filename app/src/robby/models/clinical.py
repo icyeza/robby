@@ -52,6 +52,11 @@ class Admission(Base):
             name="correction_reason_required",
         ),
         CheckConstraint("source = 'fhir' OR entered_by IS NOT NULL", name="form_entry_has_author"),
+        # Added NOT VALID in migration 0003: rows from before identifiers existed are not checked.
+        CheckConstraint(
+            "source = 'fhir' OR (patient_number IS NOT NULL AND patient_name IS NOT NULL)",
+            name="entry_has_patient",
+        ),
         Index("ix_admission_facility_id_admitted_at", "facility_id", "admitted_at"),
     )
 
@@ -61,10 +66,12 @@ class Admission(Base):
     admitted_at: Mapped[datetime]
     source: Mapped[AdmissionSource] = mapped_column(pg_enum(AdmissionSource, "admission_source"))
     entered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
-    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("admission.id"), index=True
-    )
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admission.id"), index=True)
     correction_reason: Mapped[str | None]
+    # The hospital's patient or file number and the patient's name. Clinicians see both, the
+    # facility administrator the number only; neither enters scoring or the event log.
+    patient_number: Mapped[str | None]
+    patient_name: Mapped[str | None]
     parity: Mapped[int | None]
     previous_cs_count: Mapped[int | None]
     plurality: Mapped[int | None]

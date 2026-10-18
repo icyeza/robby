@@ -99,6 +99,8 @@ def test_a_correction_needs_a_reason(db: Session) -> None:
             entered_by=original.entered_by,
             supersedes_id=original.id,
             correction_reason=None,
+            patient_number=original.patient_number,
+            patient_name=original.patient_name,
         ),
     )
 
@@ -113,8 +115,61 @@ def test_a_form_admission_records_who_entered_it(db: Session) -> None:
             admitted_at=utcnow(),
             source=AdmissionSource.FORM,
             entered_by=None,
+            patient_number="T-0001",
+            patient_name="Test Patient",
         ),
     )
+
+
+def _bare_admission(
+    db: Session,
+    source: AdmissionSource,
+    *,
+    patient_number: str | None = None,
+    patient_name: str | None = None,
+) -> Admission:
+    facility = make_facility(db)
+    author = None if source is AdmissionSource.FHIR else make_user(db, facility=facility).id
+    return Admission(
+        facility_id=facility.id,
+        code=f"{facility.code}-PAT-{uuid.uuid4().hex[:6]}",
+        admitted_at=utcnow(),
+        source=source,
+        entered_by=author,
+        patient_number=patient_number,
+        patient_name=patient_name,
+    )
+
+
+def test_a_form_admission_needs_a_patient_number(db: Session) -> None:
+    admission = _bare_admission(db, AdmissionSource.FORM, patient_name="Test Patient")
+    with pytest.raises(IntegrityError, match="entry_has_patient"), db.begin_nested():
+        db.add(admission)
+        db.flush()
+
+
+def test_an_imported_admission_needs_a_patient_name(db: Session) -> None:
+    admission = _bare_admission(db, AdmissionSource.IMPORT, patient_number="T-0001")
+    with pytest.raises(IntegrityError, match="entry_has_patient"), db.begin_nested():
+        db.add(admission)
+        db.flush()
+
+
+def test_a_fhir_admission_may_have_no_patient_identifiers(db: Session) -> None:
+    admission = _bare_admission(db, AdmissionSource.FHIR)
+    db.add(admission)
+    db.flush()
+    assert admission.patient_number is None
+
+
+def test_patient_identifiers_are_stored_as_given(db: Session) -> None:
+    admission = _bare_admission(
+        db, AdmissionSource.FORM, patient_number="RW/123-4", patient_name="Uwase Marie"
+    )
+    db.add(admission)
+    db.flush()
+    db.expire(admission)
+    assert (admission.patient_number, admission.patient_name) == ("RW/123-4", "Uwase Marie")
 
 
 def test_a_resolved_classification_has_a_group(db: Session) -> None:

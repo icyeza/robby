@@ -17,6 +17,9 @@ from robby.models import Admission, OmissionField, OmissionReason, ScreeningOmis
 INT = re.compile(r"\d{1,3}")
 DECIMAL_1 = re.compile(r"\d{1,3}(\.\d)?")
 NUMBER = re.compile(r"\d{1,4}(\.\d{1,2})?")
+PATIENT_NUMBER = re.compile(r"[A-Za-z0-9/-]{1,32}")
+PATIENT_NUMBER_ERROR = "Patient number must be 1–32 letters, digits, / or -."  # noqa: RUF001
+PATIENT_NAME_MAX = 120
 TIME_FORMATS = ("%d %b %Y, %H:%M", "%d %b %Y %H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M")
 TIME_SHOWN = "%d %b %Y, %H:%M"
 MAX_PAST = timedelta(days=30)
@@ -78,6 +81,10 @@ def detail_specs(schema: Any | None) -> list[DetailSpec]:
 
 @dataclass(frozen=True)
 class Parsed:
+    # Identifiers are compared like any other field, so changing only the name or number counts
+    # as a change when correcting. They are never passed to classification or scoring.
+    patient_number: str | None = None
+    patient_name: str | None = None
     admitted_at: datetime | None = None
     maternal_age: int | None = None
     ga_weeks: int | None = None
@@ -138,6 +145,29 @@ def _choice(
     return text
 
 
+def _patient(
+    values: Mapping[str, str], required: bool, errors: dict[str, str]
+) -> tuple[str | None, str | None]:
+    """The patient number (trimmed, case kept) and name (spaces collapsed)."""
+    number: str | None = _value(values, "patient_number")
+    if not number:
+        number = None
+        if required:
+            errors["patient_number"] = "Enter the patient number."
+    elif not PATIENT_NUMBER.fullmatch(number):
+        number = None
+        errors["patient_number"] = PATIENT_NUMBER_ERROR
+    name: str | None = " ".join(_value(values, "patient_name").split())
+    if not name:
+        name = None
+        if required:
+            errors["patient_name"] = "Enter the patient name."
+    elif len(name) > PATIENT_NAME_MAX:
+        name = None
+        errors["patient_name"] = f"Patient name must be at most {PATIENT_NAME_MAX} characters."
+    return number, name
+
+
 def parse(
     values: Mapping[str, str],
     specs: list[DetailSpec],
@@ -146,9 +176,11 @@ def parse(
     *,
     screening_required: bool = True,
     reason_required: bool = False,
+    patient_required: bool = True,
 ) -> tuple[Parsed, dict[str, str]]:
     """Returns the parsed values (invalid ones as None) and an error per field."""
     errors: dict[str, str] = {}
+    patient_number, patient_name = _patient(values, patient_required, errors)
     admitted_at = None
     text = _value(values, "admitted_at")
     if not text:
@@ -269,6 +301,8 @@ def parse(
             errors["correction_reason"] = "Keep the reason to 500 characters or fewer."
 
     parsed = Parsed(
+        patient_number=patient_number,
+        patient_name=patient_name,
         admitted_at=admitted_at,
         maternal_age=age,
         ga_weeks=ga,
@@ -308,6 +342,8 @@ def values_from_admission(
         return "" if v is None else str(v)
 
     values = {
+        "patient_number": text(admission.patient_number),
+        "patient_name": text(admission.patient_name),
         "admitted_at": admission.admitted_at.astimezone(zone).strftime(TIME_SHOWN),
         "maternal_age": text(admission.maternal_age),
         "gestational_age_weeks": text(int(admission.gestational_age_weeks))

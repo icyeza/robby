@@ -144,7 +144,12 @@ def new_admission(request: Request, db: DbDep, current: Clinician) -> Response:
 async def preview(request: Request, db: DbDep, current: Clinician, _csrf: CsrfChecked) -> Response:
     values = await form_values(request)
     parsed, _ = parse(
-        values, [], request.app.state.settings.zone, utcnow(), screening_required=False
+        values,
+        [],
+        request.app.state.settings.zone,
+        utcnow(),
+        screening_required=False,
+        patient_required=False,
     )
     return render(
         request,

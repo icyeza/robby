@@ -34,6 +34,7 @@ def role_label(role: Role) -> str:
 class AdmissionSource(StrEnum):
     FORM = "form"
     FHIR = "fhir"
+    IMPORT = "import"
 
 
 class OmissionField(StrEnum):

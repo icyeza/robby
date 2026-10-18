@@ -71,8 +71,12 @@ def save_admission(
     parsed: Parsed,
     *,
     supersedes: Admission | None = None,
+    source: AdmissionSource = AdmissionSource.FORM,
 ) -> Saved:
-    """Raises cls.NoRuleSetError when no rule set is active. Does not commit."""
+    """Raises cls.NoRuleSetError when no rule set is active. Does not commit.
+
+    The patient number and name go on the admission row only: never into scoring, the
+    classification trace or the event payload."""
     assert user.facility_id is not None and parsed.admitted_at is not None
     facility = db.get(Facility, user.facility_id)
     assert facility is not None
@@ -84,10 +88,12 @@ def save_admission(
         facility_id=facility.id,
         code=next_admission_code(db, facility),
         admitted_at=parsed.admitted_at,
-        source=AdmissionSource.FORM,
+        source=source,
         entered_by=user.id,
         supersedes_id=supersedes.id if supersedes else None,
         correction_reason=parsed.correction_reason if supersedes else None,
+        patient_number=parsed.patient_number,
+        patient_name=parsed.patient_name,
         parity=parsed.parity,
         previous_cs_count=parsed.previous_cs_count,
         plurality=parsed.plurality,
