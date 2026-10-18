@@ -22,6 +22,8 @@ PAGES.append(("/monitoring", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/readiness", frozenset({Role.CLINICIAN, Role.FACILITY_ADMIN})))
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
+PAGES.append(("/admissions/import", frozenset({Role.CLINICIAN})))
+PAGES.append(("/admissions/import/template.xlsx", frozenset({Role.CLINICIAN})))
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -85,6 +87,7 @@ POST_ACTIONS: list[tuple[str, frozenset[Role]]] = [
     ("/admin/users/{user}/reset-password", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
     ("/admin/users/{user}/deactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
     ("/admin/users/{user}/reactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
+    ("/admissions/import", frozenset({Role.CLINICIAN})),
 ]
 
 

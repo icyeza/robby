@@ -1,9 +1,12 @@
-"""Clinician pages: new admission, live Robson panel, result, recent admissions, outcome and
-correction. The facility always comes from the signed-in user; another facility's code is a 404."""
+"""Clinician pages: new admission, live Robson panel, result, recent admissions, outcome,
+correction and import from Excel. The facility always comes from the signed-in user; another
+facility's code is a 404."""
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -11,10 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
 
 from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.clinical import classify as cls
-from robby.clinical import labels, scoring, service
+from robby.clinical import importer, labels, scoring, service, xlsx_template
 from robby.clinical.form import (
     DetailSpec,
     Parsed,
@@ -245,6 +249,99 @@ def recent(request: Request, db: DbDep, current: Clinician) -> Response:
     return render(
         request, "clinical/recent.html", current=current, rows=service.recent(db, current.user)
     )
+
+
+# ---------------------------------------------------------------- import from Excel
+# Declared before /{code} so "import" is never read as an admission code.
+
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PROBLEMS_SHOWN = 100
+
+
+@dataclass
+class ImportedLine:
+    code: str
+    group: int | None
+    percent: int | None
+
+
+def _import_page(
+    request: Request,
+    current: CurrentUser,
+    *,
+    problems: list[importer.RowProblem] | None = None,
+    saved: list[service.Saved] | None = None,
+    status_code: int = 200,
+) -> Response:
+    lines = [
+        ImportedLine(
+            s.admission.code,
+            s.classification.robson_group,
+            service.percent_of(s.prediction.probability) if s.prediction else None,
+        )
+        for s in saved or []
+    ]
+    problems = problems or []
+    return render(
+        request,
+        "clinical/import.html",
+        current=current,
+        status_code=status_code,
+        problems=problems[:PROBLEMS_SHOWN],
+        more=max(0, len(problems) - PROBLEMS_SHOWN),
+        lines=lines,
+        imported=saved is not None,
+        max_rows=importer.MAX_ROWS,
+    )
+
+
+@router.get("/import")
+def import_page(request: Request, current: Clinician) -> Response:
+    return _import_page(request, current)
+
+
+@router.get("/import/template.xlsx")
+def import_template(request: Request, db: DbDep, current: Clinician) -> Response:
+    return Response(
+        xlsx_template.build_template(_specs(request, db)),
+        media_type=XLSX_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="robby-admissions-template.xlsx"'},
+    )
+
+
+@router.post("/import")
+async def import_upload(
+    request: Request, db: DbDep, current: Clinician, _csrf: CsrfChecked
+) -> Response:
+    form = await request.form()
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        problem = importer.RowProblem(0, "", "Choose a file to upload.")
+        return _import_page(request, current, problems=[problem], status_code=400)
+    data = await upload.read(importer.MAX_BYTES + 1)
+    read = importer.read_upload(
+        data, upload.filename, _specs(request, db), request.app.state.settings.zone, utcnow()
+    )
+    assert current.user.facility_id is not None
+    problems = read.problems or importer.find_duplicates(db, current.user.facility_id, read.rows)
+    if not problems:
+        try:
+            saved = service.import_admissions(
+                db, runtime_of(request), current.user, read.rows, hashlib.sha256(data).hexdigest()
+            )
+            db.commit()
+            return _import_page(request, current, saved=saved)
+        except cls.NoRuleSetError:
+            db.rollback()
+            problems = [
+                importer.RowProblem(
+                    0,
+                    "",
+                    "No Robson rule set is active, so nothing can be saved. "
+                    "Tell your system administrator.",
+                )
+            ]
+    return _import_page(request, current, problems=problems, status_code=400)
 
 
 @router.get("/{code}")

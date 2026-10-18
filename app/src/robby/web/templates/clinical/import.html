@@ -1,0 +1,58 @@
+{% import "partials/_macros.html" as ui with context %}
+{% extends "base.html" %}
+{% block title %}Import from Excel{% endblock %}
+{% block content %}
+<div class="titlebar"><h1>Import admissions from Excel</h1><span class="meta">{{ who.place }}</span></div>
+
+<section class="sec">
+  <div class="sec-b">
+    <ol>
+      <li><a href="/admissions/import/template.xlsx">Download the Excel template</a>. Its drop-down lists hold the same choices as the admission form.</li>
+      <li>Fill in one row per admission (at most {{ max_rows }} rows). Patient number, patient name and admission time are required.</li>
+      <li>Upload the file. Every row is checked like the admission form; if any row has a problem, nothing is imported.</li>
+    </ol>
+    <form method="post" action="/admissions/import" enctype="multipart/form-data">
+      {{ ui.csrf_input() }}
+      <div class="f">
+        <label for="i-file">Excel file (.xlsx)</label>
+        <input id="i-file" type="file" name="file" accept=".xlsx">
+      </div>
+      <div class="actions"><button class="btn btn-p" type="submit">Check and import</button></div>
+    </form>
+  </div>
+</section>
+
+{% if problems %}
+<div class="notice warn" role="alert">⚠ Nothing was imported. Fix these and upload the file again.</div>
+<section class="tablecard">
+  <div class="tc-h"><h2>Problems found</h2></div>
+  <table>
+    <thead><tr><th>Row</th><th>Column</th><th>Problem</th></tr></thead>
+    <tbody>
+    {% for p in problems %}
+      <tr><td>{{ p.row if p.row else '—' }}</td><td>{{ p.column or '—' }}</td><td>{{ p.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if more %}<div class="tc-foot">and {{ more }} more.</div>{% endif %}
+</section>
+{% endif %}
+
+{% if imported %}
+<section class="tablecard">
+  <div class="tc-h"><h2>{{ lines | length }} admission{{ "" if lines | length == 1 else "s" }} imported</h2></div>
+  <table>
+    <thead><tr><th>Code</th><th>Robson group</th><th class="r">Readiness signal</th></tr></thead>
+    <tbody>
+    {% for line in lines %}
+      <tr>
+        <td><a href="/admissions/{{ line.code }}"><b>{{ line.code }}</b></a></td>
+        <td><span class="gnum">{{ line.group or '—' }}</span></td>
+        {% if line.percent is not none %}<td class="r num">{{ line.percent }} in 100</td>{% else %}<td class="r muted">{{ 'no group' if not line.group else 'not available' }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

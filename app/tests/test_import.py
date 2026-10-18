@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from robby.clinical import importer
 from robby.clinical.form import DetailSpec, parse_time
 from robby.clinical.importer import RowProblem, find_duplicates, read_upload
+from robby.clinical.scoring import ModelRuntime
 from robby.clinical.xlsx_template import build_template, columns
-from robby.models import Admission, AdmissionSource
-from tests.factories import make_facility, make_user
+from robby.config import Settings, default_rule_set_path
+from robby.models import Admission, AdmissionSource, Classification, ModelState, Prediction, Role
+from robby.rulesets import load_rule_set_file
+from tests.factories import events_of, make_facility, make_model_version, make_user
+from tests.test_clinical_flow import GOOD, StubScorer, now_text
+from tests.webutil import csrf_for, sign_in_client
 
 SPECS = [
     DetailSpec("height_cm", "Height", "number", "cm", 120, 200, None),
@@ -274,3 +285,117 @@ def test_duplicates_in_the_file_and_in_the_facility(db: Session) -> None:
         RowProblem(3, "Patient number", "Same patient and admission time as row 2."),
         RowProblem(4, "Patient number", f"Already recorded as {stored.code}."),
     ]
+
+
+# ---------------------------------------------------------------- routes
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.fixture
+def clinic(app: FastAPI, client: TestClient, db: Session, settings: Settings) -> dict[str, Any]:
+    load_rule_set_file(db, default_rule_set_path())
+    facility = make_facility(db)
+    user = make_user(db, role=Role.CLINICIAN, facility=facility)
+    row = sign_in_client(client, db, settings, user)
+    make_model_version(db, state=ModelState.ACTIVE)
+    db.commit()
+    app.state.model_runtime = ModelRuntime(
+        Path("unused"), loader=lambda path, rule_set=None: StubScorer()
+    )
+    recent = (datetime.now(settings.zone) - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+    return {"csrf": csrf_for(settings, row), "facility": facility, "admitted": recent}
+
+
+def upload(client: TestClient, clinic: dict[str, Any], data: bytes, **form: str) -> Any:
+    return client.post(
+        "/admissions/import",
+        data={"csrf_token": clinic["csrf"], **form},
+        files={"file": ("admissions.xlsx", data, XLSX)},
+    )
+
+
+def admission_count(db: Session) -> int:
+    return db.scalar(select(func.count()).select_from(Admission)) or 0
+
+
+def test_import_page_and_template_download(client: TestClient, clinic: dict[str, Any]) -> None:
+    page = client.get("/admissions/import")
+    assert page.status_code == 200
+    assert 'href="/admissions/import/template.xlsx"' in page.text
+    assert 'type="file" name="file"' in page.text and 'enctype="multipart/form-data"' in page.text
+    assert '<a class="on" aria-current="page" href="/admissions/import">' in page.text
+    template = client.get("/admissions/import/template.xlsx")
+    assert template.status_code == 200
+    assert template.headers["content-type"] == XLSX
+    assert template.headers["content-disposition"].startswith("attachment;")
+    header = next(load_workbook(BytesIO(template.content))["Admissions"].iter_rows(max_row=1))
+    assert [c.value for c in header][-2:] == ["Height", "HIV positive"]
+
+
+def test_a_valid_upload_saves_every_row(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    rows = [good_row("RW-1", clinic["admitted"]), good_row("RW-2", clinic["admitted"])]
+    response = upload(client, clinic, make_xlsx(HEADER, rows))
+    assert response.status_code == 200
+    assert "2 admissions imported" in response.text
+    saved = list(db.scalars(select(Admission).order_by(Admission.code)))
+    assert [(a.patient_number, a.source) for a in saved] == [
+        ("RW-1", AdmissionSource.IMPORT),
+        ("RW-2", AdmissionSource.IMPORT),
+    ]
+    assert all(f'href="/admissions/{a.code}"' in response.text for a in saved)
+    assert len(list(db.scalars(select(Classification)))) == 2
+    assert len(list(db.scalars(select(Prediction)))) == 2
+    imported = events_of(db, "admissions.imported")
+    assert len(imported) == 1
+    payload = imported[0].payload
+    assert payload["facility"] == clinic["facility"].code and payload["rows"] == 2
+    assert len(payload["file_sha256"]) == 64
+    created = events_of(db, "admission.created")
+    assert [e.payload["source"] for e in created] == ["import", "import"]
+    assert all("RW-" not in json.dumps(e.payload) for e in [*created, *imported])
+
+
+def test_one_bad_row_saves_nothing(client: TestClient, clinic: dict[str, Any], db: Session) -> None:
+    bad = good_row("", clinic["admitted"])
+    response = upload(
+        client, clinic, make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"]), bad])
+    )
+    assert response.status_code == 400
+    assert "Nothing was imported" in response.text
+    assert "Enter the patient number." in response.text and "<td>3</td>" in response.text
+    assert admission_count(db) == 0
+    assert events_of(db, "admissions.imported") == []
+
+
+def test_a_repeated_upload_is_refused_as_duplicates(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    data = make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"])])
+    assert upload(client, clinic, data).status_code == 200
+    again = upload(client, clinic, data)
+    assert again.status_code == 400 and "Already recorded as" in again.text
+    assert admission_count(db) == 1
+
+
+def test_upload_needs_a_file_and_a_csrf_token(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    no_file = client.post("/admissions/import", data={"csrf_token": clinic["csrf"]})
+    assert no_file.status_code == 400 and "Choose a file to upload." in no_file.text
+    data = make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"])])
+    forged = client.post("/admissions/import", files={"file": ("admissions.xlsx", data, XLSX)})
+    assert forged.status_code == 403
+    assert admission_count(db) == 0
+
+
+def test_save_admission_marks_only_imports_in_the_event(
+    client: TestClient, clinic: dict[str, Any], db: Session, settings: Settings
+) -> None:
+    form = {**GOOD, "admitted_at": now_text(settings)}
+    assert (
+        client.post("/admissions", data={**form, "csrf_token": clinic["csrf"]}).status_code == 303
+    )
+    assert "source" not in events_of(db, "admission.created")[0].payload

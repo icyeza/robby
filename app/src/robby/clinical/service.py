@@ -166,6 +166,8 @@ def save_admission(
         "model": model_label,
         "omitted": sorted(f.value for f, _ in omissions_of(parsed)),
     }
+    if source is AdmissionSource.IMPORT:
+        payload["source"] = "import"
     if supersedes is not None:
         payload["supersedes"] = supersedes.code
         payload["reason"] = parsed.correction_reason
@@ -177,6 +179,32 @@ def save_admission(
         payload,
     )
     return Saved(admission, classification, prediction, state)
+
+
+def import_admissions(
+    db: Session,
+    runtime: scoring.ModelRuntime,
+    user: AppUser,
+    rows: list[tuple[int, Parsed]],
+    file_sha256: str,
+) -> list[Saved]:
+    """Save every row of a checked upload, each exactly like a form entry, plus one event for the
+    upload. Raises cls.NoRuleSetError when no rule set is active. Does not commit: the caller
+    commits once, so the file is imported whole or not at all."""
+    saved = [
+        save_admission(db, runtime, user, parsed, source=AdmissionSource.IMPORT)
+        for _, parsed in rows
+    ]
+    facility = db.get(Facility, user.facility_id)
+    assert facility is not None
+    events.append(
+        db,
+        user,
+        "admissions.imported",
+        ("facility", facility.id),
+        {"facility": facility.code, "rows": len(saved), "file_sha256": file_sha256},
+    )
+    return saved
 
 
 def _score_shadows(

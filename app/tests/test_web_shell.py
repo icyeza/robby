@@ -69,6 +69,7 @@ def test_navigation_matches_the_mockup_extension() -> None:
         Role.CLINICIAN: [
             ("New admission", "/admissions/new"),
             ("Recent admissions", "/admissions"),
+            ("Import from Excel", "/admissions/import"),
             ("Readiness board", "/readiness"),
         ],
         Role.FACILITY_ADMIN: [
@@ -104,6 +105,9 @@ def active(role: Role, path: str) -> list[str]:
 def test_the_active_item_is_the_longest_matching_path() -> None:
     assert active(Role.CLINICIAN, "/admissions/new") == ["New admission"]
     assert active(Role.CLINICIAN, "/admissions") == ["Recent admissions"]
+    assert active(Role.CLINICIAN, "/admissions/import") == ["Import from Excel"]
+    assert active(Role.CLINICIAN, "/admissions/import/template.xlsx") == ["Import from Excel"]
+    assert active(Role.CLINICIAN, "/admissions/DA-0001") == ["Recent admissions"]
     assert active(Role.FACILITY_ADMIN, "/audit/unclassified") == ["Unclassified records"]
     assert active(Role.SYSTEM_ADMIN, "/admin/users/123/reset-password") == ["Users"]
     assert active(Role.CLINICIAN, "/account/password") == []
