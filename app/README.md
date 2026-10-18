@@ -229,6 +229,82 @@ How to read it:
 - A partial unique index allows only one `model_version` in state `active` and only one active
   `rule_set`.
 
+## How a prediction is made
+
+Source: [`docs/diagrams/prediction-sequence.mmd`](../docs/diagrams/prediction-sequence.mmd); image:
+[`prediction-sequence.png`](../docs/diagrams/prediction-sequence.png). The code is
+`clinical/routes.py` (`_save_response`), `clinical/service.py` (`save_admission`) and
+`clinical/scoring.py`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Clinician (browser)
+    participant W as Robby web (FastAPI)
+    participant F as Form parser (form.parse)
+    participant R as Robson engine (robson_engine)
+    participant M as Model runtime (robson_serving)
+    participant DB as PostgreSQL
+    participant E as Event log
+
+    C->>W: POST /admissions (form fields, CSRF token)
+    W->>F: parse(values)
+    F-->>W: Parsed admission, or errors
+    alt any error
+        W-->>C: form again with the errors (nothing saved)
+    else valid
+        Note over W,DB: service.save_admission, one transaction
+        W->>DB: read the active rule_set
+        W->>R: classify the six Robson inputs
+        R-->>W: status, group, candidates, trace
+        W->>DB: next code from admission_counter
+        W->>DB: INSERT admission (facility from the session, patient number and name)
+        W->>DB: INSERT screening_omission rows (any not-measured reasons)
+        W->>DB: INSERT classification (rule_set_id, status, group, trace)
+        opt group resolved
+            W->>M: ModelRuntime.active()
+            M->>DB: SELECT the model_version in state active
+            Note over M: artefact loaded once per process from artefact_path,<br/>manifest, hash and feature schema checked on load
+            W->>M: canonical(form values) then score()
+            M-->>W: probability and the exact feature vector
+            W->>DB: INSERT prediction (mode active, probability, feature_vector)
+            W->>M: score with every shadow model
+            W->>DB: INSERT prediction (mode shadow), never shown
+        end
+        Note over W,M: if scoring fails, the admission and classification are still saved
+        W->>E: append admission.created (code, group, model, no identifiers)
+        E->>DB: INSERT event_log (hash chained to the previous entry)
+        W->>DB: COMMIT
+        W-->>C: redirect to /admissions/{code}
+        C->>W: GET /admissions/{code}
+        W->>DB: admission by code, within the user's own facility
+        W-->>C: Robson group, explanation and readiness signal
+    end
+
+    Note over C,E: Excel import: POST /admissions/import validates every row first, then runs<br/>the same save_admission per row (source import) in one transaction,<br/>one commit, plus one admissions.imported event
+
+    C->>W: POST /admissions/{code}/outcome (mode of delivery)
+    W->>DB: INSERT delivery_outcome
+    W->>E: append outcome.recorded
+    W->>DB: COMMIT
+    loop every 15 minutes, or robby-admin reconcile
+        W->>DB: join each prediction to the outcome of its admission chain
+        W->>DB: INSERT reconciled_outcome (cesarean yes or no)
+        W->>E: append reconciliation.run (counts only)
+    end
+    Note over W,DB: /monitoring (model custodian) compares predictions with reconciled outcomes<br/>(calibration by facility) and inputs with the training distributions (drift)
+```
+
+How the data is fetched for a prediction: the model never queries old records. It scores the
+admission at the moment it is saved, from the values the clinician has just entered (or the row of
+the Excel file), mapped onto the model's inputs by `scoring.canonical()`. The prediction row stores
+the exact feature vector that was scored and the `model_version` that scored it, so any prediction
+can be reproduced later. The artefact is loaded once per process and checked against its manifest;
+each save only re-reads which model is active, so promoting a model needs no restart. Past
+predictions are read back by admission code, and only within the signed-in user's own facility.
+Patient name and number are stored on the admission but are not model inputs and never reach the
+feature vector or the event log.
+
 ## Settings
 
 Set as environment variables or in `app/.env` (git-ignored; start from `.env.example`).
