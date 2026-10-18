@@ -15,6 +15,7 @@ import numpy.typing as npt
 import pandas as pd
 import statsmodels.api as sm
 from scipy.stats import rankdata
+from sklearn.metrics import average_precision_score
 
 from robson_serving.stats import clip_probabilities, logit
 
@@ -202,7 +203,8 @@ def evaluate(
 
     Keys: n, n_events, prevalence, auc, auc_ci_low, auc_ci_high, calibration_slope,
     calibration_in_the_large, brier, reliability, resolution, uncertainty, log_loss,
-    accuracy_at_05, and net_benefit (a list of per-threshold records).
+    accuracy_at_05, average_precision (PR-AUC; its no-skill baseline is the prevalence),
+    and net_benefit (a list of per-threshold records).
     """
     y_arr, p_arr = _validate(y, p)
     auc = auc_with_ci(y_arr, p_arr, n_boot=n_boot, seed=seed)
@@ -218,6 +220,7 @@ def evaluate(
         **brier_decomposition(y_arr, p_arr),
         "log_loss": log_loss(y_arr, p_arr),
         "accuracy_at_05": accuracy_at_05(y_arr, p_arr),
+        "average_precision": float(average_precision_score(y_arr, p_arr)),
         "net_benefit": net_benefit(y_arr, p_arr).to_dict(orient="records"),
     }
 

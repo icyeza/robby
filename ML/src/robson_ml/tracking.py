@@ -18,7 +18,7 @@ import numpy as np
 import numpy.typing as npt
 import optuna
 import pandas as pd
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 from robson_ml.metrics import brier_decomposition, log_loss
 from robson_ml.privacy import SECONDARY, SMALL_CELL_THRESHOLD, SUPPRESSED
@@ -40,7 +40,7 @@ def _arrays(
     return y_arr, p_arr
 
 
-def _ratio(num: int, den: int) -> float:
+def _ratio(num: float, den: float) -> float:
     return float(num / den) if den else 0.0
 
 
@@ -179,6 +179,14 @@ def logged_threshold_metrics(y: npt.ArrayLike, p: npt.ArrayLike) -> dict[str, fl
         for name, value in threshold_metrics(y, p, THRESHOLD).items()
         if name != "accuracy"
     }
+
+
+def logged_ranking_metrics(y: npt.ArrayLike, p: npt.ArrayLike) -> dict[str, float]:
+    """Threshold-free ranking metrics of the pooled out-of-fold predictions under their
+    MLflow names: ``pooled_pr_auc`` is the average precision (area under the
+    precision-recall curve), whose no-skill baseline is the prevalence."""
+    y_arr, p_arr = _arrays(y, p)
+    return {"pooled_pr_auc": float(average_precision_score(y_arr, p_arr))}
 
 
 def same_params(tuned: dict[str, Any], logged: dict[str, Any]) -> bool:

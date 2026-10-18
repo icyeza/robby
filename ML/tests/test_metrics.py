@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from scipy.optimize import brentq
+from sklearn.metrics import average_precision_score
 
 from robson_ml.metrics import (
     INSUFFICIENT,
@@ -161,12 +162,20 @@ def test_evaluate_bundles_every_metric() -> None:
         "uncertainty",
         "log_loss",
         "accuracy_at_05",
+        "average_precision",
         "net_benefit",
     ):
         assert key in result
+    assert result["average_precision"] == pytest.approx(average_precision_score(y, p))
     assert result["n"] == 400
     assert len(result["net_benefit"]) == 17
     assert result == evaluate(y, p, seed=1, n_boot=100)
+
+
+def test_evaluate_average_precision_of_a_perfect_ranking_is_one() -> None:
+    y = np.array([0] * 30 + [1] * 10)
+    p = np.linspace(0.01, 0.99, 40)
+    assert evaluate(y, p, seed=0, n_boot=10)["average_precision"] == pytest.approx(1.0)
 
 
 def test_subgroup_metrics_reports_insufficient() -> None:

@@ -9,6 +9,7 @@ import numpy as np
 import optuna
 import pandas as pd
 import pytest
+from sklearn.metrics import average_precision_score
 
 from robson_ml import figures
 from robson_ml.privacy import SECONDARY, SUPPRESSED
@@ -16,6 +17,7 @@ from robson_ml.tracking import (
     best_per_model,
     confusion_counts,
     fold_params_table,
+    logged_ranking_metrics,
     logged_threshold_metrics,
     performance_metrics,
     performance_table,
@@ -72,6 +74,12 @@ def test_logged_names_follow_the_harness_convention() -> None:
         "pooled_specificity_at_05",
         "pooled_f1_at_05",
     }
+
+
+def test_logged_ranking_metrics_is_the_pooled_average_precision() -> None:
+    assert logged_ranking_metrics(Y, P) == {"pooled_pr_auc": average_precision_score(Y, P)}
+    perfect = logged_ranking_metrics(np.array([0, 0, 1, 1]), np.array([0.1, 0.2, 0.8, 0.9]))
+    assert perfect["pooled_pr_auc"] == pytest.approx(1.0)
 
 
 def test_confusion_counts_keep_large_cells_numeric() -> None:

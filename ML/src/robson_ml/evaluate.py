@@ -75,7 +75,7 @@ from robson_ml.splits import (
     recalibration_split,
     temporal_split,
 )
-from robson_ml.tracking import logged_threshold_metrics
+from robson_ml.tracking import logged_ranking_metrics, logged_threshold_metrics
 
 EXPERIMENT_NAME = "robson-readiness"
 SPLITS = ("S1", "S2", "S3", "S4")
@@ -581,7 +581,9 @@ def _log_run(
         run_id = str(run.info.run_id)
         mlflow.log_params(params)
         mlflow.log_metrics(summary)
-        mlflow.log_metrics(logged_threshold_metrics(oof["y"].to_numpy(), oof["p"].to_numpy()))
+        oof_y, oof_p = oof["y"].to_numpy(), oof["p"].to_numpy()
+        mlflow.log_metrics(logged_threshold_metrics(oof_y, oof_p))
+        mlflow.log_metrics(logged_ranking_metrics(oof_y, oof_p))
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             (out / "metrics.json").write_text(
