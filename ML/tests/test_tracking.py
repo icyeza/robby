@@ -23,6 +23,7 @@ from robson_ml.tracking import (
     performance_table,
     same_params,
     threshold_metrics,
+    threshold_table,
     trial_history,
 )
 
@@ -99,6 +100,65 @@ def test_confusion_counts_hide_small_cells_and_their_row_complement() -> None:
     p = np.array([0.9] * 18 + [0.1] * 2 + [0.1] * 20)
     row = confusion_counts(y, p).loc["CS (observed)"].tolist()
     assert row == [SUPPRESSED, SECONDARY]
+
+
+TABLE_COLUMNS = [
+    "threshold",
+    "tp",
+    "fp",
+    "fn",
+    "tn",
+    "precision",
+    "recall",
+    "specificity",
+    "F1",
+    "flagged_pct",
+]
+
+
+def _spread(n: int = 200, seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    p = rng.random(n)
+    return (rng.random(n) < p).astype(int), p
+
+
+def test_threshold_table_has_one_row_per_threshold_matching_threshold_metrics() -> None:
+    y, p = _spread()
+    table = threshold_table(y, p, thresholds=(0.3, 0.5))
+    assert list(table.columns) == TABLE_COLUMNS
+    assert table["threshold"].tolist() == [0.3, 0.5]
+    for _, row in table.iterrows():
+        t = row["threshold"]
+        pred = p >= t
+        assert row["tp"] == np.sum(pred & (y == 1)) and row["fp"] == np.sum(pred & (y == 0))
+        assert row["fn"] == np.sum(~pred & (y == 1)) and row["tn"] == np.sum(~pred & (y == 0))
+        expected = threshold_metrics(y, p, t)
+        for name in ("precision", "recall", "specificity", "F1"):
+            assert row[name] == pytest.approx(expected[name])
+        assert row["flagged_pct"] == pytest.approx(100 * pred.mean())
+
+
+def test_threshold_table_default_thresholds() -> None:
+    y, p = _spread()
+    assert threshold_table(y, p)["threshold"].tolist() == pytest.approx(
+        [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+    )
+
+
+def test_threshold_table_hides_small_counts_and_what_reveals_them() -> None:
+    row = threshold_table(Y, P, thresholds=(0.5,)).iloc[0]  # TP 4, FN 1, FP 2, TN 13
+    assert [row["tp"], row["fn"]] == [SUPPRESSED, SUPPRESSED]
+    assert [row["fp"], row["tn"]] == [SUPPRESSED, SECONDARY]
+    for name in ("precision", "recall", "specificity", "F1", "flagged_pct"):
+        assert row[name] == SECONDARY
+
+    y = np.array([1] * 20 + [0] * 20)
+    p = np.array([0.9] * 18 + [0.1] * 2 + [0.9] * 10 + [0.1] * 10)
+    row = threshold_table(y, p, thresholds=(0.5,)).iloc[0]  # TP 18, FN 2, FP 10, TN 10
+    assert [row["tp"], row["fn"]] == [SECONDARY, SUPPRESSED]
+    assert [row["fp"], row["tn"]] == [10, 10]
+    assert row["specificity"] == pytest.approx(0.5)
+    assert row["recall"] == SECONDARY and row["precision"] == SECONDARY
 
 
 def _runs() -> pd.DataFrame:

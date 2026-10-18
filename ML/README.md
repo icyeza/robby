@@ -98,12 +98,45 @@ ROBSON_NOTEBOOK_MODE=real uv run python scripts/run_notebook.py --mode real \
 
 Every training run is logged to MLflow in `mlruns/`: configuration, tuned hyperparameters per fold,
 calibration choice, and metrics per held-out hospital, averaged and pooled (AUC, calibration, Brier,
-log loss, accuracy, precision, recall, specificity, F1). To browse and compare the runs:
+log loss, PR-AUC, accuracy, precision, recall, specificity, F1). To browse and compare the runs:
 
 ```bash
 uv run mlflow ui --backend-store-uri mlruns      # then open http://127.0.0.1:5000
-uv run python scripts/log_threshold_metrics.py   # once: add precision/recall/F1 to older runs
+uv run python scripts/log_threshold_metrics.py   # once: add precision/recall/F1/PR-AUC to older runs
+uv run python scripts/threshold_report.py        # threshold trade-off of the selected model
 ```
+
+### Threshold, F1 and PR-AUC
+
+Selected model (L2 logistic regression, FS2, run `ae044e24`), pooled leave-one-hospital-out
+out-of-fold predictions (4,265 admissions, 27.3% CS). Aggregates only; from
+`scripts/threshold_report.py`, written to `reports/threshold/<run_id>.{csv,md}`.
+
+| threshold | TP | FP | FN | TN | precision | recall | specificity | F1 | flagged % |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.20 | 875 | 1,350 | 290 | 1,750 | 0.393 | 0.751 | 0.565 | 0.516 | 52.2 |
+| 0.25 | 747 | 925 | 418 | 2,175 | 0.447 | 0.641 | 0.702 | 0.527 | 39.2 |
+| 0.30 | 631 | 651 | 534 | 2,449 | 0.492 | 0.542 | 0.790 | 0.516 | 30.1 |
+| 0.35 | 570 | 440 | 595 | 2,660 | 0.564 | 0.489 | 0.858 | 0.524 | 23.7 |
+| 0.40 | 512 | 327 | 653 | 2,773 | 0.610 | 0.439 | 0.895 | 0.511 | 19.7 |
+| 0.45 | 472 | 241 | 693 | 2,859 | 0.662 | 0.405 | 0.922 | 0.503 | 16.7 |
+| **0.50** | 440 | 177 | 725 | 2,923 | 0.713 | 0.378 | 0.943 | 0.494 | 14.5 |
+| 0.55 | 413 | 136 | 752 | 2,964 | 0.752 | 0.355 | 0.956 | 0.482 | 12.9 |
+| 0.60 | 370 | 105 | 795 | 2,995 | 0.779 | 0.318 | 0.966 | 0.451 | 11.1 |
+
+- **Why F1 at 0.5 is 0.49.** About 27% of the prediction population has a CS, so a calibrated
+  probability rarely passes 0.5: only 14.5% of admissions are flagged, precision is high (0.71)
+  and recall is low (0.38).
+- **The threshold is a deployment choice, not a property of the model.** The model was selected on
+  AUC and calibration under the pre-registered rule (`configs/selection_rule.yaml`), never on a
+  thresholded metric, and the app shows the probability itself ("N in 100"), not a yes/no. The 0.5
+  in MLflow is a reporting convention only.
+- **Lowering the threshold buys little F1 at a large cost.** The F1-maximising threshold is 0.25
+  (searched from 0.05 to 0.95 by 0.01). It raises F1 only from 0.494 to 0.527, but more than
+  quintuples the false positives, from 177 to 925 vaginal births flagged as likely CS, and flags
+  39% of admissions instead of 14.5%.
+- **PR-AUC (average precision) is 0.584** against a no-skill baseline equal to the prevalence,
+  0.273: about twice the baseline, over all thresholds.
 
 ## Serving the model (API)
 

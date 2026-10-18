@@ -28,6 +28,25 @@ OBSERVED = ("vaginal (observed)", "CS (observed)")
 PREDICTED = ("vaginal (predicted)", "CS (predicted)")
 THRESHOLD_METRICS = ("accuracy", "precision", "recall", "specificity", "F1")
 RESERVED_PARAMS = frozenset({"missing_strategy", "seed"})
+TRADE_OFF_THRESHOLDS = (0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60)
+THRESHOLD_TABLE_COLUMNS = (
+    "threshold",
+    "tp",
+    "fp",
+    "fn",
+    "tn",
+    "precision",
+    "recall",
+    "specificity",
+    "F1",
+    "flagged_pct",
+)
+# Each pair adds up to a published class total (observed CS, observed vaginal); the rates
+# listed with it would reveal its counts.
+_COUNT_PAIRS = (
+    (("tp", "fn"), ("precision", "recall", "F1", "flagged_pct")),
+    (("fp", "tn"), ("precision", "specificity", "F1", "flagged_pct")),
+)
 
 
 def _arrays(
@@ -101,6 +120,47 @@ def confusion_counts(
         else:
             rows.append(list(row))
     return pd.DataFrame(rows, index=list(OBSERVED), columns=list(PREDICTED))
+
+
+def threshold_table(
+    y: npt.ArrayLike,
+    p: npt.ArrayLike,
+    thresholds: Sequence[float] = TRADE_OFF_THRESHOLDS,
+) -> pd.DataFrame:
+    """The trade-off of cutting the probability at each of ``thresholds``: one row per
+    threshold with the confusion counts, :func:`threshold_metrics` (bar accuracy) and the
+    percentage of admissions flagged as likely CS (``p >= threshold``).
+
+    Small cells are hidden as in :func:`confusion_counts`: TP and FN add up to the
+    observed CS total, FP and TN to the observed vaginal total, so a count of 1-4 in a
+    pair is shown as ``"<5"`` and its partner as ``"*"``; the rates derived from a hidden
+    pair (precision, recall or specificity, F1, flagged %) are shown as ``"*"`` too.
+    """
+    y_arr, p_arr = _arrays(y, p)
+    rows: list[dict[str, Any]] = []
+    for threshold in thresholds:
+        pred = p_arr >= threshold
+        row: dict[str, Any] = {
+            "threshold": float(threshold),
+            "tp": int(np.sum(pred & (y_arr == 1))),
+            "fp": int(np.sum(pred & (y_arr == 0))),
+            "fn": int(np.sum(~pred & (y_arr == 1))),
+            "tn": int(np.sum(~pred & (y_arr == 0))),
+        }
+        metrics = threshold_metrics(y_arr, p_arr, threshold)
+        row.update({name: metrics[name] for name in ("precision", "recall", "specificity", "F1")})
+        row["flagged_pct"] = float(100 * pred.mean())
+        hidden: dict[str, str] = {}
+        for pair, derived in _COUNT_PAIRS:
+            small = [0 < row[c] < SMALL_CELL_THRESHOLD for c in pair]
+            if any(small):
+                hidden.update(
+                    {c: SUPPRESSED if s else SECONDARY for c, s in zip(pair, small, strict=True)}
+                )
+                hidden.update({c: SECONDARY for c in derived})
+        row.update(hidden)
+        rows.append(row)
+    return pd.DataFrame(rows, columns=list(THRESHOLD_TABLE_COLUMNS))
 
 
 def best_per_model(
