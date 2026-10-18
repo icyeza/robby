@@ -5,11 +5,12 @@
 
 <section class="tablecard">
   <table>
-    <thead><tr><th>Code</th><th>Admitted</th><th>Robson group</th><th class="r">Readiness signal</th><th>Outcome</th><th></th></tr></thead>
+    <thead><tr><th>Code</th><th>Patient</th><th>Admitted</th><th>Robson group</th><th class="r">Readiness signal</th><th>Outcome</th><th></th></tr></thead>
     <tbody>
     {% for row in rows %}
       <tr{% if row.replaced_by %} class="replaced"{% endif %}>
         <td>{% if row.replaced_by %}{{ row.admission.code }}{% else %}<b>{{ row.admission.code }}</b>{% endif %}</td>
+        <td>{% if row.admission.patient_name %}<b>{{ row.admission.patient_name }}</b><br><span class="muted">{{ row.admission.patient_number }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ row.admission.admitted_at | local_dt_short }}</td>
         <td>{% if row.group %}<span class="gnum">{{ row.group }}</span>{% else %}<span class="gnum">—</span>{% endif %}</td>
         {% if row.percent is not none %}<td class="r num signal-cell">{{ row.percent }} in 100</td>{% else %}<td class="r muted signal-cell">{{ 'no group' if not row.group else 'not available' }}</td>{% endif %}
@@ -20,10 +21,10 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">No admissions in the last 72 hours.</td></tr>
+      <tr><td colspan="7" class="muted">No admissions in the last 72 hours.</td></tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="tc-foot">Admissions are listed by code only; no names or patient numbers are stored. Older admissions are available to the facility administrator.</div>
+  <div class="tc-foot">Patient names are shown only to clinicians at this facility. Older admissions are available to the facility administrator, by patient number only.</div>
 </section>
 {% endblock %}

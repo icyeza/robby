@@ -5,7 +5,7 @@
 <div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }}</div>
 <div class="titlebar">
   <h1>Admission result</h1>
-  <span class="meta">{{ admission.code }} · Admitted {{ admission.admitted_at | local_dt }}{% if admission.maternal_age %} · Age {{ admission.maternal_age }}{% endif %}{% if admission.gestational_age_weeks %} · {{ admission.gestational_age_weeks | int }} weeks{% endif %}</span>
+  <span class="meta">{{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }} ({{ admission.patient_number }}){% endif %} · Admitted {{ admission.admitted_at | local_dt }}{% if admission.maternal_age %} · Age {{ admission.maternal_age }}{% endif %}{% if admission.gestational_age_weeks %} · {{ admission.gestational_age_weeks | int }} weeks{% endif %}</span>
   <span class="saved">✓ Saved {{ view.saved_at }}</span>
 </div>
 {% if view.replaces %}

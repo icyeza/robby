@@ -8,7 +8,8 @@ Definitions (shared with the offline ML audit):
 - Admissions in the period with no outcome yet are counted separately as "awaiting outcome".
 
 Every function here returns counts only, except `unclassified_births`, which feeds the facility
-administrator's list (codes, no patient identifiers) and is never used by national routes."""
+administrator's list (codes and patient numbers, never names) and is never used by national
+routes."""
 
 from __future__ import annotations
 
@@ -124,24 +125,30 @@ class UnclassifiedBirth:
     status: str | None  # 'partial', 'conflict', or None when no classification exists
     resolving_fields: tuple[str, ...]
     conflict_fields: tuple[str, ...]
+    patient_number: str | None = None  # never the name: this feeds the administrator's list
 
 
 def unclassified_births(
     db: Session, start: date, end: date, zone: ZoneInfo, facility_id: uuid.UUID
 ) -> list[UnclassifiedBirth]:
-    """Births of one facility without a resolved group: code, time, status, fields. Newest first."""
+    """Births of one facility without a resolved group: code, patient number, time, status,
+    fields. Newest first. The shared `born` CTE stays free of identifiers; the number is joined
+    here only."""
     lo, hi = period_bounds(start, end, zone)
     sql = text(
         "WITH "
         + _BORN.format(facility=_facility_clause(facility_id))
         + """
-        SELECT b.code, b.admitted_at, cls.status::text, cls.resolving_fields, cls.conflict_fields
-        FROM born b LEFT JOIN cls ON cls.admission_id = b.id
+        SELECT b.code, b.admitted_at, cls.status::text, cls.resolving_fields, cls.conflict_fields,
+               a.patient_number
+        FROM born b JOIN admission a ON a.id = b.id
+        LEFT JOIN cls ON cls.admission_id = b.id
         WHERE cls.status IS DISTINCT FROM 'resolved'
         ORDER BY b.admitted_at DESC, b.code
         """
     )
+    params = {"lo": lo, "hi": hi, "fid": facility_id}
     return [
-        UnclassifiedBirth(code, at, status, tuple(res or ()), tuple(conf or ()))
-        for code, at, status, res, conf in db.execute(sql, {"lo": lo, "hi": hi, "fid": facility_id})
+        UnclassifiedBirth(code, at, status, tuple(res or ()), tuple(conf or ()), number)
+        for code, at, status, res, conf, number in db.execute(sql, params)
     ]

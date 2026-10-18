@@ -114,6 +114,7 @@ def reason_labels(row: UnclassifiedBirth) -> list[str]:
 @dataclass(frozen=True)
 class UnclassifiedLine:
     code: str
+    patient_number: str  # "—" for rows saved before identifiers existed; names never reach here
     admitted: str
     reason: str
     fields: str
@@ -133,6 +134,7 @@ def unclassified_page(
     lines = [
         UnclassifiedLine(
             r.code,
+            r.patient_number or "—",
             r.admitted_at.astimezone(zone).strftime("%d %b"),
             "; ".join(reason_labels(r)),
             ", ".join(

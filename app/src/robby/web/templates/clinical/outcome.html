@@ -7,7 +7,7 @@
   {% include "partials/_banner.html" %}
   <div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }} / Outcome</div>
   <h1>Record outcome</h1>
-  <p class="lede">{{ admission.code }} · admitted {{ admission.admitted_at | local_dt }}{% if group %} · Robson group {{ group }}{% endif %}</p>
+  <p class="lede">{{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }} ({{ admission.patient_number }}){% endif %} · admitted {{ admission.admitted_at | local_dt }}{% if group %} · Robson group {{ group }}{% endif %}</p>
 
   <form class="sec" method="post" action="/admissions/{{ admission.code }}/outcome">
     <div class="sec-b">

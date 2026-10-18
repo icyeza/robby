@@ -18,12 +18,12 @@
 <section class="tablecard">
   <div class="tc-h"><h2>{{ total }} record{{ "" if total == 1 else "s" }}</h2></div>
   <table class="wide">
-    <thead><tr><th>Code</th><th>Admitted</th><th>Reason</th><th>Fields involved</th></tr></thead>
+    <thead><tr><th>Code</th><th>Patient number</th><th>Admitted</th><th>Reason</th><th>Fields involved</th></tr></thead>
     <tbody>
     {% for line in lines %}
-      <tr><td><b>{{ line.code }}</b></td><td>{{ line.admitted }}</td><td>{{ line.reason }}</td><td>{{ line.fields }}</td></tr>
+      <tr><td><b>{{ line.code }}</b></td><td>{{ line.patient_number }}</td><td>{{ line.admitted }}</td><td>{{ line.reason }}</td><td>{{ line.fields }}</td></tr>
     {% else %}
-      <tr><td colspan="4" class="muted">No unclassified births in this period.</td></tr>
+      <tr><td colspan="5" class="muted">No unclassified births in this period.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -34,6 +34,6 @@
     {% if page < last_page %}<a href="?page={{ page + 1 }}&amp;from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}">Next</a>{% endif %}
   </div>
   {% endif %}
-  <div class="tc-foot">Showing {{ shown_from }}–{{ shown_to }} of {{ total }}. Records carry no patient identifiers. Administrators cannot edit records; clinicians correct them through the correction flow. A record with several missing fields is counted once under each reason.</div>
+  <div class="tc-foot">Showing {{ shown_from }}–{{ shown_to }} of {{ total }}. Records show the patient number only; names are visible to clinicians. Administrators cannot edit records; clinicians correct them through the correction flow. A record with several missing fields is counted once under each reason.</div>
 </section>
 {% endblock %}

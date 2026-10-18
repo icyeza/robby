@@ -285,6 +285,21 @@ def test_a_correction_carries_and_can_change_the_patient_name(
     ]
 
 
+def test_the_clinician_sees_the_patient_name_and_number(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    post_form(client, world)
+    admission = db.scalar(select(Admission))
+    assert admission is not None
+    for path in (
+        "/admissions",
+        f"/admissions/{admission.code}",
+        f"/admissions/{admission.code}/outcome",
+    ):
+        text = client.get(path).text
+        assert "ZQ-99" in text and "Zzyzx Testname" in text, path
+
+
 def test_identifiers_stay_out_of_events_and_features(
     client: TestClient, world: dict[str, Any], db: Session
 ) -> None:

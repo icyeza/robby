@@ -37,6 +37,7 @@ from robby.models import (
     Role,
     RuleSet,
 )
+from robby.web.nav import NAV
 from tests.factories import events_of, make_facility, make_rule_set, make_user
 from tests.webutil import sign_in_client
 
@@ -97,6 +98,8 @@ def birth(
     supersedes: Admission | None = None,
     outcome: bool = True,
     fields: list[str] | None = None,
+    patient_number: str | None = None,
+    patient_name: str = "Test Patient",
 ) -> Admission:
     user = make_user(db, role=Role.CLINICIAN, facility=facility)
     delivered = delivered or datetime(2026, 3, 10, 12, tzinfo=UTC)
@@ -108,8 +111,8 @@ def birth(
         entered_by=user.id,
         supersedes_id=supersedes.id if supersedes else None,
         correction_reason="fix" if supersedes else None,
-        patient_number=f"P-{code}",
-        patient_name="Test Patient",
+        patient_number=patient_number or f"P-{code}",
+        patient_name=patient_name,
     )
     db.add(adm)
     db.flush()
@@ -250,3 +253,48 @@ def test_pages_export_and_national_aggregates_only(
     overview = client.get("/national").text
     assert "Test Facility A" in overview and f"{month:%b} exported" in overview
     assert client.get("/audit").status_code == 403
+
+
+def test_patient_number_reaches_the_facility_admin_and_the_name_nobody_outside_clinical(
+    client: TestClient, db: Session, settings: Settings
+) -> None:
+    month, mid = last_month_midpoint(settings)
+    facility = make_facility(db)
+    rs = make_rule_set(db)
+    birth(db, facility, rs, f"{facility.code}-0001", group=1, delivered=mid)
+    birth(
+        db,
+        facility,
+        rs,
+        f"{facility.code}-0002",
+        status=ClassificationStatus.CONFLICT,
+        delivered=mid,
+        patient_number="ZQ-99",
+        patient_name="Zzyzx Testname",
+    )
+    users = {role: make_user(db, role=role, facility=facility) for role in Role}
+    db.commit()
+
+    def pages_of(role: Role, *extra: str) -> list[str]:
+        client.cookies.clear()
+        sign_in_client(client, db, settings, users[role])
+        paths = [item.path for item in NAV[role]] + list(extra)
+        responses = [(path, client.get(path)) for path in paths]
+        for path, response in responses:
+            assert response.status_code == 200, (role, path)
+        return [response.text for _, response in responses]
+
+    *admin_pages, listing, monthly_csv = pages_of(
+        Role.FACILITY_ADMIN, "/audit/unclassified", f"/audit/export.csv?month={month:%Y-%m}"
+    )
+    assert "ZQ-99" in listing and "Zzyzx" not in listing
+    assert all("Zzyzx" not in text for text in [*admin_pages, monthly_csv])
+    assert "ZQ-99" not in monthly_csv  # counts only
+    for role in (Role.NATIONAL_REVIEWER, Role.MODEL_CUSTODIAN, Role.SYSTEM_ADMIN):
+        extra = (
+            (f"/national/facilities/{facility.id}", "/national/export.csv")
+            if role is Role.NATIONAL_REVIEWER
+            else ()
+        )
+        for text in pages_of(role, *extra):
+            assert "ZQ-99" not in text and "Zzyzx" not in text, role
