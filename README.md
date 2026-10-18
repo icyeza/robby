@@ -21,6 +21,12 @@ At admission to a maternity ward, the system:
    against a cesarean.
 4. **Audits facilities**: Robson group sizes, CS rates and contributions per facility, compared with
    reference populations and adjusted for case-mix.
+5. **Bulk import from Excel**: a clinician can download a template, fill in one row per admission
+   and upload it. Every row is checked with the same rules as the form; if any row fails, nothing is
+   saved. If all rows pass, each one is classified and scored exactly like a form entry.
+6. **Patient number and name (role-restricted)**: each admission records the hospital patient
+   number and name. Clinicians at the facility see both, the facility administrator sees the number
+   only, and no other role sees either.
 
 The model was trained on 5,520 de-identified delivery records from four hospitals in and around Kigali
 (Muhima, Masaka, Kibagabaga, La Croix du Sud; November 2023 to March 2024), shared under a data-sharing
@@ -36,6 +42,121 @@ agreement. The data are **not** in this repository.
 | Calibration | slope **0.99** (target 0.8-1.2) |
 | Later time period | AUC 0.772 (Robson lookup: 0.725) |
 | Model families compared | 8, from a single decision tree to an FT-Transformer: all between 0.71 and 0.75 AUC |
+
+## End-to-end system
+
+From the hospital data to the clinician's screen and back. Source:
+[`docs/diagrams/end-to-end.mmd`](docs/diagrams/end-to-end.mmd); image:
+[`end-to-end.png`](docs/diagrams/end-to-end.png). The database is in
+[`app/README.md`](app/README.md#data-model) (ERD), and how a single prediction is made is in
+[`app/README.md`](app/README.md#how-a-prediction-is-made) (sequence diagram).
+
+```mermaid
+flowchart LR
+    subgraph DATA["1. Data (ML/, offline)"]
+        RAW["KoboToolbox xlsx export<br/>4 hospitals, data-sharing agreement<br/>never committed"]
+        ING["robson-ml ingest + mapping<br/>canonical admissions, identifiers hashed"]
+        ROB["robson-ml robson<br/>Robson classification (robson_engine)"]
+        FEAT["features + leakage audit<br/>features_v1.yaml"]
+        RAW --> ING --> ROB --> FEAT
+    end
+
+    subgraph TRAIN["2. Training and selection"]
+        FIT["8 model families + baselines<br/>leave-one-hospital-out, later-period check"]
+        SEL["pre-registered selection rule<br/>selection_rule.yaml"]
+        MLF[("MLflow runs<br/>mlruns/")]
+        FIT --> SEL
+        FIT -.-> MLF
+    end
+
+    subgraph PACK["3. Packaging"]
+        DEP["robson-ml fit-deploy<br/>deployment model"]
+        PKG["robson-ml package<br/>manifest.json, model.joblib, feature_schema.json,<br/>reference_distributions.json, golden tests"]
+        DEP --> PKG
+    end
+
+    subgraph REG["4. Registry (app, model custodian)"]
+        CAND["robby-admin model register<br/>candidate"]
+        SHAD["shadow<br/>scored, never shown"]
+        ACT["active<br/>exactly one"]
+        CAND -->|approval + reason| SHAD -->|approval + reason| ACT
+    end
+
+    subgraph USE["5. Clinical use (clinician)"]
+        FORM["admission form<br/>or Excel import"]
+        CLS["Robson group<br/>active rule set"]
+        SCORE["readiness probability<br/>stored with its feature vector"]
+        SHOW["result page<br/>group, explanation, signal"]
+        FORM --> CLS --> SCORE --> SHOW
+    end
+
+    subgraph OUT["6. Outcomes"]
+        DOUT["clinician records<br/>mode of delivery"]
+        REC["reconcile job<br/>prediction joined to outcome"]
+        DOUT --> REC
+    end
+
+    subgraph MON["7. Monitoring (model custodian)"]
+        ALERT["calibration and input-drift alerts<br/>/monitoring"]
+    end
+
+    subgraph AUD["8. Audit"]
+        FAC["facility report + CSV export<br/>facility admin"]
+        NAT["national aggregates<br/>national reviewer"]
+    end
+
+    FHIR["Future: fetch admission from the<br/>hospital system, FHIR, by patient number"]
+
+    FEAT --> FIT
+    SEL --> DEP
+    PKG --> CAND
+    ACT --> SCORE
+    SHOW --> DOUT
+    REC --> ALERT
+    ALERT -->|custodian retrains| FIT
+    CLS --> FAC
+    DOUT --> FAC
+    FAC --> NAT
+    FHIR -.-> FORM
+
+    classDef future stroke-dasharray: 6 4,fill:#ffffff,color:#555555
+    class FHIR future
+```
+
+1. **Data.** The KoboToolbox xlsx export from the four hospitals, shared under the data-sharing
+   agreement, is read and mapped onto canonical admission fields by `robson-ml ingest` (identifiers
+   hashed), classified into Robson groups with `robson_engine`, and turned into features with a
+   leakage audit.
+2. **Training and selection.** Eight model families plus baselines are trained and evaluated
+   leave-one-hospital-out (and on a later time period), every run is logged to MLflow, and the model
+   is chosen by a selection rule committed before training.
+3. **Packaging.** `robson-ml fit-deploy` fits the chosen model and `robson-ml package` builds the
+   artefact: manifest, model, feature schema, training distributions and golden test cases.
+4. **Registry.** The app registers the artefact as a *candidate*; the model custodian moves it to
+   *shadow* (scored, never shown) and then *active*, each step with a named approver and a reason.
+5. **Clinical use.** An admission from the form or from an Excel import is classified with the
+   active rule set and scored by the active model; the result page shows the group, its explanation
+   and the readiness signal.
+6. **Outcomes.** The clinician records the mode of delivery, and a background job joins every
+   prediction to the outcome of its admission.
+7. **Monitoring.** Calibration per facility and input drift against the training distributions
+   raise alerts for the model custodian, who retrains when needed, which closes the loop back to
+   training.
+8. **Audit.** The facility administrator gets the Robson report and CSV export for the facility;
+   the national reviewer sees aggregates across facilities.
+
+*Future (dashed):* fetching the admission from the hospital system (FHIR, by patient number)
+instead of typing it in.
+
+### Who sees what
+
+| Role | Patient data visible |
+|---|---|
+| Clinician | Patient name and number, for admissions at their own facility |
+| Facility administrator | Patient number only (no name), for their own facility |
+| National reviewer | Aggregates only, no individual admissions |
+| Model custodian | No patient data (model metrics, monitoring and drift only) |
+| System administrator | No patient data (users and facilities only) |
 
 ## Repository layout
 

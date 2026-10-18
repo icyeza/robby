@@ -1,0 +1,72 @@
+---
+title: Robson Readiness, end to end
+---
+flowchart LR
+    subgraph DATA["1. Data (ML/, offline)"]
+        RAW["KoboToolbox xlsx export<br/>4 hospitals, data-sharing agreement<br/>never committed"]
+        ING["robson-ml ingest + mapping<br/>canonical admissions, identifiers hashed"]
+        ROB["robson-ml robson<br/>Robson classification (robson_engine)"]
+        FEAT["features + leakage audit<br/>features_v1.yaml"]
+        RAW --> ING --> ROB --> FEAT
+    end
+
+    subgraph TRAIN["2. Training and selection"]
+        FIT["8 model families + baselines<br/>leave-one-hospital-out, later-period check"]
+        SEL["pre-registered selection rule<br/>selection_rule.yaml"]
+        MLF[("MLflow runs<br/>mlruns/")]
+        FIT --> SEL
+        FIT -.-> MLF
+    end
+
+    subgraph PACK["3. Packaging"]
+        DEP["robson-ml fit-deploy<br/>deployment model"]
+        PKG["robson-ml package<br/>manifest.json, model.joblib, feature_schema.json,<br/>reference_distributions.json, golden tests"]
+        DEP --> PKG
+    end
+
+    subgraph REG["4. Registry (app, model custodian)"]
+        CAND["robby-admin model register<br/>candidate"]
+        SHAD["shadow<br/>scored, never shown"]
+        ACT["active<br/>exactly one"]
+        CAND -->|approval + reason| SHAD -->|approval + reason| ACT
+    end
+
+    subgraph USE["5. Clinical use (clinician)"]
+        FORM["admission form<br/>or Excel import"]
+        CLS["Robson group<br/>active rule set"]
+        SCORE["readiness probability<br/>stored with its feature vector"]
+        SHOW["result page<br/>group, explanation, signal"]
+        FORM --> CLS --> SCORE --> SHOW
+    end
+
+    subgraph OUT["6. Outcomes"]
+        DOUT["clinician records<br/>mode of delivery"]
+        REC["reconcile job<br/>prediction joined to outcome"]
+        DOUT --> REC
+    end
+
+    subgraph MON["7. Monitoring (model custodian)"]
+        ALERT["calibration and input-drift alerts<br/>/monitoring"]
+    end
+
+    subgraph AUD["8. Audit"]
+        FAC["facility report + CSV export<br/>facility admin"]
+        NAT["national aggregates<br/>national reviewer"]
+    end
+
+    FHIR["Future: fetch admission from the<br/>hospital system, FHIR, by patient number"]
+
+    FEAT --> FIT
+    SEL --> DEP
+    PKG --> CAND
+    ACT --> SCORE
+    SHOW --> DOUT
+    REC --> ALERT
+    ALERT -->|custodian retrains| FIT
+    CLS --> FAC
+    DOUT --> FAC
+    FAC --> NAT
+    FHIR -.-> FORM
+
+    classDef future stroke-dasharray: 6 4,fill:#ffffff,color:#555555
+    class FHIR future
