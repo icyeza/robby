@@ -9,8 +9,9 @@
     <ol>
       <li><a href="/admissions/import/template.xlsx">Download the Excel template</a>. Its drop-down lists hold the same choices as the admission form.</li>
       <li>Fill in one row per admission (at most {{ max_rows }} rows). Patient number, patient name and admission time are required.</li>
-      <li>Upload the file. Every row is checked like the admission form; if any row has a problem, nothing is imported.</li>
+      <li>Upload the file. Every row is checked like the admission form; if any row has a problem, nothing is imported. A patient already recorded at the same admission time is not added again; the list afterwards shows their existing record.</li>
     </ol>
+    <p class="muted">Or upload an export from OpenClinic as it is: it is recognised by its column names (patient ID, admission date, para, presentation and so on) and columns the system does not use are ignored. Where OpenClinic holds no blood pressure, proteinuria or glucose, the test is recorded as not measured with the reason "Other".</p>
     <form method="post" action="/admissions/import" enctype="multipart/form-data">
       {{ ui.csrf_input() }}
       <div class="f">
@@ -40,13 +41,13 @@
 
 {% if imported %}
 <section class="tablecard">
-  <div class="tc-h"><h2>{{ lines | length }} admission{{ "" if lines | length == 1 else "s" }} imported</h2></div>
+  <div class="tc-h"><h2>{{ (lines | length) - already }} admission{{ "" if (lines | length) - already == 1 else "s" }} imported{% if already %}, {{ already }} already recorded{% endif %}</h2></div>
   <table>
     <thead><tr><th>Code</th><th>Robson group</th><th class="r">Readiness signal</th></tr></thead>
     <tbody>
     {% for line in lines %}
       <tr>
-        <td><a href="/admissions/{{ line.code }}"><b>{{ line.code }}</b></a></td>
+        <td><a href="/admissions/{{ line.code }}"><b>{{ line.code }}</b></a>{% if line.already %} <span class="muted">· already recorded</span>{% endif %}</td>
         <td><span class="gnum">{{ line.group or '—' }}</span></td>
         {% if line.percent is not none %}<td class="r num">{{ line.percent }} in 100</td>{% else %}<td class="r muted">{{ 'no group' if not line.group else 'not available' }}</td>{% endif %}
       </tr>

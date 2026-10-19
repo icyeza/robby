@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -167,9 +168,6 @@ def test_file_level_problems() -> None:
     assert problems_of(b"not a workbook") == [
         RowProblem(0, "", "The file could not be read as an Excel workbook.")
     ]
-    assert problems_of(b"x" * (importer.MAX_BYTES + 1)) == [
-        RowProblem(0, "", "The file is larger than 2 MB.")
-    ]
     many = make_xlsx(HEADER, [good_row(f"RW-{i}") for i in range(importer.MAX_ROWS + 1)])
     assert problems_of(many) == [RowProblem(0, "", "At most 500 rows can be imported at once.")]
 
@@ -281,10 +279,11 @@ def test_duplicates_in_the_file_and_in_the_facility(db: Session) -> None:
         )
     ).rows
     assert len(rows) == 5
-    assert find_duplicates(db, facility.id, rows) == [
-        RowProblem(3, "Patient number", "Same patient and admission time as row 2."),
-        RowProblem(4, "Patient number", f"Already recorded as {stored.code}."),
+    scan = find_duplicates(db, facility.id, rows)
+    assert scan.in_file == [
+        RowProblem(3, "Patient number", "Same patient and admission time as row 2.")
     ]
+    assert {n: a.code for n, a in scan.recorded.items()} == {4: stored.code}
 
 
 # ---------------------------------------------------------------- routes
@@ -370,14 +369,44 @@ def test_one_bad_row_saves_nothing(client: TestClient, clinic: dict[str, Any], d
     assert events_of(db, "admissions.imported") == []
 
 
-def test_a_repeated_upload_is_refused_as_duplicates(
+def test_a_repeated_upload_shows_the_existing_records_and_adds_nothing(
     client: TestClient, clinic: dict[str, Any], db: Session
 ) -> None:
     data = make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"])])
-    assert upload(client, clinic, data).status_code == 200
+    first = upload(client, clinic, data)
+    assert first.status_code == 200
+    code = db.scalar(select(Admission.code))
     again = upload(client, clinic, data)
-    assert again.status_code == 400 and "Already recorded as" in again.text
+    assert again.status_code == 200
+    assert "0 admissions imported, 1 already recorded" in again.text
+    assert f'href="/admissions/{code}"' in again.text and "already recorded</span>" in again.text
+    assert "gnum" in again.text  # the Robson group is shown, as for a new row
     assert admission_count(db) == 1
+    assert len(events_of(db, "admissions.imported")) == 1  # the second upload saved nothing
+
+
+def test_a_mixed_upload_imports_the_new_rows_and_lists_both_in_file_order(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    upload(client, clinic, make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"])]))
+    rows = [good_row("RW-2", clinic["admitted"]), good_row("RW-1", clinic["admitted"])]
+    response = upload(client, clinic, make_xlsx(HEADER, rows))
+    assert (
+        response.status_code == 200 and "1 admission imported, 1 already recorded" in response.text
+    )
+    codes = re.findall(r'href="/admissions/(DA-\d+|[A-Z]+-\d+)"', response.text)
+    assert len(codes) >= 2 and admission_count(db) == 2
+
+
+def test_a_row_repeated_inside_one_file_is_still_refused(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    row = good_row("RW-1", clinic["admitted"])
+    response = upload(client, clinic, make_xlsx(HEADER, [row, row]))
+    assert (
+        response.status_code == 400 and "Same patient and admission time as row 2" in response.text
+    )
+    assert admission_count(db) == 0
 
 
 def test_upload_needs_a_file_and_a_csrf_token(

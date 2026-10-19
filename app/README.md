@@ -23,7 +23,7 @@ synthetic packaged artefact and runs the golden check.
 
 ## Data model
 
-Seventeen tables, created by migrations `0001`–`0003` in `migrations/versions/`. The diagram shows
+Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0004` in `migrations/versions/`. The diagram shows
 each table's primary key (PK), foreign keys (FK), unique columns (UK) and main business columns,
 not every column. Source: [`docs/diagrams/erd.mmd`](../docs/diagrams/erd.mmd); image:
 [`erd.png`](../docs/diagrams/erd.png).
@@ -406,6 +406,45 @@ The production role does not need `CREATEDB`.
 | `uv run robby-admin reconcile` | Joins every prediction to the outcome of its admission (following corrections) in `reconciled_outcome`; safe to repeat; logs one `reconciliation.run` event with counts |
 | `uv run robby-admin events verify` | Recomputes the event-log hash chain; exit code 1 if it is broken |
 | `uv run alembic revision -m "..."` | New migration (hand-written; see `migrations/versions/0001_initial.py`) |
+
+## Automated import (OpenClinic and other systems)
+
+A clinic's script can send admissions straight to the app instead of someone uploading a file.
+The records go through exactly the same checks as the web upload (all or nothing), are saved as
+`import` admissions of the token's facility, and a record that was already recorded (same patient
+number and admission time) is skipped, so sending a batch twice is safe.
+
+1. Create a clinician account for the clinic in the Users page, then a token for it:
+   ```bash
+   uv run robby-admin api-token create --username clinician.muhima --label "OpenClinic feed"
+   uv run robby-admin api-token list
+   uv run robby-admin api-token revoke <id>
+   ```
+   The token (`rbk_...`) is shown once; only its SHA-256 is stored. It acts as that clinician, so
+   it can only ever write to that clinician's facility. Create and revoke are in the event log.
+2. Send records to `POST /api/v1/admissions/import` with `Authorization: Bearer <token>`:
+   - `Content-Type: application/json`, body `{"rows": [{"Patient ID": "...", ...}]}`;
+   - or the `.xlsx` file as the body (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`);
+   - or `multipart/form-data` with the file in the field `file`.
+
+   Column names are those of the app's Excel template, or of an OpenClinic export (see
+   `src/robby/clinical/openclinic.py`: the OpenClinic column names there are an assumption until a
+   real export is available).
+3. Answers: `201` imported (`imported`, `skipped_duplicates`, and per record the admission `code`,
+   `robson_group`, `readiness_percent`); `200` nothing new to import; `422` a list of `problems`
+   (`row`, `column`, `message`; JSON records are numbered from 1) and nothing saved; `401` bad,
+   revoked or missing token; `400`/`415` unreadable body; `503` no active rule set.
+
+`scripts/openclinic_push.py` is a ready client (standard library only; takes an `.xlsx` or `.csv`
+export, reads the token from `ROBBY_API_TOKEN`). Run it from Task Scheduler or cron after
+OpenClinic's export:
+
+```bash
+ROBBY_API_TOKEN=rbk_... python openclinic_push.py export.csv --url https://robby.example.rw
+```
+
+Serve the API over TLS only; a token sent over plain http can be read by anyone on the path.
+There is no rate limit yet.
 
 ## Reconciliation and monitoring
 

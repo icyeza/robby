@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Feed token{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>Feed token created</h1>
+  <p class="lede">“{{ label }}” acts as {{ username }}.</p>
+  <div class="notice warn" role="status">
+    <b>Token</b><br>
+    <span class="secret">{{ token }}</span><br>
+    It is shown only this once. Give it to whoever sets up the feed; anyone who has it can add admissions to this facility, so keep it private and revoke it if it is lost.
+  </div>
+  <p>The feed script sends it as <code>Authorization: Bearer …</code> to <code>{{ base_url }}/api/v1/admissions/import</code> (see <code>scripts/openclinic_push.py</code>).</p>
+  <p><a class="btn btn-s" href="/admin/integrations">Back to integrations</a></p>
+</div>
+{% endblock %}

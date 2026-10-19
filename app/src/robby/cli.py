@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from robby import events
 from robby.audit.cli_references import references_app
+from robby.auth import api_tokens
 from robby.config import get_settings
 from robby.db import get_sessionmaker
 from robby.demo.cli import demo_app
@@ -20,6 +22,7 @@ from robby.migrate import upgrade
 from robby.models import Role
 from robby.registry.dev_register import model_app
 from robby.rulesets import RuleSetConflict, load_rule_set_file
+from robby.timeutil import utcnow
 from robby.users.service import create_user
 
 app = typer.Typer(
@@ -34,6 +37,8 @@ app.add_typer(events_app, name="events")
 app.add_typer(model_app, name="model")
 app.add_typer(references_app, name="references")
 app.add_typer(demo_app, name="demo")
+api_token_app = typer.Typer(no_args_is_help=True)
+app.add_typer(api_token_app, name="api-token")
 
 
 @db_app.callback()
@@ -44,6 +49,11 @@ def _db() -> None:
 @rules_app.callback()
 def _rules() -> None:
     """Robson rule sets."""
+
+
+@api_token_app.callback()
+def _api_token() -> None:
+    """Tokens for automated imports."""
 
 
 @events_app.callback()
@@ -143,3 +153,45 @@ def reconcile_command() -> None:
         f"Reconciled {counts['reconciled']} new predictions; {counts['total']} in total, "
         f"{counts['awaiting']} awaiting an outcome."
     )
+
+
+@api_token_app.command("create")
+def api_token_create(
+    username: Annotated[str, typer.Option("--username", help="The clinician account it acts as.")],
+    label: Annotated[str, typer.Option("--label", help="What it is for, e.g. OpenClinic feed.")],
+) -> None:
+    """Create a token for POST /api/v1/admissions/import; it is shown once."""
+    with open_session() as db:
+        try:
+            token, row = api_tokens.create(db, None, username, label)
+        except api_tokens.TokenError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        db.commit()
+        typer.echo(f"Token {row.id} for {username}. Copy it now; it cannot be shown again:")
+        typer.echo(token)
+
+
+@api_token_app.command("list")
+def api_token_list() -> None:
+    """List tokens (never the token text)."""
+    with open_session() as db:
+        for row in api_tokens.all_tokens(db):
+            state = "revoked" if row.revoked_at else "active"
+            used = row.last_used_at.isoformat(timespec="minutes") if row.last_used_at else "never"
+            typer.echo(f"{row.id}  {state:8}  {row.user.username:20}  used {used}  {row.label}")
+
+
+@api_token_app.command("revoke")
+def api_token_revoke(
+    token_id: Annotated[str, typer.Argument(help="Id from `api-token list`.")],
+) -> None:
+    """Stop a token from working."""
+    with open_session() as db:
+        try:
+            api_tokens.revoke(db, None, uuid.UUID(token_id), utcnow())
+        except (api_tokens.TokenError, ValueError) as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        db.commit()
+        typer.echo("Token revoked.")

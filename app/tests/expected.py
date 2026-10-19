@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "facility",
     "app_user",
     "user_session",
+    "api_token",
     "rule_set",
     "admission_counter",
     "admission",

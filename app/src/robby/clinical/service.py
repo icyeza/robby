@@ -187,6 +187,7 @@ def import_admissions(
     user: AppUser,
     rows: list[tuple[int, Parsed]],
     file_sha256: str,
+    channel: str = "web",
 ) -> list[Saved]:
     """Save every row of a checked upload, each exactly like a form entry, plus one event for the
     upload. Raises cls.NoRuleSetError when no rule set is active. Does not commit: the caller
@@ -202,7 +203,12 @@ def import_admissions(
         user,
         "admissions.imported",
         ("facility", facility.id),
-        {"facility": facility.code, "rows": len(saved), "file_sha256": file_sha256},
+        {
+            "facility": facility.code,
+            "rows": len(saved),
+            "file_sha256": file_sha256,
+            "channel": channel,
+        },
     )
     return saved
 

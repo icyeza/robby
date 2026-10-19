@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="titlebar tight"><h1>Integrations</h1><span class="meta">{{ who.place }}</span></div>
+<p class="lede">An automatic feed sends this facility's admissions from its patient record system (for example OpenClinic) without anyone uploading a file. Each feed signs in with a token that acts as one of your clinician accounts.</p>
+{% if problem %}<div class="errbox spaced" role="alert"><b>⚠ {{ problem }}</b></div>{% endif %}
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Feed tokens</h2></div>
+  <table>
+    <thead><tr><th>Label</th><th>Acts as</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tokens %}
+      <tr>
+        <td><b>{{ t.label }}</b></td>
+        <td>{{ t.user.username }}</td>
+        <td>{{ t.created_at | local_dt }}</td>
+        <td>{{ t.last_used_at | local_dt if t.last_used_at else "Never" }}</td>
+        <td>{% if t.revoked_at %}<span class="st retired">Revoked</span>{% else %}<span class="st done">Active</span>{% endif %}</td>
+        <td class="r actions-cell">{% if not t.revoked_at %}{{ ui.post_link("/admin/integrations/tokens/" ~ t.id ~ "/revoke", "Revoke") }}{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No feed set up yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">A revoked token stops working at once. The token text is shown only when it is created.</div>
+</section>
+
+<section class="sec">
+  <div class="sec-h"><h2>Add a feed</h2></div>
+  <div class="sec-b">
+    {% if clinicians %}
+    <form method="post" action="/admin/integrations/tokens">
+      {{ ui.csrf_input() }}
+      {{ ui.field("label", "What it is for", "", help="For example: OpenClinic nightly feed.") }}
+      {{ ui.select_field("clinician_id", "Acts as clinician", clinicians, "", help="Its admissions are recorded as entered by this account.") }}
+      <div class="actions"><button class="btn btn-p" type="submit">Create token</button></div>
+    </form>
+    {% else %}
+    <p class="muted">Add a clinician account on the <a href="/admin/users">Users</a> page first (a dedicated one such as “openclinic-feed” keeps feed admissions easy to tell apart).</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Latest imports</h2></div>
+  <table>
+    <thead><tr><th>When</th><th>Source</th><th>Result</th><th>Detail</th><th>By</th></tr></thead>
+    <tbody>
+    {% for b in batches %}
+      <tr>
+        <td>{{ b.when | local_dt }}</td>
+        <td>{{ b.channel }}</td>
+        <td>{% if b.outcome == "Rejected" %}<span class="st awaiting">Rejected</span>{% else %}{{ b.outcome }}{% endif %}</td>
+        <td>{{ b.detail }}</td>
+        <td>{{ b.by }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Nothing imported yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Includes uploads from the Excel page. A rejected feed batch saved nothing; the feed script prints the rows and columns to fix.</div>
+</section>
+{% endblock %}

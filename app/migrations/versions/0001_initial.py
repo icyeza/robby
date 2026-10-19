@@ -17,10 +17,22 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 ENUMS: dict[str, tuple[str, ...]] = {
-    "user_role": ("clinician", "facility_admin", "model_custodian", "national_reviewer", "system_admin"),
+    "user_role": (
+        "clinician",
+        "facility_admin",
+        "model_custodian",
+        "national_reviewer",
+        "system_admin",
+    ),
     "admission_source": ("form", "fhir"),
     "omission_field": ("blood_pressure", "proteinuria", "glucose"),
-    "omission_reason": ("equipment_unavailable", "supplies_out_of_stock", "declined", "no_time_before_delivery", "other"),
+    "omission_reason": (
+        "equipment_unavailable",
+        "supplies_out_of_stock",
+        "declined",
+        "no_time_before_delivery",
+        "other",
+    ),
     "classification_status": ("resolved", "partial", "conflict"),
     "model_state": ("candidate", "shadow", "active", "retired"),
     "prediction_mode": ("active", "shadow"),
@@ -29,15 +41,33 @@ ENUMS: dict[str, tuple[str, ...]] = {
 }
 
 TABLES_IN_CREATION_ORDER = (
-    "facility", "app_user", "user_session", "rule_set", "admission_counter", "admission",
-    "screening_omission", "classification", "model_version", "model_transition", "prediction",
-    "delivery_outcome", "reconciled_outcome", "reference_set", "reference_value", "event_log",
+    "facility",
+    "app_user",
+    "user_session",
+    "rule_set",
+    "admission_counter",
+    "admission",
+    "screening_omission",
+    "classification",
+    "model_version",
+    "model_transition",
+    "prediction",
+    "delivery_outcome",
+    "reconciled_outcome",
+    "reference_set",
+    "reference_value",
+    "event_log",
     "export_record",
 )
 
 IMMUTABLE_TABLES = (
-    "admission", "screening_omission", "classification", "prediction",
-    "delivery_outcome", "reconciled_outcome", "event_log",
+    "admission",
+    "screening_omission",
+    "classification",
+    "prediction",
+    "delivery_outcome",
+    "reconciled_outcome",
+    "event_log",
 )
 
 # Built with || rather than RAISE's % placeholders so no percent sign passes through the driver.
@@ -58,11 +88,15 @@ def enum(name: str) -> pg.ENUM:
 
 
 def id_column() -> sa.Column:
-    return sa.Column("id", pg.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False)
+    return sa.Column(
+        "id", pg.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False
+    )
 
 
 def created_at() -> sa.Column:
-    return sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False)
+    return sa.Column(
+        "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+    )
 
 
 def uuid_column(name: str, nullable: bool = False) -> sa.Column:
@@ -88,7 +122,9 @@ def jsonb(name: str, server_default: str | None = None) -> sa.Column:
 
 
 def boolean(name: str, default: bool) -> sa.Column:
-    return sa.Column(name, sa.Boolean(), server_default=sa.true() if default else sa.false(), nullable=False)
+    return sa.Column(
+        name, sa.Boolean(), server_default=sa.true() if default else sa.false(), nullable=False
+    )
 
 
 def pk(table: str, *columns: str) -> sa.PrimaryKeyConstraint:
@@ -100,7 +136,9 @@ def unique(table: str, *columns: str) -> sa.UniqueConstraint:
 
 
 def fk(table: str, column: str, target: str) -> sa.ForeignKeyConstraint:
-    return sa.ForeignKeyConstraint([column], [f"{target}.id"], name=op.f(f"fk_{table}_{column}_{target}"))
+    return sa.ForeignKeyConstraint(
+        [column], [f"{target}.id"], name=op.f(f"fk_{table}_{column}_{target}")
+    )
 
 
 def check(table: str, name: str, condition: str) -> sa.CheckConstraint:
@@ -183,7 +221,10 @@ def upgrade() -> None:
         unique("rule_set", "version_label"),
     )
     op.create_index(
-        op.f("uq_rule_set_one_active"), "rule_set", ["is_active"], unique=True,
+        op.f("uq_rule_set_one_active"),
+        "rule_set",
+        ["is_active"],
+        unique=True,
         postgresql_where=sa.text("is_active"),
     )
 
@@ -225,10 +266,16 @@ def upgrade() -> None:
         fk("admission", "facility_id", "facility"),
         fk("admission", "entered_by", "app_user"),
         fk("admission", "supersedes_id", "admission"),
-        check("admission", "correction_reason_required", "supersedes_id IS NULL OR correction_reason IS NOT NULL"),
+        check(
+            "admission",
+            "correction_reason_required",
+            "supersedes_id IS NULL OR correction_reason IS NOT NULL",
+        ),
         check("admission", "form_entry_has_author", "source = 'fhir' OR entered_by IS NOT NULL"),
     )
-    op.create_index(op.f("ix_admission_facility_id_admitted_at"), "admission", ["facility_id", "admitted_at"])
+    op.create_index(
+        op.f("ix_admission_facility_id_admitted_at"), "admission", ["facility_id", "admitted_at"]
+    )
 
     op.create_table(
         "screening_omission",
@@ -249,9 +296,15 @@ def upgrade() -> None:
         sa.Column("status", enum("classification_status"), nullable=False),
         int_column("robson_group"),
         text_column("subgroup", nullable=True),
-        sa.Column("candidates", pg.ARRAY(sa.Integer()), server_default=sa.text("'{}'"), nullable=False),
-        sa.Column("resolving_fields", pg.ARRAY(sa.Text()), server_default=sa.text("'{}'"), nullable=False),
-        sa.Column("conflict_fields", pg.ARRAY(sa.Text()), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column(
+            "candidates", pg.ARRAY(sa.Integer()), server_default=sa.text("'{}'"), nullable=False
+        ),
+        sa.Column(
+            "resolving_fields", pg.ARRAY(sa.Text()), server_default=sa.text("'{}'"), nullable=False
+        ),
+        sa.Column(
+            "conflict_fields", pg.ARRAY(sa.Text()), server_default=sa.text("'{}'"), nullable=False
+        ),
         jsonb("trace"),
         uuid_column("supersedes_id", nullable=True),
         created_at(),
@@ -260,8 +313,16 @@ def upgrade() -> None:
         fk("classification", "admission_id", "admission"),
         fk("classification", "rule_set_id", "rule_set"),
         fk("classification", "supersedes_id", "classification"),
-        check("classification", "robson_group_range", "robson_group IS NULL OR robson_group BETWEEN 1 AND 10"),
-        check("classification", "resolved_has_group", "status <> 'resolved' OR robson_group IS NOT NULL"),
+        check(
+            "classification",
+            "robson_group_range",
+            "robson_group IS NULL OR robson_group BETWEEN 1 AND 10",
+        ),
+        check(
+            "classification",
+            "resolved_has_group",
+            "status <> 'resolved' OR robson_group IS NOT NULL",
+        ),
     )
 
     op.create_table(
@@ -289,10 +350,15 @@ def upgrade() -> None:
         unique("model_version", "version_label"),
         fk("model_version", "registered_by", "app_user"),
         fk("model_version", "approved_by", "app_user"),
-        check("model_version", "training_window_order", "training_window_start <= training_window_end"),
+        check(
+            "model_version", "training_window_order", "training_window_start <= training_window_end"
+        ),
     )
     op.create_index(
-        op.f("uq_model_version_one_active"), "model_version", ["state"], unique=True,
+        op.f("uq_model_version_one_active"),
+        "model_version",
+        ["state"],
+        unique=True,
         postgresql_where=sa.text("state = 'active'"),
     )
 
@@ -329,7 +395,9 @@ def upgrade() -> None:
         fk("prediction", "supersedes_id", "prediction"),
         check("prediction", "probability_range", "probability >= 0 AND probability <= 1"),
     )
-    op.create_index(op.f("ix_prediction_model_id_created_at"), "prediction", ["model_id", "created_at"])
+    op.create_index(
+        op.f("ix_prediction_model_id_created_at"), "prediction", ["model_id", "created_at"]
+    )
 
     op.create_table(
         "delivery_outcome",
@@ -410,7 +478,9 @@ def upgrade() -> None:
         fk("event_log", "actor_id", "app_user"),
     )
     op.create_index(op.f("ix_event_log_occurred_at"), "event_log", ["occurred_at"])
-    op.create_index(op.f("ix_event_log_entity_type_entity_id"), "event_log", ["entity_type", "entity_id"])
+    op.create_index(
+        op.f("ix_event_log_entity_type_entity_id"), "event_log", ["entity_type", "entity_id"]
+    )
 
     op.create_table(
         "export_record",

@@ -22,6 +22,7 @@ PAGES.append(("/monitoring", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/readiness", frozenset({Role.CLINICIAN, Role.FACILITY_ADMIN})))
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
+PAGES.append(("/admin/integrations", frozenset({Role.FACILITY_ADMIN})))
 PAGES.append(("/admissions/import", frozenset({Role.CLINICIAN})))
 PAGES.append(("/admissions/import/template.xlsx", frozenset({Role.CLINICIAN})))
 

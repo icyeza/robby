@@ -77,6 +77,7 @@ def test_navigation_matches_the_mockup_extension() -> None:
             ("Unclassified records", "/audit/unclassified"),
             ("Readiness board", "/readiness"),
             ("Users", "/admin/users"),
+            ("Integrations", "/admin/integrations"),
         ],
         Role.MODEL_CUSTODIAN: [
             ("Models", "/models"),

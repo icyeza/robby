@@ -11,8 +11,7 @@ from robby.auth.dependencies import CurrentUser, require
 from robby.models import Role
 from robby.web.render import render
 
-PLACEHOLDER_PAGES: tuple[tuple[str, str, Role], ...] = (
-)
+PLACEHOLDER_PAGES: tuple[tuple[str, str, Role], ...] = ()
 
 
 def _page(title: str, role: Role) -> Callable[..., Response]:

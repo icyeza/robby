@@ -38,6 +38,7 @@ NAV: dict[Role, tuple[NavItem, ...]] = {
         NavItem("Unclassified records", "/audit/unclassified"),
         NavItem("Readiness board", "/readiness"),
         NavItem("Users", "/admin/users"),
+        NavItem("Integrations", "/admin/integrations"),
     ),
     Role.MODEL_CUSTODIAN: (
         NavItem("Models", "/models"),

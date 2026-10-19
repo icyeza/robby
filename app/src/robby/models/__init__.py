@@ -31,7 +31,7 @@ from robby.models.facility import Facility
 from robby.models.references import ExportRecord, ReferenceSet, ReferenceValue
 from robby.models.registry import ModelTransition, ModelVersion, Prediction
 from robby.models.rules import RuleSet
-from robby.models.users import AppUser, UserSession
+from robby.models.users import ApiToken, AppUser, UserSession
 
 __all__ = [
     "FACILITY_ROLES",
@@ -39,6 +39,7 @@ __all__ = [
     "Admission",
     "AdmissionCounter",
     "AdmissionSource",
+    "ApiToken",
     "AppUser",
     "Base",
     "Classification",

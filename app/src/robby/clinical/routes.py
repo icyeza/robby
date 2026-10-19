@@ -263,6 +263,17 @@ class ImportedLine:
     code: str
     group: int | None
     percent: int | None
+    already: bool = False  # recorded before this upload; shown, not imported again
+
+
+def _line_of(db: Session, admission: Admission) -> ImportedLine:
+    predicted = service.prediction_of(db, admission)
+    return ImportedLine(
+        admission.code,
+        service.classification_of(db, admission).robson_group,
+        service.percent_of(predicted[0].probability) if predicted else None,
+        already=True,
+    )
 
 
 def _import_page(
@@ -270,17 +281,9 @@ def _import_page(
     current: CurrentUser,
     *,
     problems: list[importer.RowProblem] | None = None,
-    saved: list[service.Saved] | None = None,
+    lines: list[ImportedLine] | None = None,
     status_code: int = 200,
 ) -> Response:
-    lines = [
-        ImportedLine(
-            s.admission.code,
-            s.classification.robson_group,
-            service.percent_of(s.prediction.probability) if s.prediction else None,
-        )
-        for s in saved or []
-    ]
     problems = problems or []
     return render(
         request,
@@ -289,8 +292,9 @@ def _import_page(
         status_code=status_code,
         problems=problems[:PROBLEMS_SHOWN],
         more=max(0, len(problems) - PROBLEMS_SHOWN),
-        lines=lines,
-        imported=saved is not None,
+        lines=lines or [],
+        imported=lines is not None,
+        already=sum(1 for line in lines or [] if line.already),
         max_rows=importer.MAX_ROWS,
     )
 
@@ -318,19 +322,41 @@ async def import_upload(
     if not isinstance(upload, UploadFile) or not upload.filename:
         problem = importer.RowProblem(0, "", "Choose a file to upload.")
         return _import_page(request, current, problems=[problem], status_code=400)
-    data = await upload.read(importer.MAX_BYTES + 1)
+    data = await upload.read()
     read = importer.read_upload(
         data, upload.filename, _specs(request, db), request.app.state.settings.zone, utcnow()
     )
     assert current.user.facility_id is not None
-    problems = read.problems or importer.find_duplicates(db, current.user.facility_id, read.rows)
+    scan = (
+        None if read.problems else importer.find_duplicates(db, current.user.facility_id, read.rows)
+    )
+    problems = read.problems or (scan.in_file if scan else [])
     if not problems:
+        assert scan is not None
+        fresh = [(n, parsed) for n, parsed in read.rows if n not in scan.recorded]
         try:
-            saved = service.import_admissions(
-                db, runtime_of(request), current.user, read.rows, hashlib.sha256(data).hexdigest()
+            saved = (
+                service.import_admissions(
+                    db,
+                    runtime_of(request),
+                    current.user,
+                    fresh,
+                    hashlib.sha256(data).hexdigest(),
+                )
+                if fresh
+                else []
             )
             db.commit()
-            return _import_page(request, current, saved=saved)
+            by_row: dict[int, ImportedLine] = {
+                n: ImportedLine(
+                    s.admission.code,
+                    s.classification.robson_group,
+                    service.percent_of(s.prediction.probability) if s.prediction else None,
+                )
+                for (n, _), s in zip(fresh, saved, strict=True)
+            }
+            by_row.update({n: _line_of(db, a) for n, a in scan.recorded.items()})
+            return _import_page(request, current, lines=[by_row[n] for n, _ in read.rows])
         except cls.NoRuleSetError:
             db.rollback()
             problems = [

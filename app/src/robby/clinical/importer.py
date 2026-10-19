@@ -15,11 +15,11 @@ from openpyxl import load_workbook
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, aliased
 
+from robby.clinical import openclinic
 from robby.clinical.form import DetailSpec, Parsed, parse
 from robby.clinical.xlsx_template import SHEET, Column, columns
 from robby.models import Admission
 
-MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 500
 SCREENING = (("bp", ("bp_sys", "bp_dia")), ("protein", ("proteinuria",)), ("glucose", ("glucose",)))
 # Form errors that belong to no single field, shown against this column.
@@ -151,14 +151,23 @@ def read_upload(
     """Every row parsed, or every problem found (and no rows)."""
     if not filename.lower().endswith(".xlsx"):
         return _file_problem("Upload an Excel .xlsx file.")
-    if len(data) > MAX_BYTES:
-        return _file_problem("The file is larger than 2 MB.")
     table = _sheet_rows(data)
     if table is None:
         return _file_problem("The file could not be read as an Excel workbook.")
+    return read_table(table, specs, zone, now)
+
+
+def read_table(
+    table: list[tuple[object, ...]], specs: list[DetailSpec], zone: ZoneInfo, now: datetime
+) -> ReadResult:
+    """The header and rows of a sheet (or of a JSON batch), in the template or OpenClinic layout."""
     if not table:
         return _file_problem("The file has no header row.")
     cols = columns(specs)
+    if openclinic.looks_like_openclinic(table[0], cols):
+        table, found = openclinic.convert(table, cols)
+        if found:
+            return ReadResult([], [RowProblem(*p) for p in found])
     index, problems = header_index(cols, table[0])
     if problems:
         return ReadResult([], problems)
@@ -179,15 +188,22 @@ def read_upload(
     return ReadResult([] if problems else rows, problems)
 
 
+@dataclass(frozen=True)
+class DuplicateScan:
+    in_file: list[RowProblem]  # a row repeating an earlier row of the same file: a file error
+    recorded: dict[int, Admission]  # row -> the facility's existing admission it repeats
+
+
 def find_duplicates(
     db: Session, facility_id: uuid.UUID, rows: list[tuple[int, Parsed]]
-) -> list[RowProblem]:
-    """Rows whose patient number and admission time repeat an earlier row of the file, or an
-    admission of this facility that has not been replaced."""
+) -> DuplicateScan:
+    """Rows whose patient number and admission time repeat an earlier row of the file (a problem),
+    or an admission of this facility that has not been replaced (already recorded: shown with its
+    existing admission, not refused)."""
     replacement = aliased(Admission)
     numbers = {p.patient_number for _, p in rows if p.patient_number}
-    stored: dict[tuple[Any, ...], str] = {
-        (a.patient_number, a.admitted_at): a.code
+    stored: dict[tuple[Any, ...], Admission] = {
+        (a.patient_number, a.admitted_at): a
         for a in db.scalars(
             select(Admission).where(
                 Admission.facility_id == facility_id,
@@ -198,14 +214,14 @@ def find_duplicates(
     }
     seen: dict[tuple[Any, ...], int] = {}
     problems: list[RowProblem] = []
+    recorded: dict[int, Admission] = {}
     for n, parsed in rows:
         key = (parsed.patient_number, parsed.admitted_at)
-        if key in seen:
+        if key in stored:
+            recorded[n] = stored[key]
+        elif key in seen:
             message = f"Same patient and admission time as row {seen[key]}."
-        elif key in stored:
-            message = f"Already recorded as {stored[key]}."
+            problems.append(RowProblem(n, "Patient number", message))
         else:
             seen[key] = n
-            continue
-        problems.append(RowProblem(n, "Patient number", message))
-    return problems
+    return DuplicateScan(problems, recorded)

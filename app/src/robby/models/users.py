@@ -54,3 +54,21 @@ class UserSession(Base):
     user_agent: Mapped[str | None]
 
     user: Mapped[AppUser] = relationship(lazy="joined")
+
+
+class ApiToken(Base):
+    """A bearer token for automated imports, acting as one clinician account. Only the SHA-256 of
+    the token is stored; it is shown once, when it is created."""
+
+    __tablename__ = "api_token"
+
+    id: Mapped[UUIDPK]
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"), index=True)
+    label: Mapped[str]
+    token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
+    created_at: Mapped[CreatedAt]
+    last_used_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+
+    user: Mapped[AppUser] = relationship(foreign_keys=[user_id], lazy="joined")
