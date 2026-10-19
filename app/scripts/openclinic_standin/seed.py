@@ -62,7 +62,13 @@ def gest_text(rng: random.Random, weeks: int) -> str:
 def add_admission(cur, rng: random.Random, number: int, at: datetime, bad: bool = False) -> None:
     case = rng.choices(CASES, weights=[c[0] for c in CASES])[0]
     _, parity_kind, cs, pregnancy, presentation, onset, (lo, hi) = case
-    para = 0 if parity_kind == "nullip" else rng.choice([1, 1, 2, 2, 3, 4]) if parity_kind == "multip" else rng.choice([0, 1, 2])
+    para = (
+        0
+        if parity_kind == "nullip"
+        else rng.choice([1, 1, 2, 2, 3, 4])
+        if parity_kind == "multip"
+        else rng.choice([0, 1, 2])
+    )
     para = max(para, cs)
     if cs and para == 0:
         para = cs
@@ -70,7 +76,12 @@ def add_admission(cur, rng: random.Random, number: int, at: datetime, bad: bool 
     pid = f"OC-{number}"
     cur.execute(
         "INSERT INTO patient VALUES (%s,%s,%s,%s)",
-        (pid, rng.choice(FIRST), rng.choice(LAST), (at - timedelta(days=age * 365 + rng.randint(0, 360))).date()),
+        (
+            pid,
+            rng.choice(FIRST),
+            rng.choice(LAST),
+            (at - timedelta(days=age * 365 + rng.randint(0, 360))).date(),
+        ),
     )
     cur.execute(
         "INSERT INTO encounter (patient_id, ward, admission_at) VALUES (%s,'Maternity',%s)",
@@ -92,7 +103,11 @@ def add_admission(cur, rng: random.Random, number: int, at: datetime, bad: bool 
     if rng.random() > 0.15:
         cur.execute(
             "INSERT INTO lab_result (encounter_id, test_code, result_text, resulted_at) VALUES (%s,'URINE_PROTEIN',%s,%s)",
-            (eid, rng.choices(["neg", "trace", "1+", "2+", "3+"], [60, 12, 14, 9, 5])[0], at + timedelta(minutes=15)),
+            (
+                eid,
+                rng.choices(["neg", "trace", "1+", "2+", "3+"], [60, 12, 14, 9, 5])[0],
+                at + timedelta(minutes=15),
+            ),
         )
     if rng.random() > 0.2:
         cur.execute(
@@ -110,7 +125,9 @@ def add_other_ward(cur, rng: random.Random, number: int, at: datetime) -> None:
 
 
 def next_number(cur) -> int:
-    cur.execute("SELECT COALESCE(MAX(CAST(SUBSTRING(patient_id, 4) AS UNSIGNED)), 10000) FROM patient")
+    cur.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(patient_id, 4) AS UNSIGNED)), 10000) FROM patient"
+    )
     return int(cur.fetchone()[0]) + 1
 
 
@@ -118,7 +135,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=["seed", "add", "reset"])
     parser.add_argument("count", nargs="?", type=int, default=1)
-    parser.add_argument("--bad", action="store_true", help="add: give the admission a bad presentation")
+    parser.add_argument(
+        "--bad", action="store_true", help="add: give the admission a bad presentation"
+    )
     args = parser.parse_args()
     db = connect()
     cur = db.cursor()
@@ -143,8 +162,16 @@ def main() -> None:
     else:
         number = next_number(cur)
         for i in range(args.count):
-            add_admission(cur, rng, number + i, now - timedelta(minutes=5 * (args.count - i)), bad=args.bad and i == 0)
-        print(f"Added {args.count} maternity admission(s){' (first one has a bad value)' if args.bad else ''}.")
+            add_admission(
+                cur,
+                rng,
+                number + i,
+                now - timedelta(minutes=5 * (args.count - i)),
+                bad=args.bad and i == 0,
+            )
+        print(
+            f"Added {args.count} maternity admission(s){' (first one has a bad value)' if args.bad else ''}."
+        )
     db.commit()
     db.close()
 

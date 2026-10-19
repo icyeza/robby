@@ -67,7 +67,9 @@ def main() -> int:
     parser.add_argument("--db-host", default=os.environ.get("OC_DB_HOST", "127.0.0.1"))
     parser.add_argument("--db-port", type=int, default=int(os.environ.get("OC_DB_PORT", "3307")))
     parser.add_argument("--db-user", default=os.environ.get("OC_DB_USER", "robby_reader"))
-    parser.add_argument("--db-password", default=os.environ.get("OC_DB_PASSWORD", "reader-password-123"))
+    parser.add_argument(
+        "--db-password", default=os.environ.get("OC_DB_PASSWORD", "reader-password-123")
+    )
     parser.add_argument("--db-name", default=os.environ.get("OC_DB_NAME", "openclinic"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -95,12 +97,17 @@ def main() -> int:
             print(f"Rejected (HTTP {status}). Nothing from this batch was saved.", file=sys.stderr)
             for p in result.get("problems", []):
                 row = start + p["row"]
-                print(f"  record {row} ({rows[row - 1].get('Patient ID')}) · {p['column'] or '-'} · {p['message']}", file=sys.stderr)
+                print(
+                    f"  record {row} ({rows[row - 1].get('Patient ID')}) · {p['column'] or '-'} · {p['message']}",
+                    file=sys.stderr,
+                )
             if "error" in result:
                 print(f"  {result['error']}", file=sys.stderr)
             return 1
         imported += result["imported"]
-        already += len(result.get("already_recorded", [])) + len(result.get("skipped_duplicates", []))
+        already += len(result.get("already_recorded", [])) + len(
+            result.get("skipped_duplicates", [])
+        )
     print(f"Imported {imported} new admissions; {already} were already recorded.")
     return 0
 
