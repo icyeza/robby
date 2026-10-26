@@ -138,6 +138,58 @@ out-of-fold predictions (4,265 admissions, 27.3% CS). Aggregates only; from
 - **PR-AUC (average precision) is 0.584** against a no-skill baseline equal to the prevalence,
   0.273: about twice the baseline, over all thresholds.
 
+### Why recall is low, and why that is not a flaw in the selected model
+
+`scripts/recall_report.py` compares the best configuration of every model (and the baselines) on
+the same pooled out-of-fold predictions, at the same operating points
+(`reports/recall/recall_by_model.{csv,md}`).
+
+| Model | recall at 0.5 | recall at the prevalence cut (0.273) | recall at 80% specificity |
+|---|---:|---:|---:|
+| B1 (Robson-group lookup) | 0.354 | 0.695 | 0.601 |
+| logreg_l2 (selected) | 0.378 | 0.590 | 0.538 |
+| elasticnet | 0.376 | 0.589 | 0.540 |
+| xgboost | 0.362 | 0.562 | 0.543 |
+| random_forest | 0.352 | 0.553 | 0.524 |
+| mlp | 0.379 | 0.623 | 0.530 |
+| ft_transformer | 0.347 | 0.587 | 0.585 |
+
+(B1 and ft_transformer output few distinct probabilities or tied scores, so their 80% specificity
+cut lands at 0.70 specificity; compare them at the 0.5 and prevalence columns.)
+
+1. **The low recall comes from the 0.5 cut, not from the algorithm.** Every model, including the
+   B1 lookup table, has recall of 0.35-0.38 at 0.5. With 27% CS, a calibrated probability seldom
+   passes 0.5, so most women who go on to a CS are given 0.3-0.5 and are not flagged. Moving the
+   cut raises recall for every model (0.55-0.70 at the prevalence cut), at the price of precision.
+2. **Tuning or a bigger model does not fix it.** At matched specificity the ten models differ by
+   only a few points of recall (0.52-0.54 at 80% specificity), the same ceiling their AUCs
+   (about 0.75) imply. Models such as XGBoost and the MLP, tuned over 50 trials on every hospital
+   (below), do not beat the regularised logistic regression. What is available at admission
+   limits how well a CS can be anticipated: for the selected model, recall 0.75 means flagging
+   43% of the vaginal births (specificity 0.565 at the 0.20 cut).
+3. **The model is selected and shown as a probability, not as a yes/no.** Selection (the
+   pre-registered rule in `configs/selection_rule.yaml`) uses AUC and calibration. The app shows
+   "N in 100", and the cut is a deployment choice set by the cost of a missed CS (an unprepared
+   theatre) against a false alarm (a theatre prepared and not used). The table above gives that
+   trade-off at each cut.
+4. **If a higher recall is wanted, the cost is explicit.** At 0.20 the selected model reaches
+   recall 0.75 but flags 52% of admissions (precision 0.39).
+
+## Hyperparameter tuning experiments
+
+Every tuned model is searched with 50 seeded Optuna TPE trials on each held-out hospital's
+training rows, scored by the inner facility-grouped CV log loss. `scripts/tuning_report.py`
+replays those searches and writes every trial (`reports/tuning/trials.csv`, one row per model,
+hospital and trial with its hyperparameter values and loss), a per-hospital summary (best,
+median, worst loss; whether the best trial reproduces the hyperparameters logged in MLflow), a
+sensitivity table (rank correlation of each hyperparameter with the loss) and one figure per
+model plotting the loss of every trial against each hyperparameter. Notebook 02 section 5 shows
+these.
+
+```bash
+uv run python scripts/tuning_report.py [--models logreg_l2 xgboost ...]
+```
+
 ## Serving the model (API)
 
 ```bash
