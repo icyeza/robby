@@ -175,6 +175,28 @@ cut lands at 0.70 specificity; compare them at the 0.5 and prevalence columns.)
 4. **If a higher recall is wanted, the cost is explicit.** At 0.20 the selected model reaches
    recall 0.75 but flags 52% of admissions (precision 0.39).
 
+### Raising recall: a recall-oriented operating point
+
+Recall can be raised without touching the model, because the ranking (AUC) is unchanged and only
+the cut moves. `scripts/recall_operating_point.py` picks, for each held-out hospital, the cut that
+reaches a target recall on the *other* hospitals' predictions and applies it to the held-out one,
+so no hospital's own outcomes are used (`reports/recall/operating_point.{csv,md}`):
+
+| target recall | mean cut | recall obtained | specificity | precision | flagged % |
+|---:|---:|---:|---:|---:|---:|
+| 0.5 (default cut 0.5: 0.38) | 0.335 | 0.501 | 0.829 | 0.524 | 26.1 |
+| 0.6 | 0.269 | 0.604 | 0.733 | 0.460 | 35.9 |
+| 0.7 | 0.220 | 0.701 | 0.620 | 0.410 | 46.8 |
+| 0.75 | 0.200 | 0.755 | 0.561 | 0.392 | 52.5 |
+
+The target is met in the pooled data, but not equally at every hospital: with the 0.75 target
+Kibagabaga obtains 0.63 and Masaka 0.84 (Masaka also flags 67% of admissions). The hospitals differ
+in case mix and in how often CS is performed, so a single national cut does not give the same recall
+everywhere; this is the same case-mix issue as the local recalibration (S2) in notebook 03. A
+recall-oriented cut is therefore a deployment choice per hospital (cost of a missed CS against a
+false alarm), not a change to the model; the deployed model, the 0.5 reporting cut and the
+pre-registered selection are unchanged.
+
 ## Hyperparameter tuning experiments
 
 Every tuned model is searched with 50 seeded Optuna TPE trials on each held-out hospital's
