@@ -93,9 +93,7 @@ def markdown_table(table: pd.DataFrame) -> str:
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for row in table.round(4).itertuples(index=False):
         lines.append("| " + " | ".join(str(v) for v in row) + " |")
-    return "
-".join(lines) + "
-"
+    return "\n".join(lines) + "\n"
 
 
 FIXED = ("model", "fold", "trial", "log_loss", "best_log_loss")
