@@ -157,6 +157,10 @@ the same pooled out-of-fold predictions, at the same operating points
 (B1 and ft_transformer output few distinct probabilities or tied scores, so their 80% specificity
 cut lands at 0.70 specificity; compare them at the 0.5 and prevalence columns.)
 
+0. **Which admissions this covers.** The model predicts for admissions where no CS was planned in
+   advance (`P_pred`: planned CS removed), because its job is to anticipate the unplanned ones. In
+   that group about 27% end in a CS; the proposal's 43.5% is the rate over all deliveries, planned
+   ones included, and is far above the WHO's roughly 10%. The two figures are not in conflict.
 1. **The low recall comes from the 0.5 cut, not from the algorithm.** Every model, including the
    B1 lookup table, has recall of 0.35-0.38 at 0.5. With 27% CS, a calibrated probability seldom
    passes 0.5, so most women who go on to a CS are given 0.3-0.5 and are not flagged. Moving the
