@@ -216,6 +216,44 @@ these.
 uv run python scripts/tuning_report.py [--models logreg_l2 xgboost ...]
 ```
 
+**What was run.** 1,040 trials: 8 tuned models x 4 held-out hospitals (50 trials for logistic
+regression, XGBoost and the MLP; 25 for elastic net, random forest, SVM and CART; 10 for the
+FT-Transformer, which trains on CPU). All 32 searches reproduce the hyperparameters logged in
+MLflow, so the tables are the real tuning record, not a re-creation.
+
+**The neural network (MLP).** Each of the 200 trials draws a different combination of hidden-layer
+shape (32, 64, 128-64, 64-32), L2 penalty `alpha` (1e-5 to 1e-1) and learning rate (1e-4 to 1e-2),
+and is scored by the inner CV log loss. The best loss per hospital is 0.485-0.532, against a
+median trial of 0.50-0.55 and a worst of 0.60-0.68, so a poor setting costs up to 0.1 in log loss.
+The smallest network (one layer of 32) gave the best loss (0.485) and larger or deeper networks
+did not improve on it (128-64 median 0.538 and 64-32 median 0.538, against 0.500 for 32 and 0.504
+for 64).
+
+**What the experiments show across models** (`reports/tuning/summary.md`, `sensitivity.md`):
+
+| Model | Trials per hospital | Best inner-CV log loss (range over hospitals) | Median trial minus best |
+|---|---:|---:|---:|
+| logreg_l2 | 50 | 0.480-0.531 | 0.002-0.008 |
+| xgboost | 50 | 0.474-0.494 | 0.002-0.009 |
+| mlp | 50 | 0.485-0.532 | 0.007-0.025 |
+| elasticnet | 25 | 0.480-0.527 | 0.005-0.014 |
+| random_forest | 25 | 0.477-0.501 | 0.006-0.015 |
+| cart | 25 | 0.482-0.501 | 0.018-0.024 |
+| svm_rbf | 25 | 0.491-0.512 | 0.023-0.029 |
+| ft_transformer | 10 | 0.482-0.539 | 0.019-0.032 |
+
+- Logistic regression and XGBoost barely move with the hyperparameters (the median trial is within
+  0.01 of the best); the MLP, SVM, CART and FT-Transformer are more sensitive, and a bad region
+  costs far more (SVM worst trials reach a log loss above 1.0).
+- Tuning stopped paying off before the end of the search: in the second half of the trials the
+  best loss improved by 0.01 or less for every model (typically under 0.005).
+- Stability across hospitals differs by model. Logistic regression picks a similar `C` on every
+  hospital (0.09-0.21). The MLP picks a different architecture on each (128-64, 64, 64-32 and 32),
+  with similar losses, so several settings are about equally good rather than one clearly best.
+- After tuning, the MLP, logistic regression and XGBoost tie on held-out hospitals (mean AUC
+  0.753, 0.752 and 0.751). The extra flexibility buys nothing, which is why the pre-registered
+  rule selects the simplest, logistic regression, and why the low recall is not a tuning problem.
+
 ## Serving the model (API)
 
 ```bash
