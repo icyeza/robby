@@ -250,6 +250,68 @@ Every screen:
 | Facility administrator / model custodian | [audit report](ui-mockups/screenshots/audit-report.png), [unclassified records](ui-mockups/screenshots/unclassified.png), [users](ui-mockups/screenshots/users.png), [models](ui-mockups/screenshots/models.png), [model detail](ui-mockups/screenshots/model-detail.png), [monitoring](ui-mockups/screenshots/monitoring.png), [approval log](ui-mockups/screenshots/audit-log.png) |
 | National | [overview](ui-mockups/screenshots/national-overview.png), [facility report](ui-mockups/screenshots/national-facility.png), [facilities](ui-mockups/screenshots/facilities.png) |
 
+## Testing, performance and compatibility
+
+### Automated tests
+
+About 820 test functions in three suites, all on synthetic data (the real records never enter a test):
+
+| Suite | Run | What it covers |
+|---|---|---|
+| [`ML/tests/`](ML/tests/) | `cd ML && uv run pytest` | Ingest and mapping, Robson classification of the dataset, leakage screens, splits (no mother on both sides), every model family, calibration, metrics, selection rule, packaging, privacy (small-cell suppression), notebooks (including a scan of committed outputs for patient data), the API |
+| [`ML/packages/*/tests/`](ML/packages/) | `uv run pytest` in each package | Rule engine (every group, partial and conflict cases, rule-set checksum), serving: features, calibration, drift, monitoring, golden-output contract |
+| [`app/tests/`](app/tests/) | `cd app && uv run pytest` (needs PostgreSQL) | Migrations and database triggers (clinical rows cannot be edited), the access matrix of every role on every page, CSRF, sessions and lockout, the clinical flow, Excel and API import (all or nothing), audit arithmetic against hand-computed values, model governance, reconciliation, monitoring, no inline script or style in any page |
+
+Model validation is separate from the code tests: leave-one-hospital-out (each hospital is scored
+by a model that never saw it) and a later-period check, reported in [`ML/README.md`](ML/README.md).
+
+### Edge cases and performance
+
+[`ML/scripts/benchmark.py`](ML/scripts/benchmark.py) (`cd ML && uv run python scripts/benchmark.py`), on
+a Windows 11 laptop (AMD Ryzen, Python 3.11), with generated inputs:
+
+* **Exhaustive engine sweep.** All 14,400 combinations of the six Robson inputs, each including
+  "not recorded" and the edges of its domain: 8,129 resolved, 4,543 partial, 1,728 conflict, no
+  exceptions. Every one of the 2,340 complete, non-contradictory combinations resolves to exactly
+  one group. About 6,400 classifications per second.
+* **API latency**, 2,000 requests per endpoint, in-process and sequential, with the `readiness-v1.0`
+  model; a fifth of the admissions have missing fields and a tenth have screening left blank:
+
+  | Endpoint | p50 | p95 | p99 | max |
+  |---|---|---|---|---|
+  | `POST /classify` | 2.7 ms | 3.5 ms | 3.9 ms | 5.1 ms |
+  | `POST /admissions/assess` (screening + Robson + model) | 88 ms | 98 ms | 105 ms | 165 ms |
+
+  All 204 admissions with blank screening were rejected with 422, and none of the valid ones were.
+  Most of the assessment time is the model's iterative imputation; it stays far below what a
+  clinician notices at the bedside. Cold start (rule set and model load): 2.9 s.
+
+### Browsers and devices
+
+[`app/scripts/browser_check.py`](app/scripts/browser_check.py) drives the real app (demo instance)
+through the clinician flow with Playwright: sign in, fill the form, check the live Robson panel,
+check that saving is blocked while screening is blank, save, and check the result page. It fails on
+any console error or Content-Security-Policy violation from the app's own pages.
+
+| Browser | Desktop 1366x768 | Phone 390x844 | Form load |
+|---|---|---|---|
+| Chrome 156 | pass | pass | 75 ms |
+| Edge 156 | pass | pass | 80 ms |
+| Firefox 157 | pass | pass | 150-190 ms |
+| WebKit 27.2 (Safari's engine) | pass | pass | 65-70 ms |
+
+Found and fixed along the way: pages had no favicon, so every browser requested a missing
+`/favicon.ico` (a 404 in the console). Known and harmless: WebKit reports its *own* built-in
+`<select>` styling as refused by the strict CSP (a bare page with only a `<select>` does the same);
+the app's styles apply normally. Screenshots:
+[WebKit on a phone](docs/testing/result-webkit-phone.png),
+[Firefox on a desktop](docs/testing/result-firefox-desktop.png).
+
+### Python versions
+
+The shared packages (`robson_engine`, `robson_serving`) pass their tests on Python 3.11, 3.12 and
+3.13 (130 and 106 tests). The ML workspace is pinned to 3.11 for reproducible training.
+
 ## Deployment plan
 
 **Target:** one partner maternity unit first (a pilot), on hardware the hospital already has, with
