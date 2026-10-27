@@ -165,6 +165,9 @@ instead of typing it in.
 | [`ML/`](ML/) | Notebooks, ML code, tests and the API. **Start with [`ML/README.md`](ML/README.md)** |
 | [`ML/notebooks/`](ML/notebooks/) | `01_eda` (data quality, Robson classification, exploratory analysis), `02_model_training` (architectures, training, hyperparameter tuning, MLflow tracking, per-model metrics and confusion matrices, selection), `03_model_evaluation` (interpretation, robustness, deployment, missing data) and `04_audit_and_research_questions` (Robson audit, case-mix, missing data) |
 | [`ML/api/`](ML/api/) | FastAPI service: Robson classification and readiness probability, with Swagger UI |
+| [`ML/packages/`](ML/packages/) | `robson_engine` (the versioned Robson rule engine) and `robson_serving` (model loading, calibration, drift and monitoring), shared by the ML code and the app |
+| [`app/`](app/) | The web application: admission form, Excel and OpenClinic import, results, outcomes, audit and national reports, model registry, monitoring, users. FastAPI + Jinja2 + htmx over PostgreSQL. **Details in [`app/README.md`](app/README.md)** |
+| [`docs/diagrams/`](docs/diagrams/) | End-to-end, ERD and prediction-sequence diagrams (Mermaid source and PNG) |
 | [`ui-mockups/`](ui-mockups/) | Clickable HTML mockups of every screen of the web app, and their [screenshots](ui-mockups/screenshots/) |
 
 ## Setup
@@ -199,6 +202,24 @@ the private data. `uv run python scripts/build_demo_model.py` builds a stand-in 
 data in about a minute; start the API with `ROBSON_MODEL_DIR=artefacts/demo-synthetic`. Without any
 model the API still classifies admissions and reports that the readiness estimate is unavailable,
 the same graceful degradation the app is designed for.
+
+**Web app.** Needs PostgreSQL 16 as well. Full instructions (Windows and Linux, settings, demo
+mode, tests) are in [`app/README.md`](app/README.md#development-on-windows-git-bash). In short:
+
+```bash
+cd robby/app
+cp .env.example .env          # set ROBBY_DATABASE_URL, ROBBY_SECRET_KEY, ROBBY_SECURE_COOKIES=false
+uv sync
+uv run robby-admin db upgrade
+uv run robby-admin rules load
+uv run robby-admin create-system-admin --username admin
+uv run uvicorn robby.main:create_app --factory --reload
+# open http://127.0.0.1:8000
+```
+
+For a ready-filled example (4 demo hospitals, about 700 admissions, every role), run
+`uv run robby-admin demo load` and then `sh scripts/demo.sh` (http://127.0.0.1:8100; demo
+accounts and password in [`app/README.md`](app/README.md#demo-mode)).
 
 **UI mockups.** Open `ui-mockups/index.html` in a browser. No server or build step is needed.
 
@@ -273,5 +294,5 @@ browser (clinician, administrator) ──HTTPS──> nginx (reverse proxy, TLS)
 | 2 | Robson engine as a tested package (`ML/packages/robson_engine`) | Done |
 | 3 | API exposing classification and readiness (`ML/api`) | Done (MVP) |
 | 4 | UI design (Figma and HTML mockups) | Done |
-| 5 | Web app: server-rendered pages (Jinja2 + htmx) on the API, PostgreSQL storage, sign-in | Next |
+| 5 | Web app: server-rendered pages (Jinja2 + htmx), PostgreSQL storage, sign-in, Excel and OpenClinic import, audit, model registry, monitoring ([`app/`](app/)) | Done (runs as a demonstration instance) |
 | 6 | Install on a server at the partner facility (nginx + systemd), usability sessions with clinicians | After ethics clearance |

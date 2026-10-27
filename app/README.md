@@ -8,18 +8,28 @@ This folder is its own uv project. It depends on `../ML/packages/robson_engine` 
 never on the ML training code (`robson_ml`) or its stack. `tests/test_serving_contract.py` loads a
 synthetic packaged artefact and runs the golden check.
 
-## What is here (sub-project 1)
+## What is here
 
-- Every database table, created by one Alembic migration, with PostgreSQL triggers that make
-  clinical rows and the event log impossible to update or delete.
-- A hash-chained event log: every state change appends one entry; `robby-admin events verify`
-  recomputes the chain.
-- Sign-in (argon2id, lockout after 5 failed attempts for 15 minutes), sessions (30 minutes idle,
-  12 hours absolute), forced password change, CSRF protection, strict Content-Security-Policy.
-- Facilities and Users administration. Other navigation items show "Not available yet" until
-  their sub-project is built.
-- The `robby-admin` command line (create the first administrator, migrate, load the rule set,
-  verify the event log).
+- **Clinical flow**: admission form with a live Robson panel (partial and conflict states) and
+  enforced screening (value or recorded reason), result page with the explanation and readiness
+  signal, recent admissions, delivery outcome, and corrections that supersede rather than edit.
+- **Import**: Excel template download and upload (all rows or none), and token-authenticated
+  automated import for OpenClinic and other systems.
+- **Audit**: facility Robson report with CSV export and comparison with a reference population,
+  unclassified records, and national aggregates for the national reviewer.
+- **Model governance**: registry with candidate, shadow and active states, approvals with a named
+  approver and reason, approval log; shadow models score every admission without being shown.
+- **Monitoring**: reconciliation of predictions with outcomes, calibration and input-drift alerts,
+  and the theatre readiness board.
+- **Platform**: every table created by Alembic migrations, with PostgreSQL triggers that make
+  clinical rows and the event log impossible to update or delete; a hash-chained event log
+  (`robby-admin events verify`); sign-in (argon2id, lockout after 5 failed attempts for 15
+  minutes), sessions (30 minutes idle, 12 hours absolute), forced password change, CSRF
+  protection, strict Content-Security-Policy; facilities and users administration; demo mode.
+- The `robby-admin` command line (first administrator, migrations, rule set, model registration,
+  reconciliation, API tokens, demo database, event-log verification).
+- Not yet built: the FHIR adapter ([`src/robby/fhir/`](src/robby/fhir/README.md)) and the server
+  deployment files (systemd, nginx, TLS).
 
 ## Data model
 
@@ -319,7 +329,7 @@ Environment variables win over the file.
 | `ROBBY_SESSION_ABSOLUTE_HOURS` | `12` | Session ends this long after sign-in regardless |
 | `ROBBY_TIMEZONE` | `Africa/Kigali` | Zone used to show times (all times are stored in UTC) |
 | `ROBBY_RULE_SET_PATH` | rule set shipped in `robson_engine` | Robson rule set YAML for `robby-admin rules load` |
-| `ROBBY_ARTEFACT_DIR` | `artefacts` | Where registered model artefacts live (used from sub-project 2) |
+| `ROBBY_ARTEFACT_DIR` | `artefacts` | Where registered model artefacts live |
 | `ROBBY_DEMO` | `false` | Shows the example-data banner (demo database only) |
 | `ROBBY_RECONCILE_INTERVAL_MINUTES` | `15` | How often the app reconciles predictions with recorded outcomes in the background; `0` turns the in-app job off |
 | `ROBBY_TEST_DATABASE_URL` | (tests only) | Server for the test suite; the database name is a prefix |
@@ -376,7 +386,7 @@ and put `postgresql+psycopg://robby:robby-dev-only@localhost:5432/robby` in `ROB
 
 ## Linux server
 
-Deployment files (systemd, nginx, TLS) come with sub-project 8. Until then:
+Deployment files (systemd, nginx, TLS) are not in the repository yet. A manual install:
 
 ```bash
 sudo apt install postgresql-16          # or the distribution's PostgreSQL 16 package
