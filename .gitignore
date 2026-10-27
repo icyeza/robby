@@ -24,3 +24,6 @@ app/.oc-token
 
 # raw survey exports dropped in the repo root (patient-level data)
 /*.xlsx
+
+# browser check screenshots (app/scripts/browser_check.py)
+app/browser-check/
