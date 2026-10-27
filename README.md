@@ -312,6 +312,31 @@ the app's styles apply normally. Screenshots:
 The shared packages (`robson_engine`, `robson_serving`) pass their tests on Python 3.11, 3.12 and
 3.13 (130 and 106 tests). The ML workspace is pinned to 3.11 for reproducible training.
 
+## Scope against the proposal
+
+The proposal (Section 1.5) commits four components at *deployed* level and four at *demonstrated*
+level, and says that any reduction is reported rather than silently dropped. Where each one stands:
+
+| Proposal item | Level committed | Delivered | Notes |
+|---|---|---|---|
+| Versioned Robson classification engine | Deployed | Yes | [`ML/packages/robson_engine`](ML/packages/robson_engine/); 94.4% of the 5,520 records resolve to one group, none to more than one |
+| Admission form with enforced screening | Deployed | Yes | Saving is blocked until each screening field has a value or a recorded reason, in the form, the Excel import, the automated import and the API |
+| Audit service against external reference distributions | Deployed | Yes | Facility and national reports in the app; an independent offline implementation ([`audit_offline.py`](ML/src/robson_ml/audit_offline.py)) for the agreement check |
+| Calibrated admission-time model comparing logistic regression, gradient boosting and a tabular deep-learning baseline | Deployed | Yes | All three compared (XGBoost and an FT-Transformer among them); the selected L2 logistic regression is calibrated, registered, and served through the API and the app, with the model version stored on every prediction |
+| Full algorithm comparison (stretch: seven algorithms) | Demonstrated | Exceeded | Eight families plus four baselines, chosen by the pre-registered rule |
+| Reconciliation and monitoring loop | Demonstrated | Yes | Outcome reconciliation, calibration and drift alerts; exercised on the synthetic demo database, since there is no prospective volume yet |
+| FHIR interoperability layer | Demonstrated | **Not evaluated** | No hospital FHIR endpoint was available. Getting admissions out of the hospital system is covered instead by a token-authenticated import API, tested against an OpenClinic stand-in ([`app/scripts/openclinic_standin/`](app/scripts/openclinic_standin/)), and by Excel import; both use the same checks as the form. The FHIR adapter is the next piece of work |
+| Live pilot in a partner maternity unit | Demonstrated | **Reduced to a demonstration instance** | Ethics clearance has not arrived, so, as the proposal provides, the system runs on a demonstration instance with synthetic and de-identified data and is not installed in a ward. Server deployment files (systemd, nginx, TLS) are not written yet |
+| Clinician usability sessions (at least 7 of 8 testers complete an entry unaided; RQ4 bedside time) | Evaluation | **Not yet run** | Planned on the demonstration instance; RQ4 is unanswered until they happen |
+
+Out of scope as planned: a wearable or physiological screening layer, and computer-vision extraction
+from antenatal cards or partographs.
+
+One deliberate change of framing: the proposal's title speaks of risk prediction to *support
+cesarean decision-making*, but the same proposal rules out any individual recommendation. The
+system therefore presents the probability as a *readiness signal under current practice*, for
+planning theatre and staff, and every screen that shows it says that it is not a recommendation.
+
 ## Deployment plan
 
 **Target:** one partner maternity unit first (a pilot), on hardware the hospital already has, with
