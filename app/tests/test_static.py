@@ -50,3 +50,9 @@ def test_app_stylesheet_replaces_every_inline_style_the_ported_pages_used() -> N
         ".seg input:checked + span",
     ):
         assert selector in css
+
+
+def test_pages_link_the_favicon_so_browsers_do_not_request_a_missing_one() -> None:
+    base = (STATIC.parent / "templates" / "base.html").read_text(encoding="utf-8")
+    assert '<link rel="icon" href="/static/favicon.svg"' in base
+    assert (STATIC / "favicon.svg").read_text(encoding="utf-8").startswith("<svg")
