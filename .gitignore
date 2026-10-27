@@ -18,3 +18,9 @@ build/
 
 # app settings with local credentials and the secret key
 app/.env
+
+# local feed token for the OpenClinic demo helper
+app/.oc-token
+
+# raw survey exports dropped in the repo root (patient-level data)
+/*.xlsx
