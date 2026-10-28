@@ -37,6 +37,7 @@ NAV: dict[Role, tuple[NavItem, ...]] = {
         NavItem("Audit report", "/audit"),
         NavItem("Unclassified records", "/audit/unclassified"),
         NavItem("Readiness board", "/readiness"),
+        NavItem("Readiness level", "/readiness/level"),
         NavItem("Users", "/admin/users"),
         NavItem("Integrations", "/admin/integrations"),
     ),

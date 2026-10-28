@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Readiness level{% endblock %}
+{% block content %}
+<div class="titlebar tight"><h1>Readiness level</h1><span class="meta">{{ facility.name }}</span></div>
+<p class="lede">An admission is shown as <b>high readiness</b> when its readiness signal is at or above this level. It tells the team to have theatre and staff ready. It is not a recommendation for or against cesarean, and the signal itself is always shown with it.</p>
+{% if problem %}<div class="errbox spaced" role="alert"><b>⚠ {{ problem }}</b></div>{% endif %}
+
+<div class="tiles tiles-3">
+  <div class="tile"><div class="k">Current level</div><div class="v">{{ facility.readiness_cut_percent }} in 100</div><div class="s">At or above this, high readiness</div></div>
+</div>
+
+<section class="sec">
+  <div class="sec-h"><h2>Change the level</h2></div>
+  <div class="sec-b">
+    <form method="post" action="/readiness/level">
+      {{ ui.csrf_input() }}
+      {{ ui.field("cut_percent", "Level (out of 100)", facility.readiness_cut_percent, help="Start at 30. Lower catches more cesareans but flags more women who deliver vaginally; higher flags fewer.") }}
+      {{ ui.field("reason", "Reason for the change", "", help="Recorded in the event log with your name.") }}
+      <div class="actions"><button class="btn btn-p" type="submit">Save level</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-h"><h2>How to choose it</h2></div>
+  <div class="sec-b">
+    <p>Choose the level from how many unnecessary theatre preparations the unit can accept. In the study data, a level of 30 flagged about 1 in 5 women who went on to deliver vaginally and caught about 6 in 10 cesareans. Hospitals differ, so once this unit has a few hundred admissions with outcomes, set the level so that about 1 in 5 of its vaginal births are flagged (the model custodian can compute it from the Monitoring data).</p>
+  </div>
+</section>
+{% endblock %}

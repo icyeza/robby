@@ -50,6 +50,11 @@
   <section class="card signal">
     <div class="card-h"><span>Readiness signal · group {{ panel.group }} · under current practice</span></div>
     <div class="card-b">
+      {% if view.high %}
+      <div class="notice warn readiness-flag"><b>Readiness: HIGH</b> · have theatre and staff ready. The signal is at or above this unit's readiness level ({{ view.cut_percent }} in 100).</div>
+      {% else %}
+      <div class="notice readiness-flag"><b>Readiness: usual</b> · the signal is below this unit's readiness level ({{ view.cut_percent }} in 100).</div>
+      {% endif %}
       <p class="signal-lead">Of 100 women like her admitted to facilities like this one, about {{ view.percent }} had a cesarean.</p>
       <svg class="fig-defs" aria-hidden="true"><symbol id="fig" viewBox="0 0 12 22"><circle cx="6" cy="4" r="3.4"/><path d="M6 8.6c-2.6 0-4.2 1.9-4.6 4.6L.9 18.6c-.1.9.5 1.5 1.3 1.5h7.6c.8 0 1.4-.6 1.3-1.5l-.5-5.4C10.2 10.5 8.6 8.6 6 8.6z"/></symbol></svg>
       <div class="icon-array" role="img" aria-label="{{ view.percent }} of 100 women had a cesarean">

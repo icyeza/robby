@@ -28,7 +28,8 @@ from robby.clinical.form import (
     values_from_admission,
 )
 from robby.errors import NotAllowed, NotFound
-from robby.models import Admission, DeliveryMode, ModelState, ModelVersion, Role
+from robby.models import Admission, DeliveryMode, Facility, ModelState, ModelVersion, Role
+from robby.monitoring.readiness import is_high
 from robby.timeutil import utcnow
 from robby.web.csrf import CsrfChecked
 from robby.web.errors import error_page, redirect
@@ -402,6 +403,9 @@ def result(request: Request, code: str, db: DbDep, current: Clinician) -> Respon
     if predicted is not None:
         prediction, model = predicted
         view["percent"] = service.percent_of(prediction.probability)
+        facility = db.get(Facility, admission.facility_id)
+        view["cut_percent"] = facility.readiness_cut_percent if facility else 30
+        view["high"] = is_high(prediction.probability, view["cut_percent"])
         view["model_label"] = model.version_label
         view["active_since"] = (
             service.activated_at(db, model)

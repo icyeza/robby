@@ -15,6 +15,10 @@
 </div>
 
 {% if board.included %}
+<div class="notice">High readiness: <b>{{ board.flagged }}</b> of {{ board.included }} admission{{ '' if board.included == 1 else 's' }} counted {{ 'is' if board.flagged == 1 else 'are' }} at or above this unit's readiness level ({{ board.cut_percent }} in 100). Have theatre and staff ready for them.</div>
+{% endif %}
+
+{% if board.included %}
 <p class="lead-line">Expected cesareans among women currently admitted: <b>about {{ '%.1f' % board.expected }}</b> (likely {{ board.low }} to {{ board.high }}), counting {{ board.included }} admission{{ '' if board.included == 1 else 's' }}{% if board.not_included %}; {{ board.not_included }} more {{ 'is' if board.not_included == 1 else 'are' }} not counted{% endif %}.</p>
 {% elif board.awaiting %}
 <p class="lead-line">{{ board.awaiting }} admission{{ '' if board.awaiting == 1 else 's' }} awaiting an outcome, none with a Robson group and estimate yet, so no figure is shown.</p>
