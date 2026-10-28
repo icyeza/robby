@@ -1,0 +1,539 @@
+{
+  "format": 1,
+  "columns": [
+    {
+      "name": "gestational_age_weeks",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "ga_band_lower",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "ga_band_upper",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "parity",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "previous_cs_count",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "fetal_presentation",
+      "kind": "categorical",
+      "levels": [
+        "cephalic",
+        "non_cephalic"
+      ]
+    },
+    {
+      "name": "plurality",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "robson_group_no_onset",
+      "kind": "categorical",
+      "levels": [
+        "10",
+        "1_2",
+        "3_4",
+        "5",
+        "8",
+        "partial"
+      ]
+    },
+    {
+      "name": "maternal_age",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "height_cm",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "weight_kg",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "education_level",
+      "kind": "categorical",
+      "levels": [
+        "Complete Primary school",
+        "Completed secondary school",
+        "Did not complete primary school",
+        "Did not complete secondary school",
+        "Did not go to school",
+        "N/A",
+        "University education or more"
+      ]
+    },
+    {
+      "name": "residency",
+      "kind": "categorical",
+      "levels": [
+        "Rural",
+        "Urban"
+      ]
+    },
+    {
+      "name": "insurance_type",
+      "kind": "categorical",
+      "levels": [
+        "Mutuel",
+        "None",
+        "Others",
+        "RSSB"
+      ]
+    },
+    {
+      "name": "marital_status",
+      "kind": "categorical",
+      "levels": [
+        "Cohabitant",
+        "Divorced",
+        "Married",
+        "Never Married"
+      ]
+    },
+    {
+      "name": "occupation",
+      "kind": "categorical",
+      "levels": [
+        "Full Time Job",
+        "N/A",
+        "Not Working",
+        "Part Time Job"
+      ]
+    },
+    {
+      "name": "age_first_pregnancy",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "bmi",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "gravidity",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "abortions",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "living_children_band",
+      "kind": "categorical",
+      "levels": [
+        "0",
+        "4 or more",
+        "Less than 4"
+      ]
+    },
+    {
+      "name": "died_children",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "previous_stillbirth",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "anc_contacts",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "previous_preterm",
+      "kind": "numeric",
+      "levels": null
+    },
+    {
+      "name": "preeclampsia_recorded",
+      "kind": "categorical",
+      "levels": [
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "name": "hiv_positive",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "ivf",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "antenatal_admission",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "gdm_recorded",
+      "kind": "categorical",
+      "levels": [
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "name": "malaria_in_pregnancy",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "gu_infection",
+      "kind": "categorical",
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "facility_id",
+      "kind": "categorical",
+      "levels": [
+        "Kibagabaga",
+        "La Croix du sud",
+        "Masaka",
+        "Muhima"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "name": "gestational_age_weeks",
+      "kind": "number",
+      "range": [
+        20.0,
+        45.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "ga_band_lower",
+      "kind": "number",
+      "range": [
+        20.0,
+        45.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "ga_band_upper",
+      "kind": "number",
+      "range": [
+        20.0,
+        45.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "parity",
+      "kind": "integer",
+      "range": [
+        0.0,
+        null
+      ],
+      "levels": null
+    },
+    {
+      "name": "previous_cs_count",
+      "kind": "integer",
+      "range": [
+        0.0,
+        null
+      ],
+      "levels": null
+    },
+    {
+      "name": "fetal_presentation",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "cephalic",
+        "non_cephalic"
+      ]
+    },
+    {
+      "name": "plurality",
+      "kind": "integer",
+      "range": [
+        1.0,
+        null
+      ],
+      "levels": null
+    },
+    {
+      "name": "maternal_age",
+      "kind": "number",
+      "range": [
+        12.0,
+        55.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "height_cm",
+      "kind": "number",
+      "range": [
+        120.0,
+        200.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "weight_kg",
+      "kind": "number",
+      "range": [
+        30.0,
+        200.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "education_level",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Complete Primary school",
+        "Completed secondary school",
+        "Did not complete primary school",
+        "Did not complete secondary school",
+        "Did not go to school",
+        "N/A",
+        "University education or more"
+      ]
+    },
+    {
+      "name": "residency",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Rural",
+        "Urban"
+      ]
+    },
+    {
+      "name": "insurance_type",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Mutuel",
+        "None",
+        "Others",
+        "RSSB"
+      ]
+    },
+    {
+      "name": "marital_status",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Cohabitant",
+        "Divorced",
+        "Married",
+        "Never Married"
+      ]
+    },
+    {
+      "name": "occupation",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Full Time Job",
+        "N/A",
+        "Not Working",
+        "Part Time Job"
+      ]
+    },
+    {
+      "name": "age_first_pregnancy",
+      "kind": "number",
+      "range": [
+        10.0,
+        50.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "gravidity",
+      "kind": "integer",
+      "range": [
+        1.0,
+        30.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "abortions",
+      "kind": "integer",
+      "range": [
+        0.0,
+        20.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "living_children_band",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "0",
+        "4 or more",
+        "Less than 4"
+      ]
+    },
+    {
+      "name": "died_children",
+      "kind": "integer",
+      "range": [
+        0.0,
+        20.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "previous_stillbirth",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "anc_contacts",
+      "kind": "integer",
+      "range": [
+        0.0,
+        null
+      ],
+      "levels": null
+    },
+    {
+      "name": "previous_preterm",
+      "kind": "integer",
+      "range": [
+        0.0,
+        20.0
+      ],
+      "levels": null
+    },
+    {
+      "name": "preeclampsia_recorded",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "name": "hiv_positive",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "ivf",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "antenatal_admission",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "gdm_recorded",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "name": "malaria_in_pregnancy",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "gu_infection",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "facility_id",
+      "kind": "category",
+      "range": null,
+      "levels": [
+        "Kibagabaga",
+        "La Croix du sud",
+        "Masaka",
+        "Muhima"
+      ]
+    }
+  ],
+  "coarsen_presentation": true,
+  "unseen_level": "__unseen__",
+  "unseen_allowed": [
+    "facility_id"
+  ]
+}

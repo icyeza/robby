@@ -1,0 +1,1118 @@
+{
+  "format": 2,
+  "min_cell": 10,
+  "features": {
+    "gestational_age_weeks": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        37.5,
+        38.5,
+        39.5,
+        40.5
+      ],
+      "missing": 0.34349355216881594,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.11071428571428571
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.13857142857142857
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.26535714285714285
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.36178571428571427
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.12357142857142857
+        }
+      ]
+    },
+    "ga_band_lower": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        35.5,
+        38.5,
+        40.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.12098475967174678
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.7062133645955452
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.17280187573270808
+        }
+      ]
+    },
+    "ga_band_upper": {
+      "kind": "numeric",
+      "edges": [
+        37.857142857142854,
+        40.857142857142854,
+        45.0
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.12098475967174678
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.7062133645955452
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.17280187573270808
+        }
+      ]
+    },
+    "parity": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.43209007741027444
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.2383298146844945
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.1475486746422707
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.0905465634529674
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.09148486980999296
+        }
+      ]
+    },
+    "previous_cs_count": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        0.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.9155722326454033
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.08442776735459662
+        }
+      ]
+    },
+    "fetal_presentation": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:cephalic"
+          ],
+          "proportion": 0.970926143024619
+        },
+        {
+          "members": [
+            "level:non_cephalic"
+          ],
+          "proportion": 0.029073856975381007
+        }
+      ]
+    },
+    "plurality": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        1.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.9964830011723329
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.0035169988276670576
+        }
+      ]
+    },
+    "robson_group_no_onset": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:10"
+          ],
+          "proportion": 0.050175849941383355
+        },
+        {
+          "members": [
+            "level:1_2"
+          ],
+          "proportion": 0.3824150058616647
+        },
+        {
+          "members": [
+            "level:3_4"
+          ],
+          "proportion": 0.4339976553341149
+        },
+        {
+          "members": [
+            "level:5"
+          ],
+          "proportion": 0.0712778429073857
+        },
+        {
+          "members": [
+            "level:8"
+          ],
+          "proportion": 0.0035169988276670576
+        },
+        {
+          "members": [
+            "level:partial"
+          ],
+          "proportion": 0.05861664712778429
+        }
+      ]
+    },
+    "maternal_age": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        20.5,
+        22.5,
+        24.5,
+        26.5,
+        28.5,
+        30.5,
+        32.5,
+        34.5,
+        38.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.12080694346704199
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.09476894205958246
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.1175228712174525
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.10086793338024864
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.1114238798967863
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.09734928454140276
+        },
+        {
+          "members": [
+            "bin:6"
+          ],
+          "proportion": 0.07787942763312221
+        },
+        {
+          "members": [
+            "bin:7"
+          ],
+          "proportion": 0.07975604034717335
+        },
+        {
+          "members": [
+            "bin:8"
+          ],
+          "proportion": 0.11564625850340136
+        },
+        {
+          "members": [
+            "bin:9"
+          ],
+          "proportion": 0.08397841895378841
+        }
+      ]
+    },
+    "height_cm": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        156.5,
+        158.5,
+        159.5,
+        160.5,
+        162.5,
+        163.5,
+        164.5,
+        165.5,
+        167.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.17210612819910778
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.049776942944353135
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.0960319323784926
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.1472176567269312
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.10706738671049543
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.07372622681380606
+        },
+        {
+          "members": [
+            "bin:6"
+          ],
+          "proportion": 0.06104719417703686
+        },
+        {
+          "members": [
+            "bin:7"
+          ],
+          "proportion": 0.13359943648743836
+        },
+        {
+          "members": [
+            "bin:8"
+          ],
+          "proportion": 0.07983094623150974
+        },
+        {
+          "members": [
+            "bin:9"
+          ],
+          "proportion": 0.07959614933082883
+        }
+      ]
+    },
+    "weight_kg": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        57.5,
+        60.5,
+        62.5,
+        64.5,
+        66.5,
+        69.5,
+        70.5,
+        75.5,
+        81.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.10363423212192263
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.15029308323563892
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.07737397420867527
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.076905041031653
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.09425556858147714
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.13411488862837045
+        },
+        {
+          "members": [
+            "bin:6"
+          ],
+          "proportion": 0.06776084407971864
+        },
+        {
+          "members": [
+            "bin:7"
+          ],
+          "proportion": 0.11090269636576788
+        },
+        {
+          "members": [
+            "bin:8"
+          ],
+          "proportion": 0.09026963657678781
+        },
+        {
+          "members": [
+            "bin:9"
+          ],
+          "proportion": 0.09449003516998827
+        }
+      ]
+    },
+    "education_level": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Complete Primary school"
+          ],
+          "proportion": 0.17561547479484174
+        },
+        {
+          "members": [
+            "level:Completed secondary school"
+          ],
+          "proportion": 0.2403282532239156
+        },
+        {
+          "members": [
+            "level:Did not complete primary school"
+          ],
+          "proportion": 0.22954279015240328
+        },
+        {
+          "members": [
+            "level:Did not complete secondary school",
+            "level:N/A"
+          ],
+          "proportion": 0.2708089097303634
+        },
+        {
+          "members": [
+            "level:Did not go to school"
+          ],
+          "proportion": 0.020867526377491206
+        },
+        {
+          "members": [
+            "level:University education or more"
+          ],
+          "proportion": 0.06283704572098477
+        }
+      ]
+    },
+    "residency": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Rural"
+          ],
+          "proportion": 0.252989449003517
+        },
+        {
+          "members": [
+            "level:Urban"
+          ],
+          "proportion": 0.747010550996483
+        }
+      ]
+    },
+    "insurance_type": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Mutuel"
+          ],
+          "proportion": 0.8869871043376318
+        },
+        {
+          "members": [
+            "level:None"
+          ],
+          "proportion": 0.011254396248534583
+        },
+        {
+          "members": [
+            "level:Others"
+          ],
+          "proportion": 0.04572098475967175
+        },
+        {
+          "members": [
+            "level:RSSB"
+          ],
+          "proportion": 0.056037514654161784
+        }
+      ]
+    },
+    "marital_status": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Cohabitant"
+          ],
+          "proportion": 0.11441969519343494
+        },
+        {
+          "members": [
+            "level:Married",
+            "level:Divorced"
+          ],
+          "proportion": 0.5531066822977726
+        },
+        {
+          "members": [
+            "level:Never Married"
+          ],
+          "proportion": 0.3324736225087925
+        }
+      ]
+    },
+    "occupation": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Full Time Job"
+          ],
+          "proportion": 0.13411488862837045
+        },
+        {
+          "members": [
+            "level:Not Working"
+          ],
+          "proportion": 0.34583821805392734
+        },
+        {
+          "members": [
+            "level:Part Time Job",
+            "level:N/A"
+          ],
+          "proportion": 0.5200468933177023
+        }
+      ]
+    },
+    "age_first_pregnancy": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        18.5,
+        20.5,
+        21.5,
+        22.5,
+        23.5,
+        24.5,
+        25.5,
+        26.5,
+        28.5
+      ],
+      "missing": 0.6865181711606096,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.10172026925953627
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.12715033657442035
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.08601346297681377
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.09424083769633508
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.0987284966342558
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.14136125654450263
+        },
+        {
+          "members": [
+            "bin:6"
+          ],
+          "proportion": 0.0800299177262528
+        },
+        {
+          "members": [
+            "bin:7"
+          ],
+          "proportion": 0.08077786088257292
+        },
+        {
+          "members": [
+            "bin:8"
+          ],
+          "proportion": 0.09050112191473449
+        },
+        {
+          "members": [
+            "bin:9"
+          ],
+          "proportion": 0.09947643979057591
+        }
+      ]
+    },
+    "bmi": {
+      "kind": "numeric",
+      "edges": [
+        22.03856749311295,
+        23.140495867768596,
+        23.93606231490121,
+        24.654832347140037,
+        25.402816083611555,
+        26.171874999999996,
+        27.21730294672667,
+        28.577960676726104,
+        30.824829931972793
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.10777177741253816
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.09297957266964076
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.09955388588870627
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.10002347969006808
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.09978868278938718
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.10307583939891994
+        },
+        {
+          "members": [
+            "bin:6"
+          ],
+          "proportion": 0.0979103075839399
+        },
+        {
+          "members": [
+            "bin:7"
+          ],
+          "proportion": 0.09978868278938718
+        },
+        {
+          "members": [
+            "bin:8"
+          ],
+          "proportion": 0.09978868278938718
+        },
+        {
+          "members": [
+            "bin:9"
+          ],
+          "proportion": 0.09931908898802536
+        }
+      ]
+    },
+    "gravidity": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.3976553341148886
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.23235638921453694
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.16107854630715124
+        },
+        {
+          "members": [
+            "bin:3"
+          ],
+          "proportion": 0.09449003516998827
+        },
+        {
+          "members": [
+            "bin:4"
+          ],
+          "proportion": 0.0548651817116061
+        },
+        {
+          "members": [
+            "bin:5"
+          ],
+          "proportion": 0.05955451348182884
+        }
+      ]
+    },
+    "abortions": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        0.5,
+        1.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.8773452157598499
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.0900562851782364
+        },
+        {
+          "members": [
+            "bin:2"
+          ],
+          "proportion": 0.0325984990619137
+        }
+      ]
+    },
+    "living_children_band": {
+      "kind": "categorical",
+      "missing": 0.3805392731535756,
+      "buckets": [
+        {
+          "members": [
+            "level:0"
+          ],
+          "proportion": 0.004542013626040878
+        },
+        {
+          "members": [
+            "level:4 or more"
+          ],
+          "proportion": 0.2380772142316427
+        },
+        {
+          "members": [
+            "level:Less than 4"
+          ],
+          "proportion": 0.7573807721423165
+        }
+      ]
+    },
+    "died_children": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        0.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.9643527204502814
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.03564727954971857
+        }
+      ]
+    },
+    "previous_stillbirth": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No"
+          ],
+          "proportion": 0.9943728018757327
+        },
+        {
+          "members": [
+            "level:Yes"
+          ],
+          "proportion": 0.005627198124267292
+        }
+      ]
+    },
+    "anc_contacts": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        3.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.24489316741019018
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.7551068325898098
+        }
+      ]
+    },
+    "previous_preterm": {
+      "kind": "numeric",
+      "integer": true,
+      "edges": [
+        0.5
+      ],
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "bin:0"
+          ],
+          "proportion": 0.9929577464788732
+        },
+        {
+          "members": [
+            "bin:1"
+          ],
+          "proportion": 0.007042253521126761
+        }
+      ]
+    },
+    "preeclampsia_recorded": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:no"
+          ],
+          "proportion": 0.9896810506566605
+        },
+        {
+          "members": [
+            "level:yes"
+          ],
+          "proportion": 0.010318949343339587
+        }
+      ]
+    },
+    "hiv_positive": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No"
+          ],
+          "proportion": 0.9859287054409006
+        },
+        {
+          "members": [
+            "level:Yes"
+          ],
+          "proportion": 0.014071294559099437
+        }
+      ]
+    },
+    "ivf": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No",
+            "level:Yes"
+          ],
+          "proportion": 1.0
+        }
+      ]
+    },
+    "antenatal_admission": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No"
+          ],
+          "proportion": 0.9894490035169988
+        },
+        {
+          "members": [
+            "level:Yes"
+          ],
+          "proportion": 0.010550996483001172
+        }
+      ]
+    },
+    "gdm_recorded": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:no",
+            "level:yes"
+          ],
+          "proportion": 1.0
+        }
+      ]
+    },
+    "malaria_in_pregnancy": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No"
+          ],
+          "proportion": 0.9971864009378664
+        },
+        {
+          "members": [
+            "level:Yes"
+          ],
+          "proportion": 0.002813599062133646
+        }
+      ]
+    },
+    "gu_infection": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:No"
+          ],
+          "proportion": 0.9927315357561547
+        },
+        {
+          "members": [
+            "level:Yes"
+          ],
+          "proportion": 0.007268464243845252
+        }
+      ]
+    },
+    "facility_id": {
+      "kind": "categorical",
+      "missing": 0.0,
+      "buckets": [
+        {
+          "members": [
+            "level:Kibagabaga"
+          ],
+          "proportion": 0.23493552168815943
+        },
+        {
+          "members": [
+            "level:La Croix du sud"
+          ],
+          "proportion": 0.09636576787807738
+        },
+        {
+          "members": [
+            "level:Masaka"
+          ],
+          "proportion": 0.3261430246189918
+        },
+        {
+          "members": [
+            "level:Muhima"
+          ],
+          "proportion": 0.3425556858147714
+        }
+      ]
+    }
+  }
+}
