@@ -178,6 +178,8 @@ cut lands at 0.70 specificity; compare them at the 0.5 and prevalence columns.)
    trade-off at each cut.
 4. **If a higher recall is wanted, the cost is explicit.** At 0.20 the selected model reaches
    recall 0.75 but flags 52% of admissions (precision 0.39).
+5. **Recommended operating point:** a 20% false-alarm budget set by each hospital (recall about
+   0.58, against 0.38 at 0.5); see *Per-hospital cuts* below.
 
 ### Raising recall: a recall-oriented operating point
 
@@ -200,6 +202,48 @@ everywhere; this is the same case-mix issue as the local recalibration (S2) in n
 recall-oriented cut is therefore a deployment choice per hospital (cost of a missed CS against a
 false alarm), not a change to the model; the deployed model, the 0.5 reporting cut and the
 pre-registered selection are unchanged.
+
+### Per-hospital cuts set by a false-alarm budget (recommended operating point)
+
+A cut is easier to agree on as a *false-alarm budget*: the share of vaginal births a hospital
+accepts being flagged as likely CS (a theatre prepared and not used). `scripts/hospital_cut_report.py`
+compares one national cut (chosen on the other hospitals) with a cut each hospital sets on its own
+admissions. To keep it honest, each hospital's cut is chosen on a random half of its admissions and
+evaluated on the other half, 200 times (`reports/recall/hospital_cut.{csv,md}`).
+
+| Budget | Rule | CS caught (recall) | False alarms | Admissions flagged | F1 |
+|---:|---|---:|---:|---:|---:|
+| 20% | one national cut | 0.54 | 0.21 | 30% | 0.510 |
+| **20%** | **each hospital's own cut** | **0.58** | **0.20** | **30%** | **0.548** |
+| 30% | one national cut | 0.63 | 0.30 | 39% | 0.514 |
+| 30% | each hospital's own cut | 0.66 | 0.30 | 40% | 0.534 |
+
+With a 20% budget, by hospital:
+
+| Hospital | National cut: recall / false alarms | Own cut | Own cut: recall / false alarms |
+|---|---|---:|---|
+| Kibagabaga | 0.40 / 0.11 | 0.26 | 0.53 / 0.20 |
+| La Croix du Sud | 0.52 / 0.06 | 0.23 | 0.67 / 0.20 |
+| Masaka | 0.72 / **0.46** | 0.42 | 0.52 / 0.20 |
+| Muhima | 0.48 / 0.07 | 0.26 | 0.63 / 0.20 |
+
+- **Per-hospital cuts make the trade-off the same everywhere.** With one national cut, Masaka staff
+  would see almost half of their vaginal births flagged while La Croix du Sud sees 6%. With its
+  own cut, every hospital carries the same 20% false alarms and gets the recall its case mix allows.
+- **They do not make the model better.** Overall F1 moves only from 0.510 to 0.548; the ranking
+  (AUC about 0.75) is fixed. The gain is consistency and a little recall, not new information.
+- **The cuts are stable.** Over the 200 repeats each hospital's cut varies by about 0.02-0.03, so a
+  few hundred past admissions are enough to set it.
+- **Masaka needs a much higher cut (0.42 against 0.23-0.26).** The model overestimates risk there,
+  the same case-mix difference that local recalibration (S2, notebook 03) corrects.
+
+**Recommendation.** A 20% false-alarm budget per hospital: each hospital sets its cut from its own
+past admissions so that about 1 in 5 vaginal births is flagged, and catches about 6 in 10 CS
+(about 7 in 10 with a 30% budget, for hospitals that weigh a missed CS more). Until a hospital has
+a few hundred admissions of its own, it starts from the national cut for a 20% budget, **0.30**
+(chosen on all four hospitals). This is a deployment recommendation: the model, the pre-registered
+selection and the 0.5 reporting cut used in the tables above are unchanged, and the app still shows
+the probability.
 
 ## Hyperparameter tuning experiments
 
