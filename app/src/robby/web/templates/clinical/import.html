@@ -9,9 +9,10 @@
     <ol>
       <li><a href="/admissions/import/template.xlsx">Download the Excel template</a>. Its drop-down lists hold the same choices as the admission form.</li>
       <li>Fill in one row per admission (at most {{ max_rows }} rows). Patient number, patient name and admission time are required.</li>
-      <li>Upload the file. Every row is checked like the admission form; if any row has a problem, nothing is imported. A patient already recorded at the same admission time is not added again; the list afterwards shows their existing record.</li>
+      <li>Upload the file. Every row is checked like the admission form. Rows with a problem are left out and listed so you can fix and upload them again; the other rows are imported. Columns the system does not use are ignored. A patient already recorded at the same admission time is not added again; the list afterwards shows their existing record.</li>
     </ol>
     <p class="muted">Or upload an export from OpenClinic as it is: it is recognised by its column names (patient ID, admission date, para, presentation and so on) and columns the system does not use are ignored. Where OpenClinic holds no blood pressure, proteinuria or glucose, the test is recorded as not measured with the reason "Other".</p>
+    <p class="muted">The UR-CMHS research export (KoboToolbox, with labels) can also be uploaded as it is. Only this hospital's deliveries are imported; the delivery date is used as the admission time and the mode of delivery is recorded as the outcome. The patient UPI is not stored: the patient number is a code made from it, and the name is shown as "Research record".</p>
     <form method="post" action="/admissions/import" enctype="multipart/form-data">
       {{ ui.csrf_input() }}
       <div class="f">
@@ -24,9 +25,13 @@
 </section>
 
 {% if problems %}
+{% if imported %}
+<div class="notice warn" role="alert">⚠ {{ skipped }} row{{ "" if skipped == 1 else "s" }} left out because of the problems below. The other rows were imported.</div>
+{% else %}
 <div class="notice warn" role="alert">⚠ Nothing was imported. Fix these and upload the file again.</div>
+{% endif %}
 <section class="tablecard">
-  <div class="tc-h"><h2>Problems found</h2></div>
+  <div class="tc-h"><h2>{% if imported %}Rows left out{% else %}Problems found{% endif %}</h2></div>
   <table>
     <thead><tr><th>Row</th><th>Column</th><th>Problem</th></tr></thead>
     <tbody>
@@ -42,6 +47,7 @@
 {% if imported %}
 <section class="tablecard">
   <div class="tc-h"><h2>{{ (lines | length) - already }} admission{{ "" if (lines | length) - already == 1 else "s" }} imported{% if already %}, {{ already }} already recorded{% endif %}</h2></div>
+  {% if outcomes or other_hospitals %}<div class="tc-foot">{% if outcomes %}Delivery outcome recorded for {{ outcomes }}. {% endif %}{% if other_hospitals %}{{ other_hospitals }} rows of other hospitals were left out.{% endif %}</div>{% endif %}
   <table>
     <thead><tr><th>Code</th><th>Robson group</th><th class="r">Readiness signal</th></tr></thead>
     <tbody>

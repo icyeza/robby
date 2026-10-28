@@ -177,6 +177,7 @@ def parse(
     screening_required: bool = True,
     reason_required: bool = False,
     patient_required: bool = True,
+    max_past: timedelta | None = MAX_PAST,
 ) -> tuple[Parsed, dict[str, str]]:
     """Returns the parsed values (invalid ones as None) and an error per field."""
     errors: dict[str, str] = {}
@@ -191,7 +192,7 @@ def parse(
             errors["admitted_at"] = "Admitted at must look like 05 Oct 2026, 14:22."
         elif local > now + FUTURE_SLACK:
             errors["admitted_at"] = "Admitted at cannot be in the future."
-        elif local < now - MAX_PAST:
+        elif max_past is not None and local < now - max_past:
             errors["admitted_at"] = "Admitted at cannot be more than 30 days ago."
         else:
             admitted_at = local

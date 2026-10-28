@@ -284,6 +284,8 @@ def _import_page(
     problems: list[importer.RowProblem] | None = None,
     lines: list[ImportedLine] | None = None,
     status_code: int = 200,
+    other_hospitals: int = 0,
+    outcomes: int = 0,
 ) -> Response:
     problems = problems or []
     return render(
@@ -297,6 +299,9 @@ def _import_page(
         imported=lines is not None,
         already=sum(1 for line in lines or [] if line.already),
         max_rows=importer.MAX_ROWS,
+        skipped=len({p.row for p in problems}) if lines else 0,
+        other_hospitals=other_hospitals,
+        outcomes=outcomes,
     )
 
 
@@ -324,51 +329,70 @@ async def import_upload(
         problem = importer.RowProblem(0, "", "Choose a file to upload.")
         return _import_page(request, current, problems=[problem], status_code=400)
     data = await upload.read()
-    read = importer.read_upload(
-        data, upload.filename, _specs(request, db), request.app.state.settings.zone, utcnow()
-    )
     assert current.user.facility_id is not None
-    scan = (
-        None if read.problems else importer.find_duplicates(db, current.user.facility_id, read.rows)
+    facility = db.get(Facility, current.user.facility_id)
+    assert facility is not None
+    read = importer.read_upload(
+        data,
+        upload.filename,
+        _specs(request, db),
+        request.app.state.settings.zone,
+        utcnow(),
+        skip_bad=True,
+        facility_keys={facility.name, facility.model_facility_key or ""},
     )
-    problems = read.problems or (scan.in_file if scan else [])
-    if not problems:
-        assert scan is not None
-        fresh = [(n, parsed) for n, parsed in read.rows if n not in scan.recorded]
-        try:
-            saved = (
-                service.import_admissions(
-                    db,
-                    runtime_of(request),
-                    current.user,
-                    fresh,
-                    hashlib.sha256(data).hexdigest(),
-                )
-                if fresh
-                else []
+    if not read.rows:
+        return _import_page(request, current, problems=read.problems, status_code=400)
+    scan = importer.find_duplicates(db, current.user.facility_id, read.rows)
+    skipped = read.problems + scan.in_file
+    repeated = {p.row for p in scan.in_file}
+    rows = [(n, parsed) for n, parsed in read.rows if n not in repeated]
+    fresh = [(n, parsed) for n, parsed in rows if n not in scan.recorded]
+    try:
+        saved = (
+            service.import_admissions(
+                db, runtime_of(request), current.user, fresh, hashlib.sha256(data).hexdigest()
             )
-            db.commit()
-            by_row: dict[int, ImportedLine] = {
-                n: ImportedLine(
-                    s.admission.code,
-                    s.classification.robson_group,
-                    service.percent_of(s.prediction.probability) if s.prediction else None,
+            if fresh
+            else []
+        )
+        for (n, _), s in zip(fresh, saved, strict=True):
+            if n in read.outcomes:
+                mode, delivered = read.outcomes[n]
+                service.record_outcome(
+                    db,
+                    current.user,
+                    s.admission,
+                    DeliveryMode(mode),
+                    delivered.replace(tzinfo=request.app.state.settings.zone),
                 )
-                for (n, _), s in zip(fresh, saved, strict=True)
-            }
-            by_row.update({n: _line_of(db, a) for n, a in scan.recorded.items()})
-            return _import_page(request, current, lines=[by_row[n] for n, _ in read.rows])
-        except cls.NoRuleSetError:
-            db.rollback()
-            problems = [
-                importer.RowProblem(
-                    0,
-                    "",
-                    "No Robson rule set is active, so nothing can be saved. "
-                    "Tell your system administrator.",
-                )
-            ]
-    return _import_page(request, current, problems=problems, status_code=400)
+        db.commit()
+    except cls.NoRuleSetError:
+        db.rollback()
+        problem = importer.RowProblem(
+            0,
+            "",
+            "No Robson rule set is active, so nothing can be saved. "
+            "Tell your system administrator.",
+        )
+        return _import_page(request, current, problems=[problem], status_code=400)
+    by_row: dict[int, ImportedLine] = {
+        n: ImportedLine(
+            s.admission.code,
+            s.classification.robson_group,
+            service.percent_of(s.prediction.probability) if s.prediction else None,
+        )
+        for (n, _), s in zip(fresh, saved, strict=True)
+    }
+    by_row.update({n: _line_of(db, a) for n, a in scan.recorded.items()})
+    return _import_page(
+        request,
+        current,
+        lines=[by_row[n] for n, _ in rows],
+        problems=skipped,
+        other_hospitals=read.other_hospitals,
+        outcomes=sum(1 for n, _ in fresh if n in read.outcomes),
+    )
 
 
 @router.get("/{code}")
