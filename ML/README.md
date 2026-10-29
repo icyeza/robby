@@ -29,8 +29,11 @@ ML/
 └── scripts/            notebook runner and helpers
 ```
 
-`data/`, `mlruns/`, `reports/` and `artefacts/` are created locally and never committed (the dataset
-is under a data-sharing agreement).
+`data/`, `mlruns/` and `reports/` are created locally and never committed (the dataset is under a
+data-sharing agreement). `artefacts/` is local too, with one exception: the packaged deployment model
+`artefacts/packaged/readiness-v1.0/` is committed so that the API and the app work after a clone. It
+holds model coefficients, the feature schema, training-set marginal distributions (proportions, no
+bucket under 10 people) and synthetic golden test cases; no patient record.
 
 ### `src/robson_ml`: one module per pipeline step
 
@@ -311,9 +314,10 @@ uv run uvicorn api.main:app --reload     # then open http://127.0.0.1:8000/docs
 | `POST /classify` | Robson group from the six Robson inputs: *resolved*, *partial* (candidate groups + the field that would decide) or *conflict* (the fields in tension), with the explanation trace |
 | `POST /admissions/assess` | A full admission: rejects missing screening (blood pressure, proteinuria, glucose) unless a reason is given, classifies, and returns the readiness probability |
 
-The API loads the model from `artefacts/readiness-v1.0/` (override with `ROBSON_MODEL_DIR`). That
-model was fitted on the private data, so it is not committed. To try the API with a working model
-without the data, build one from synthetic data (about a minute):
+The API loads the committed packaged model `artefacts/packaged/readiness-v1.0/` (override with
+`ROBSON_MODEL_DIR`). It accepts either a packaged artefact (`manifest.json`, whose `artefact_hash` must
+match `model.joblib`, or the model is refused) or a `robson-ml fit-deploy` output (`fit_summary.json`).
+To try a model built only from synthetic data instead (about a minute):
 
 ```bash
 uv run python scripts/build_demo_model.py

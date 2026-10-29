@@ -33,7 +33,7 @@ FloatArray = npt.NDArray[np.float64]
 
 REFERENCE_FORMAT = 2
 REFERENCE_BINS = 10
-MIN_CELL = 5
+MIN_CELL = 10
 MISSING_KEY = "missing"
 INTEGER_SHARE = 0.5  # whole-number share from which a feature counts as integer-valued
 PSI_THRESHOLD = 0.2

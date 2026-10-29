@@ -3,8 +3,12 @@
 !**/data/reference/
 # experiment tracking and build outputs
 mlruns/
-artefacts/
 reports/
+# model artefacts stay local, except the packaged model the app and the API load
+**/artefacts/*
+!ML/artefacts/packaged/
+ML/artefacts/packaged/*
+!ML/artefacts/packaged/readiness-v1.0/
 # python tooling
 .venv/
 __pycache__/

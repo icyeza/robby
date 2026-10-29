@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -17,7 +18,7 @@ from robson_engine import COARSE_PRESENTATIONS, RuleSet
 from robson_ml.feature_sets import robson_group_no_onset
 
 ML_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL_DIR = Path("artefacts") / "readiness-v1.0"
+DEFAULT_MODEL_DIR = Path("artefacts") / "packaged" / "readiness-v1.0"
 MODEL_DIR_ENV = "ROBSON_MODEL_DIR"
 
 # Yes/no inputs sent as booleans; the model's level spelling ("Yes" or "yes") is looked up.
@@ -93,13 +94,55 @@ def _categorical_levels(model: Any) -> dict[str, list[str]]:
     return {}
 
 
+def summary_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """The fit-summary fields the API reads, taken from a packaged artefact's ``manifest.json``."""
+    summary = {
+        key: manifest.get(key)
+        for key in (
+            "version_label",
+            "algorithm",
+            "feature_set",
+            "use_facility",
+            "hyperparameters",
+            "population",
+            "training_window_start",
+            "training_window_end",
+        )
+    }
+    summary["features"] = list(manifest["feature_list"])
+    summary["calibration"] = {
+        "method": manifest.get("calibration_method"),
+        "cv_brier": manifest.get("calibration_cv_brier"),
+    }
+    return summary
+
+
+def _read_summary(directory: Path, model_path: Path) -> dict[str, Any] | None:
+    """``fit_summary.json`` (a fit-deploy output) or ``manifest.json`` (a packaged artefact).
+
+    A packaged artefact's model file must match the hash in its manifest.
+    """
+    summary_path, manifest_path = directory / "fit_summary.json", directory / "manifest.json"
+    if summary_path.is_file():
+        return dict(json.loads(summary_path.read_text(encoding="utf-8")))
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+        if digest != manifest.get("artefact_hash"):
+            raise ValueError("model.joblib does not match the manifest's artefact_hash")
+        return summary_from_manifest(manifest)
+    return None
+
+
 def load_readiness_model(directory: Path) -> tuple[ReadinessModel | None, str | None]:
-    """Load ``model.joblib`` and ``fit_summary.json``; on failure return the reason instead."""
-    model_path, summary_path = directory / "model.joblib", directory / "fit_summary.json"
-    if not model_path.is_file() or not summary_path.is_file():
+    """Load ``model.joblib`` with its fit summary or manifest; on failure return the reason."""
+    model_path = directory / "model.joblib"
+    if not model_path.is_file():
         return None, "No readiness model is active (model artefact not found)."
     try:
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary = _read_summary(directory, model_path)
+        if summary is None:
+            return None, "No readiness model is active (model artefact not found)."
         model = joblib.load(model_path)
         if not hasattr(model, "predict_proba") or "features" not in summary:
             return None, "No readiness model is active (model artefact is not usable)."

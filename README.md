@@ -197,11 +197,13 @@ Endpoints: `GET /health`, `GET /model`, `POST /classify` (Robson group with expl
 `POST /admissions/assess` (screening check + Robson group + readiness probability). Details and an
 example are in [`ML/README.md`](ML/README.md#serving-the-model-api).
 
-The trained model (`ML/artefacts/readiness-v1.0/`) is not in the repository, because it was fitted on
-the private data. `uv run python scripts/build_demo_model.py` builds a stand-in model from synthetic
-data in about a minute; start the API with `ROBSON_MODEL_DIR=artefacts/demo-synthetic`. Without any
-model the API still classifies admissions and reports that the readiness estimate is unavailable,
-the same graceful degradation the app is designed for.
+The API loads the packaged model committed in `ML/artefacts/packaged/readiness-v1.0/` (coefficients,
+feature schema, training marginal distributions with no bucket under 10 people, and synthetic golden
+test cases; no patient record) and checks it against the hash in its manifest. `uv run python
+scripts/build_demo_model.py` builds a stand-in model from synthetic data instead; start the API with
+`ROBSON_MODEL_DIR=artefacts/demo-synthetic`. Without any model the API still classifies admissions
+and reports that the readiness estimate is unavailable, the same graceful degradation the app is
+designed for.
 
 **Web app.** Needs PostgreSQL 16 as well. Full instructions (Windows and Linux, settings, demo
 mode, tests) are in [`app/README.md`](app/README.md#development-on-windows-git-bash). In short:

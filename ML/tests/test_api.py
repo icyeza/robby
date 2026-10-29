@@ -1,5 +1,6 @@
 """The HTTP service: classification, enforced screening, readiness and degradation."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,7 +10,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.main
-from api.readiness import DEFAULT_MODEL_DIR, ML_DIR, MODEL_DIR_ENV, ReadinessModel
+from api.readiness import (
+    DEFAULT_MODEL_DIR,
+    ML_DIR,
+    MODEL_DIR_ENV,
+    ReadinessModel,
+    load_readiness_model,
+    summary_from_manifest,
+)
 from api.schemas import READINESS_LABEL
 
 GROUP_5 = {
@@ -162,6 +170,22 @@ def test_assess_reports_unrecognised_levels(fake_model: tuple[TestClient, FakeMo
     body = client.post("/admissions/assess", json=ADMISSION).json()
     assert body["readiness"]["unrecognised_inputs"] == []
     assert model.seen is not None and model.seen.iloc[0]["robson_group_no_onset"] == "5"
+
+
+def test_packaged_model_with_wrong_hash_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "model.joblib").write_bytes(b"not the packaged model")
+    manifest = {"version_label": "x", "feature_list": ["parity"], "artefact_hash": "0" * 64}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    loaded, reason = load_readiness_model(tmp_path)
+    assert loaded is None and reason is not None and "ValueError" in reason
+
+
+def test_summary_from_manifest_maps_features_and_calibration() -> None:
+    summary = summary_from_manifest(
+        {"version_label": "v", "feature_list": ["a", "b"], "calibration_method": "platt"}
+    )
+    assert summary["features"] == ["a", "b"]
+    assert summary["calibration"]["method"] == "platt"
 
 
 REAL_MODEL = ML_DIR / DEFAULT_MODEL_DIR / "model.joblib"

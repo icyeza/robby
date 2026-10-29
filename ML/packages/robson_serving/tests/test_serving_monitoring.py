@@ -26,7 +26,7 @@ def test_numeric_reference_uses_decile_edges_and_a_separate_missing_share() -> N
 
 
 def test_small_buckets_are_merged_into_the_largest() -> None:
-    values = ["a"] * 50 + ["b"] * 20 + ["c"] * 3 + [None] * 7
+    values = ["a"] * 50 + ["b"] * 20 + ["c"] * 3 + [None] * 12
     reference = reference_distributions(
         pd.DataFrame({"s": pd.Series(values, dtype=object)}), {"s": CATEGORICAL}
     )
@@ -34,8 +34,8 @@ def test_small_buckets_are_merged_into_the_largest() -> None:
     buckets = entry["buckets"]
     assert [b["members"] for b in buckets] == [["level:a", "level:c"], ["level:b"]]
     assert [b["proportion"] for b in buckets] == pytest.approx([53 / 73, 20 / 73])
-    assert entry["missing"] == pytest.approx(7 / 80)
-    assert reference["min_cell"] == 5 and reference["format"] == 2
+    assert entry["missing"] == pytest.approx(12 / 85)
+    assert reference["min_cell"] == 10 and reference["format"] == 2
 
 
 def test_whole_number_features_get_integer_aligned_edges() -> None:
