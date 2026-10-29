@@ -324,7 +324,8 @@ def _parse_integer_sum_levels(name: str, levels: object) -> dict[str, int | None
     return parsed
 
 
-def _parse_field(name: str, spec: object) -> FieldMapping:
+def _field_kind_and_status(name: str, spec: object) -> tuple[dict[str, Any], str, str]:
+    # The field is canonical and its spec a mapping of allowed keys with a valid kind/status.
     if not _known_field(name):
         raise MappingError(f"unknown canonical field: {name}")
     if not isinstance(spec, dict):
@@ -338,7 +339,11 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
     status = spec.get("status", "review")
     if not isinstance(status, str) or status not in STATUSES:
         raise MappingError(f"{name}: status must be confirmed or review")
+    return spec, kind, status
 
+
+def _field_dtype(name: str, spec: dict[str, Any], kind: str) -> str:
+    # The canonical dtype, which the kind must produce; some kinds belong to one field only.
     dtype = _canonical_dtype(name)
     declared = spec.get("dtype")
     if declared is not None and declared != dtype:
@@ -350,16 +355,16 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
         raise MappingError(
             f"{name}: kind {kind} produces {KIND_DTYPES[kind]} but the canonical dtype is {dtype}"
         )
-
     for field_name, field_kind in KIND_FIELDS.items():
         if kind == field_kind and name != field_name:
             raise MappingError(f"{name}: kind {field_kind} is only allowed on {field_name}")
     required_kind = REQUIRED_KINDS.get(name)
     if required_kind is not None and kind != required_kind:
         raise MappingError(f"{name}: this field can only be mapped with kind {required_kind}")
+    return dtype
 
-    fmt = spec.get("format")
-    raw_cols = _raw_columns(name, spec.get("raw"))
+
+def _check_raw_count(name: str, kind: str, raw_cols: tuple[str, ...], fmt: object) -> None:
     if kind == "row_key":
         if raw_cols:
             raise MappingError(f"{name}: kind row_key takes no raw column")
@@ -374,44 +379,53 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
     elif len(raw_cols) != 1:
         raise MappingError(f"{name}: exactly one raw column is required")
 
+
+def _field_levels(name: str, spec: dict[str, Any], kind: str, dtype: str) -> dict[str, Any]:
     if kind == "category":
-        levels = _parse_levels(name, spec.get("levels"), dtype)
-    elif kind == "integer_sum":
-        levels = _parse_integer_sum_levels(name, spec["levels"]) if "levels" in spec else {}
-    elif "levels" in spec:
+        return _parse_levels(name, spec.get("levels"), dtype)
+    if kind == "integer_sum":
+        return _parse_integer_sum_levels(name, spec["levels"]) if "levels" in spec else {}
+    if "levels" in spec:
         raise MappingError(f"{name}: levels are only allowed on category and integer_sum fields")
-    else:
-        levels = {}
+    return {}
 
-    valid_range = None
-    if "range" in spec:
-        if kind not in RANGE_KINDS:
-            raise MappingError(
-                f"{name}: range is only allowed on integer, integer_sum, float and "
-                "gestational_age fields"
-            )
-        valid_range = _parse_range(name, spec["range"])
 
+def _field_range(name: str, spec: dict[str, Any], kind: str) -> tuple[float, float] | None:
+    if "range" not in spec:
+        return None
+    if kind not in RANGE_KINDS:
+        raise MappingError(
+            f"{name}: range is only allowed on integer, integer_sum, float and "
+            "gestational_age fields"
+        )
+    return _parse_range(name, spec["range"])
+
+
+def _field_formats(
+    name: str, spec: dict[str, Any], kind: str, fmt: object
+) -> tuple[str | None, str | None]:
+    # (gestational-age format, datetime format); a datetime defaults to ISO8601, never a guess.
     if kind not in FORMAT_KINDS and "format" in spec:
         raise MappingError(f"{name}: format is only allowed on gestational_age and datetime fields")
-    ga_format = None
-    datetime_format = None
     if kind == "gestational_age":
         if not isinstance(fmt, str) or fmt not in GA_FORMATS:
             raise MappingError(f"{name}: gestational_age needs format in {sorted(GA_FORMATS)}")
-        ga_format = fmt
-    elif kind == "datetime":
-        if fmt is None:
-            fmt = "ISO8601"
-        if not isinstance(fmt, str) or not fmt.strip():
-            raise MappingError(f"{name}: datetime format must be a non-empty string")
-        if fmt.strip().lower().startswith("mixed") or fmt.strip().lower() == "infer":
-            raise MappingError(
-                f"{name}: datetime format must not guess (e.g. 'mixed' or 'infer'); "
-                "use an explicit strptime format or the ISO8601 default"
-            )
-        datetime_format = fmt
+        return fmt, None
+    if kind != "datetime":
+        return None, None
+    if fmt is None:
+        fmt = "ISO8601"
+    if not isinstance(fmt, str) or not fmt.strip():
+        raise MappingError(f"{name}: datetime format must be a non-empty string")
+    if fmt.strip().lower().startswith("mixed") or fmt.strip().lower() == "infer":
+        raise MappingError(
+            f"{name}: datetime format must not guess (e.g. 'mixed' or 'infer'); "
+            "use an explicit strptime format or the ISO8601 default"
+        )
+    return None, fmt
 
+
+def _field_date_only(name: str, spec: dict[str, Any], kind: str) -> bool:
     date_only = spec.get("date_only", False)
     if "date_only" in spec:
         if kind != "datetime":
@@ -422,8 +436,23 @@ def _parse_field(name: str, spec: object) -> FieldMapping:
         raise MappingError(
             f"{name}: the schema holds this field as a date only; set date_only: true"
         )
+    return date_only
 
-    note = spec.get("note")
+
+def _parse_field(name: str, spec: object) -> FieldMapping:
+    """Validate one field's mapping spec, in a fixed order of checks (the first failure is
+    the one reported): keys, kind and status; dtype; raw columns; levels; range; formats;
+    ``date_only``."""
+    checked, kind, status = _field_kind_and_status(name, spec)
+    dtype = _field_dtype(name, checked, kind)
+    fmt = checked.get("format")
+    raw_cols = _raw_columns(name, checked.get("raw"))
+    _check_raw_count(name, kind, raw_cols, fmt)
+    levels = _field_levels(name, checked, kind, dtype)
+    valid_range = _field_range(name, checked, kind)
+    ga_format, datetime_format = _field_formats(name, checked, kind, fmt)
+    date_only = _field_date_only(name, checked, kind)
+    note = checked.get("note")
     return FieldMapping(
         canonical=name,
         kind=kind,

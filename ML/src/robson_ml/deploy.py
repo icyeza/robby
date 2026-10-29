@@ -46,15 +46,16 @@ from robson_ml.evaluate import ExperimentConfig, tune
 from robson_ml.feature_sets import (
     BASE_FEATURE_SETS,
     POPULATIONS,
+    FeatureSpec,
     ModelData,
     deploy_variant,
     feature_spec,
 )
 from robson_ml.models import get_model
-from robson_ml.models.base import CLF
+from robson_ml.models.base import CLF, ModelSpec
 from robson_ml.populations import P_PRED, POPULATION_VERSION
 from robson_ml.privacy import fmt_count
-from robson_ml.splits import deployment_split, mother_groups
+from robson_ml.splits import Fold, deployment_split, mother_groups
 
 DEPLOY_EXPERIMENT = "robson-readiness-deployment"
 SPLIT_SCHEME = "S5"
@@ -244,32 +245,30 @@ def _month(value: Any) -> str | None:
     return None if pd.isna(value) else pd.Timestamp(value).strftime(MONTH)
 
 
-def fit_deployment(
-    config: DeploymentConfig,
-    data: ModelData,
-    provenance: Provenance,
-    artefacts_dir: Path,
-    use_facility: bool,
-    facility_decision: dict[str, Any] | None = None,
-) -> DeploymentResult:
-    """Fit, calibrate and save the deployment model; see the module docstring.
+@dataclass(frozen=True)
+class _FittedDeployment:
+    """The S5 fit: the split used, the tuned hyperparameters and the calibrated model."""
 
-    ``use_facility`` is the resolved choice (``True`` fits the ``_deploy`` variant);
-    ``facility_decision`` (from :func:`deployment_feature_choice`) is recorded when given.
-    Refuses to overwrite an existing ``artefacts/<version_label>/``: a version label names
-    one artefact for good.
-    """
-    from robson_ml.explain import facility_contribution
+    fold: Fold
+    tuned: dict[str, Any]
+    model: CalibratedModel
 
+
+def _new_artefact_dir(config: DeploymentConfig, data: ModelData, artefacts_dir: Path) -> Path:
+    # A valid config for this population, and a version label never used before.
     validate_deployment_config(config)
     if data.population != config.population:
         raise ValueError("data was built for a different population than the config")
     out_dir = artefacts_dir / config.version_label
     if out_dir.exists() and any(out_dir.iterdir()):
         raise FileExistsError(f"{out_dir} already holds an artefact; choose a new version_label")
-    fs_name = deploy_variant(config.feature_set) if use_facility else config.feature_set
-    spec = get_model(config.model)
-    fs = feature_spec(data, fs_name)
+    return out_dir
+
+
+def _tune_fit_calibrate(
+    config: DeploymentConfig, data: ModelData, spec: ModelSpec, fs: FeatureSpec, fs_name: str
+) -> _FittedDeployment:
+    """Seeded tuning on the fit rows' inner folds, the refit, then calibration."""
     x = data.x[list(fs.columns)]
     y = data.y
     random.seed(config.seed)
@@ -292,20 +291,35 @@ def fit_deployment(
         tuned = tune(spec, fs, tuning_config, x, y, fold.tuning)
         pipe = spec.build({**tuned, **reserved}, fs).fit(x.iloc[fold.fit_idx], y[fold.fit_idx])
     model = calibrate(pipe, x, y, fold.calib_idx, config.seed, groups=mother_groups(data.meta))
+    return _FittedDeployment(fold, tuned, model)
 
+
+def _fit_summary(
+    config: DeploymentConfig,
+    data: ModelData,
+    family: str,
+    fs: FeatureSpec,
+    fs_name: str,
+    fitted: _FittedDeployment,
+    provenance: Provenance,
+    use_facility: bool,
+    facility_decision: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """What ``fit_summary.json`` holds, before the facility offsets and the MLflow run id."""
+    fold, model = fitted.fold, fitted.model
     used = np.concatenate([fold.fit_idx, fold.calib_idx])
     dates = pd.to_datetime(data.meta["delivery_date"].iloc[used], errors="coerce")
-    summary: dict[str, Any] = {
+    return {
         "version_label": config.version_label,
         "split_scheme": SPLIT_SCHEME,
         "config": asdict(config),
         "algorithm": config.model,
-        "family": spec.family,
+        "family": family,
         "feature_set": fs_name,
         "use_facility": bool(use_facility),
         "facility_decision": facility_decision,
         "features": list(fs.columns),
-        "hyperparameters": tuned,
+        "hyperparameters": fitted.tuned,
         "calibration": {
             "method": model.choice.method,
             "cv_brier": dict(model.choice.cv_brier),
@@ -324,6 +338,34 @@ def fit_deployment(
         "features_yaml_hash": provenance.features_yaml_hash,
         "library_versions": library_versions(),
     }
+
+
+def fit_deployment(
+    config: DeploymentConfig,
+    data: ModelData,
+    provenance: Provenance,
+    artefacts_dir: Path,
+    use_facility: bool,
+    facility_decision: dict[str, Any] | None = None,
+) -> DeploymentResult:
+    """Fit, calibrate and save the deployment model; see the module docstring.
+
+    ``use_facility`` is the resolved choice (``True`` fits the ``_deploy`` variant);
+    ``facility_decision`` (from :func:`deployment_feature_choice`) is recorded when given.
+    Refuses to overwrite an existing ``artefacts/<version_label>/``: a version label names
+    one artefact for good.
+    """
+    from robson_ml.explain import facility_contribution
+
+    out_dir = _new_artefact_dir(config, data, artefacts_dir)
+    fs_name = deploy_variant(config.feature_set) if use_facility else config.feature_set
+    spec = get_model(config.model)
+    fs = feature_spec(data, fs_name)
+    fitted = _tune_fit_calibrate(config, data, spec, fs, fs_name)
+    model = fitted.model
+    summary = _fit_summary(
+        config, data, spec.family, fs, fs_name, fitted, provenance, use_facility, facility_decision
+    )
     # Per-facility offsets exist only for a linear classifier (one coefficient per level).
     if use_facility and hasattr(model.estimator.named_steps[CLF], "coef_"):
         table = facility_contribution(model)

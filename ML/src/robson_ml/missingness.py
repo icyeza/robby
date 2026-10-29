@@ -174,6 +174,46 @@ def _parity_band(values: pd.Series) -> pd.Series:
     return band.replace({"3": "3+"})
 
 
+def _missingness_design(frame: pd.DataFrame, name: str) -> pd.DataFrame:
+    # Facility, month, cs and (except for parity itself) the parity band; constant columns
+    # other than the intercept are dropped.
+    blocks = [
+        pd.DataFrame({"const": 1.0}, index=frame.index),
+        dummy_block(frame["facility_id"].astype(str), "facility"),
+        dummy_block(frame[MONTH].astype(str), "month"),
+        pd.DataFrame({"cs": frame["cs"].astype(float)}, index=frame.index),
+    ]
+    if name != "parity":
+        blocks.append(dummy_block(_parity_band(frame["parity"]), "parity"))
+    x = pd.concat(blocks, axis=1)
+    return x.loc[:, (x.nunique() > 1) | (x.columns == "const")]
+
+
+def _mar_interpretation(rejected: bool) -> str:
+    if rejected:
+        return (
+            "associated with observed variables: not MCAR; consistent with MAR given "
+            "these covariates; says nothing about MNAR"
+        )
+    return "no association detected with these covariates (MCAR not rejected; MNAR not assessable)"
+
+
+def _coefficient_rows(name: str, result: Any, x: pd.DataFrame) -> list[dict[str, object]]:
+    conf = result.conf_int()
+    return [
+        {
+            "field": name,
+            "term": term,
+            "or": float(np.exp(result.params[term])),
+            "ci_low": float(np.exp(conf.loc[term, 0])),
+            "ci_high": float(np.exp(conf.loc[term, 1])),
+            "p_value": float(result.pvalues[term]),
+        }
+        for term in x.columns
+        if term != "const"
+    ]
+
+
 def missingness_models(
     frame: pd.DataFrame, fields: Sequence[str], min_events: int = MIN_MODEL_EVENTS
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -184,45 +224,24 @@ def missingness_models(
     odds ratio with its 95% CI. A field with fewer than ``min_events`` missing (or recorded)
     values is not modelled. ``frame`` needs ``month`` (:func:`add_month`).
     """
-    summary, coefficients = [], []
+    summary: list[dict[str, object]] = []
+    coefficients: list[dict[str, object]] = []
     for name in fields:
         is_missing = frame[name].isna().astype(float)
         n_missing = int(is_missing.sum())
         base = {"field": name, "n": len(frame)}
+        unfitted = {**base, "lr_p_value": float("nan"), "mcar_rejected": pd.NA}
         if min(n_missing, len(frame) - n_missing) < min_events:
-            summary.append(
-                {
-                    **base,
-                    "lr_p_value": float("nan"),
-                    "mcar_rejected": pd.NA,
-                    "interpretation": f"not modelled (fewer than {min_events} missing or "
-                    "recorded values)",
-                }
-            )
+            reason = f"not modelled (fewer than {min_events} missing or recorded values)"
+            summary.append({**unfitted, "interpretation": reason})
             continue
-        blocks = [
-            pd.DataFrame({"const": 1.0}, index=frame.index),
-            dummy_block(frame["facility_id"].astype(str), "facility"),
-            dummy_block(frame[MONTH].astype(str), "month"),
-            pd.DataFrame({"cs": frame["cs"].astype(float)}, index=frame.index),
-        ]
-        if name != "parity":
-            blocks.append(dummy_block(_parity_band(frame["parity"]), "parity"))
-        x = pd.concat(blocks, axis=1)
-        x = x.loc[:, (x.nunique() > 1) | (x.columns == "const")]
+        x = _missingness_design(frame, name)
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 result = sm.Logit(is_missing, x).fit(disp=0, maxiter=200)
         except (np.linalg.LinAlgError, ValueError, OverflowError):
-            summary.append(
-                {
-                    **base,
-                    "lr_p_value": float("nan"),
-                    "mcar_rejected": pd.NA,
-                    "interpretation": "model could not be fitted",
-                }
-            )
+            summary.append({**unfitted, "interpretation": "model could not be fitted"})
             continue
         p_value = float(result.llr_pvalue)
         rejected = p_value < MAR_ALPHA
@@ -231,29 +250,10 @@ def missingness_models(
                 **base,
                 "lr_p_value": p_value,
                 "mcar_rejected": rejected,
-                "interpretation": (
-                    "associated with observed variables: not MCAR; consistent with MAR given "
-                    "these covariates; says nothing about MNAR"
-                    if rejected
-                    else "no association detected with these covariates (MCAR not rejected; "
-                    "MNAR not assessable)"
-                ),
+                "interpretation": _mar_interpretation(rejected),
             }
         )
-        conf = result.conf_int()
-        for term in x.columns:
-            if term == "const":
-                continue
-            coefficients.append(
-                {
-                    "field": name,
-                    "term": term,
-                    "or": float(np.exp(result.params[term])),
-                    "ci_low": float(np.exp(conf.loc[term, 0])),
-                    "ci_high": float(np.exp(conf.loc[term, 1])),
-                    "p_value": float(result.pvalues[term]),
-                }
-            )
+        coefficients.extend(_coefficient_rows(name, result, x))
     return pd.DataFrame(summary), pd.DataFrame(
         coefficients, columns=["field", "term", "or", "ci_low", "ci_high", "p_value"]
     )
@@ -277,6 +277,9 @@ class ORSummary:
     total_low: float
     total_high: float
     n_draws_fitted: int
+
+
+NOT_ESTIMABLE_OR = ORSummary(*(float("nan"),) * 5, n_draws_fitted=0)
 
 
 def or_point_above_one(summary: ORSummary) -> bool:
@@ -374,8 +377,7 @@ def _fit_status(
 
 def _summarise(fits: list[tuple[float, float]], rng: np.random.Generator) -> ORSummary:
     if not fits:
-        nan = float("nan")
-        return ORSummary(nan, nan, nan, nan, nan, 0)
+        return NOT_ESTIMABLE_OR
     b = np.array([f[0] for f in fits])
     se = np.array([f[1] for f in fits])
     total = b + rng.normal(0.0, 1.0, size=len(b)) * se
@@ -448,6 +450,184 @@ def suppress_group_rates(table: pd.DataFrame) -> pd.DataFrame:
     return suppress_tables({"g": spec})["g"]
 
 
+@dataclass(frozen=True)
+class _RecordedCondition:
+    """The rows where a yes/no condition is recorded, with the arrays the draws reuse."""
+
+    n_not_recorded: int
+    yes: npt.NDArray[np.bool_]  # recorded "yes"
+    y: npt.NDArray[np.floating[Any]]  # cs
+    keep: npt.NDArray[np.bool_]  # rows in the OR model (not in a separated Robson level)
+    base: npt.NDArray[np.float64]  # OR-model design without the status column
+    levels: npt.NDArray[Any]  # Robson level per row
+    separated: list[str]
+
+    def counts(self) -> dict[str, int]:
+        """The recorded counts :func:`reclassification` needs."""
+        y, yes = self.y, self.yes
+        return {
+            "n_yes_cs": int((yes & (y == 1)).sum()),
+            "n_cs": int((y == 1).sum()),
+            "n_yes_vaginal": int((yes & (y == 0)).sum()),
+            "n_vaginal": int((y == 0).sum()),
+        }
+
+
+def _recorded_condition(audit: pd.DataFrame, field_name: str) -> _RecordedCondition:
+    recorded = audit[field_name].astype(object)
+    used = recorded.notna()
+    frame = audit[used].reset_index(drop=True)
+    levels = robson_levels(frame)
+    separated = separated_levels(levels, frame["cs"])
+    keep = ~levels.isin(separated).to_numpy()
+    design = pd.concat(
+        [
+            pd.DataFrame({"const": 1.0}, index=frame.index),
+            dummy_block(frame["facility_id"].astype(str), "facility"),
+            dummy_block(levels, "robson"),
+        ],
+        axis=1,
+    )[keep]
+    design = design.loc[:, (design.nunique() > 1) | (design.columns == "const")]
+    return _RecordedCondition(
+        n_not_recorded=int((~used).sum()),
+        yes=recorded[used].astype(str).str.lower().eq(YES).to_numpy(),
+        y=frame["cs"].astype(float).to_numpy(),
+        keep=keep,
+        base=design.to_numpy(dtype=float),
+        levels=levels.astype(str).to_numpy(),
+        separated=separated,
+    )
+
+
+def _recorded_or(data: _RecordedCondition) -> ORSummary:
+    """The adjusted OR on the recorded status, with its Wald 95% CI (no draws)."""
+    fit = _fit_status(data.y[data.keep], data.base, data.yes.astype(float)[data.keep])
+    if fit is None:
+        return NOT_ESTIMABLE_OR
+    b, se = fit
+    low = float(np.exp(b - 1.959963984540054 * se))
+    high = float(np.exp(b + 1.959963984540054 * se))
+    return ORSummary(float(np.exp(b)), low, high, low, high, 1)
+
+
+def _reclassified_draws(
+    data: _RecordedCondition, rec: Reclassification, n_draws: int, rng: np.random.Generator
+) -> tuple[ORSummary, dict[tuple[str, str], tuple[float, float]]]:
+    """``n_draws`` reclassifications of recorded "no": the OR summary and the mean group
+    counts (n, n_cs) per (Robson level, status)."""
+    no_cs = (~data.yes) & (data.y == 1)
+    no_vaginal = (~data.yes) & (data.y == 0)
+    fits: list[tuple[float, float]] = []
+    sums: dict[tuple[str, str], list[float]] = {}
+    for _ in range(n_draws):
+        draw = rng.random(len(data.y))
+        flip = (no_cs & (draw < rec.q_cs)) | (no_vaginal & (draw < rec.q_vaginal))
+        status = (data.yes | flip).astype(float)
+        fit = _fit_status(data.y[data.keep], data.base, status[data.keep])
+        if fit is not None:
+            fits.append(fit)
+        for key, (n, n_cs) in _group_counts(data.levels, status, data.y).items():
+            acc = sums.setdefault(key, [0.0, 0.0])
+            acc[0] += n
+            acc[1] += n_cs
+    means = {k: (v[0] / n_draws, v[1] / n_draws) for k, v in sums.items()}
+    return _summarise(fits, rng), means
+
+
+def _scenario_row(
+    condition: str,
+    label: str,
+    pi: float,
+    ratio: float,
+    rec: Reclassification,
+    summary: ORSummary,
+    conclusions: Mapping[str, Callable[[ORSummary], bool]],
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "condition": condition,
+        "scenario": label,
+        "assumed_prevalence_pct": pi,
+        "se_ratio": ratio,
+        "feasible": rec.feasible,
+        "reason": rec.reason,
+        "se_cs": rec.se_cs,
+        "se_vaginal": rec.se_vaginal,
+        "or_median": summary.or_median,
+        "sys_low": summary.sys_low,
+        "sys_high": summary.sys_high,
+        "total_low": summary.total_low,
+        "total_high": summary.total_high,
+        "n_draws_fitted": summary.n_draws_fitted,
+    }
+    for name, rule in conclusions.items():
+        row[name] = rule(summary) if summary.n_draws_fitted else pd.NA
+    return row
+
+
+def _rate_rows(
+    condition: str, label: str, counts_by: dict[tuple[str, str], tuple[float, float]]
+) -> list[dict[str, object]]:
+    return [
+        {
+            "condition": condition,
+            "scenario": label,
+            "robson_level": level,
+            "status": status,
+            "n": round(n),
+            "n_cs": round(n_cs),
+            "cs_rate": n_cs / n if n else float("nan"),
+        }
+        for (level, status), (n, n_cs) in sorted(counts_by.items())
+    ]
+
+
+def _tipping_rows(
+    condition: str,
+    scenarios: pd.DataFrame,
+    se_ratios: Sequence[float],
+    conclusions: Mapping[str, Callable[[ORSummary], bool]],
+    on_recorded: Mapping[str, bool | None],
+) -> list[dict[str, object]]:
+    """Per se ratio and conclusion, the smallest feasible assumed prevalence at which the
+    conclusion differs from the one on the recorded data."""
+    rows: list[dict[str, object]] = []
+    for ratio in se_ratios:
+        subset = scenarios[
+            (scenarios["scenario"] != "recorded")
+            & (scenarios["se_ratio"] == ratio)
+            & scenarios["feasible"].astype(bool)
+        ].sort_values("assumed_prevalence_pct")
+        for name in conclusions:
+            base_value = on_recorded[name]
+            tip = float("nan")
+            if base_value is not None:
+                changed = subset[subset[name].notna() & (subset[name] != base_value)]
+                if len(changed):
+                    tip = float(changed["assumed_prevalence_pct"].iloc[0])
+            rows.append(
+                {
+                    "condition": condition,
+                    "se_ratio": ratio,
+                    "conclusion": name,
+                    "on_recorded_data": base_value,
+                    "tipping_prevalence_pct": tip,
+                    "statement": _tipping_statement(base_value, tip, subset),
+                }
+            )
+    return rows
+
+
+def _tipping_statement(base_value: bool | None, tip: float, subset: pd.DataFrame) -> str:
+    if base_value is None:
+        return "conclusion undefined on the recorded data (OR not estimable)"
+    if np.isnan(tip):
+        grid = subset["assumed_prevalence_pct"]
+        span = f"{grid.min():g}-{grid.max():g}%" if len(grid) else "no feasible value"
+        return f"no change within the feasible grid ({span})"
+    return f"changes at an assumed prevalence of {tip:g}%"
+
+
 def under_recording_sensitivity(
     audit: pd.DataFrame,
     field_name: str,
@@ -477,167 +657,48 @@ def under_recording_sensitivity(
         raise ValueError("under_recording_sensitivity expects P_audit rows (cs non-missing)")
     condition = condition or field_name
     rng = np.random.default_rng(seed)
-    recorded = audit[field_name].astype(object)
-    used = recorded.notna()
-    frame = audit[used].reset_index(drop=True)
-    yes = recorded[used].astype(str).str.lower().eq(YES).to_numpy()
-    y = frame["cs"].astype(float).to_numpy()
-    levels = robson_levels(frame)
-    separated = separated_levels(levels, frame["cs"])
-    keep = ~levels.isin(separated).to_numpy()
-    design = pd.concat(
-        [
-            pd.DataFrame({"const": 1.0}, index=frame.index),
-            dummy_block(frame["facility_id"].astype(str), "facility"),
-            dummy_block(levels, "robson"),
-        ],
-        axis=1,
-    )[keep]
-    design = design.loc[:, (design.nunique() > 1) | (design.columns == "const")]
-    base = design.to_numpy(dtype=float)
-    y_keep = y[keep]
-    level_array = levels.astype(str).to_numpy()
+    data = _recorded_condition(audit, field_name)
     notes = []
-    if separated:
+    if data.separated:
         notes.append(
-            f"Robson levels with no outcome variation left out of the OR model: {separated}"
+            f"Robson levels with no outcome variation left out of the OR model: {data.separated}"
         )
-
-    counts = {
-        "n_yes_cs": int((yes & (y == 1)).sum()),
-        "n_cs": int((y == 1).sum()),
-        "n_yes_vaginal": int((yes & (y == 0)).sum()),
-        "n_vaginal": int((y == 0).sum()),
-    }
-    scenario_rows: list[dict[str, object]] = []
-    rate_rows: list[dict[str, object]] = []
-    status0 = yes.astype(float)
-    baseline_fit = _fit_status(y_keep, base, status0[keep])
-    if baseline_fit is None:
-        nan = float("nan")
-        baseline = ORSummary(nan, nan, nan, nan, nan, 0)
+    baseline = _recorded_or(data)
+    if not baseline.n_draws_fitted:
         notes.append("OR not estimable on the recorded data (a zero cell or no variation)")
-    else:
-        b, se = baseline_fit
-        low, high = (
-            float(np.exp(b - 1.959963984540054 * se)),
-            float(np.exp(b + 1.959963984540054 * se)),
-        )
-        baseline = ORSummary(float(np.exp(b)), low, high, low, high, 1)
-    baseline_conclusions = {
+    on_recorded = {
         name: (rule(baseline) if baseline.n_draws_fitted else None)
         for name, rule in conclusions.items()
     }
-
-    def add_scenario(
-        label: str, pi: float, ratio: float, rec: Reclassification, summary: ORSummary
-    ) -> None:
-        row: dict[str, object] = {
-            "condition": condition,
-            "scenario": label,
-            "assumed_prevalence_pct": pi,
-            "se_ratio": ratio,
-            "feasible": rec.feasible,
-            "reason": rec.reason,
-            "se_cs": rec.se_cs,
-            "se_vaginal": rec.se_vaginal,
-            "or_median": summary.or_median,
-            "sys_low": summary.sys_low,
-            "sys_high": summary.sys_high,
-            "total_low": summary.total_low,
-            "total_high": summary.total_high,
-            "n_draws_fitted": summary.n_draws_fitted,
-        }
-        for name, rule in conclusions.items():
-            row[name] = rule(summary) if summary.n_draws_fitted else pd.NA
-        scenario_rows.append(row)
-
-    def add_rates(label: str, counts_by: dict[tuple[str, str], tuple[float, float]]) -> None:
-        for (level, status), (n, n_cs) in sorted(counts_by.items()):
-            rate_rows.append(
-                {
-                    "condition": condition,
-                    "scenario": label,
-                    "robson_level": level,
-                    "status": status,
-                    "n": round(n),
-                    "n_cs": round(n_cs),
-                    "cs_rate": n_cs / n if n else float("nan"),
-                }
-            )
-
-    add_scenario(
-        "recorded", float("nan"), 1.0, Reclassification(True, "", 1.0, 1.0, 0.0, 0.0), baseline
-    )
-    add_rates("recorded", _group_counts(level_array, status0, y))
-    no_cs = (~yes) & (y == 1)
-    no_vaginal = (~yes) & (y == 0)
+    as_recorded = Reclassification(True, "", 1.0, 1.0, 0.0, 0.0)
+    scenario_rows = [
+        _scenario_row(condition, "recorded", float("nan"), 1.0, as_recorded, baseline, conclusions)
+    ]
+    recorded_counts = _group_counts(data.levels, data.yes.astype(float), data.y)
+    rate_rows = _rate_rows(condition, "recorded", recorded_counts)
     for ratio in se_ratios:
         for pi in grid_pct:
             label = f"pi={pi:g}%, se_ratio={ratio:g}"
-            rec = reclassification(**counts, prevalence=pi / 100.0, se_ratio=ratio)
-            if not rec.feasible:
-                nan = float("nan")
-                add_scenario(label, pi, ratio, rec, ORSummary(nan, nan, nan, nan, nan, 0))
-                continue
-            fits: list[tuple[float, float]] = []
-            sums: dict[tuple[str, str], list[float]] = {}
-            for _ in range(n_draws):
-                draw = rng.random(len(y))
-                flip = (no_cs & (draw < rec.q_cs)) | (no_vaginal & (draw < rec.q_vaginal))
-                status = (yes | flip).astype(float)
-                fit = _fit_status(y_keep, base, status[keep])
-                if fit is not None:
-                    fits.append(fit)
-                for key, (n, n_cs) in _group_counts(level_array, status, y).items():
-                    acc = sums.setdefault(key, [0.0, 0.0])
-                    acc[0] += n
-                    acc[1] += n_cs
-            add_scenario(label, pi, ratio, rec, _summarise(fits, rng))
-            add_rates(label, {k: (v[0] / n_draws, v[1] / n_draws) for k, v in sums.items()})
-
-    scenarios = pd.DataFrame(scenario_rows)
-    tipping_rows = []
-    for ratio in se_ratios:
-        subset = scenarios[
-            (scenarios["scenario"] != "recorded")
-            & (scenarios["se_ratio"] == ratio)
-            & scenarios["feasible"].astype(bool)
-        ].sort_values("assumed_prevalence_pct")
-        for name in conclusions:
-            base_value = baseline_conclusions[name]
-            tip = float("nan")
-            if base_value is not None:
-                changed = subset[subset[name].notna() & (subset[name] != base_value)]
-                if len(changed):
-                    tip = float(changed["assumed_prevalence_pct"].iloc[0])
-            if base_value is None:
-                statement = "conclusion undefined on the recorded data (OR not estimable)"
-            elif np.isnan(tip):
-                grid = subset["assumed_prevalence_pct"]
-                span = f"{grid.min():g}-{grid.max():g}%" if len(grid) else "no feasible value"
-                statement = f"no change within the feasible grid ({span})"
-            else:
-                statement = f"changes at an assumed prevalence of {tip:g}%"
-            tipping_rows.append(
-                {
-                    "condition": condition,
-                    "se_ratio": ratio,
-                    "conclusion": name,
-                    "on_recorded_data": base_value,
-                    "tipping_prevalence_pct": tip,
-                    "statement": statement,
-                }
+            rec = reclassification(**data.counts(), prevalence=pi / 100.0, se_ratio=ratio)
+            summary = NOT_ESTIMABLE_OR
+            if rec.feasible:
+                summary, mean_counts = _reclassified_draws(data, rec, n_draws, rng)
+                rate_rows += _rate_rows(condition, label, mean_counts)
+            scenario_rows.append(
+                _scenario_row(condition, label, pi, ratio, rec, summary, conclusions)
             )
+    scenarios = pd.DataFrame(scenario_rows)
     return UnderRecordingResult(
         condition=condition,
         field=field_name,
-        n_used=len(frame),
-        n_not_recorded=int((~used).sum()),
-        n_recorded_yes=int(yes.sum()),
+        n_used=len(data.y),
+        n_not_recorded=data.n_not_recorded,
+        n_recorded_yes=int(data.yes.sum()),
         scenarios=scenarios,
         group_rates=pd.DataFrame(rate_rows),
-        tipping=pd.DataFrame(tipping_rows),
+        tipping=pd.DataFrame(
+            _tipping_rows(condition, scenarios, se_ratios, conclusions, on_recorded)
+        ),
         notes=notes,
     )
 

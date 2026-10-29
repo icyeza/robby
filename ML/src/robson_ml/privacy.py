@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections import Counter, deque
 from collections.abc import Hashable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import numpy as np
@@ -230,6 +230,209 @@ class Protection(NamedTuple):
     """Of ``hidden``, primary cells to mark ``"*"`` rather than ``"<5"`` (rule (b))."""
 
 
+def _unknown_count(relation: SumRelation, unknown: set) -> int:
+    return len({*relation.members, relation.total} & unknown)
+
+
+class _SecondarySuppression:
+    """The working state of :func:`protect_cells`: the cells hidden so far, the relations a
+    reader can form, and the two remedies (hide one more published cell, or relabel a
+    primary ``"*"``). :meth:`run` applies rules (a) and (b) until nothing is exposed."""
+
+    def __init__(
+        self,
+        values: Mapping[Hashable, float],
+        suppressed: Sequence[Hashable],
+        relations: Sequence[SumRelation],
+        hidden: Sequence[Hashable],
+        linked: Mapping[Hashable, Iterable[Hashable]],
+        proxies: Mapping[Hashable, Hashable],
+        sizes: Mapping[Hashable, float],
+        marked: Iterable[Hashable],
+    ) -> None:
+        self.values = values
+        self.links = dict(linked)
+        self.prox = dict(proxies)
+        self.never_shown = set(hidden)
+        self.size = dict(values) | dict(sizes)
+        self.primary = {c for c in suppressed if _small_value(values.get(c, 0.0))}
+        self.marks = {c for c in marked if c in self.never_shown}
+        self.demoted: set[Hashable] = set()
+        # A single member with an external total is simply published elsewhere; nothing here
+        # can protect it, and its own table must.
+        self.rels = [r for r in relations if len(r.members) >= 2 or r.total is not None]
+        self.by_id = {id(r): r for r in self.rels}
+        self.by_cell: dict[Hashable, list[int]] = {}
+        for relation in self.rels:
+            for cell in {*relation.members, relation.total} - {None}:
+                self.by_cell.setdefault(cell, []).append(id(relation))
+        self.supp = _closure(suppressed, self.links)
+        # Checked in a fixed order so the result is deterministic.
+        self.targets = dict.fromkeys(c for c in suppressed if c in self.supp)
+        self.targets.update(dict.fromkeys(sorted(self.supp - set(self.targets), key=repr)))
+        self.targets.update(dict.fromkeys(c for c in hidden if _small_value(values.get(c, 0.0))))
+
+    def run(self) -> Protection:
+        """Hide or relabel cells until no target is determined (a) or pinned (b)."""
+        fixed_by_totals: set[Hashable] = set()
+        while True:
+            unknown = self.supp | self.never_shown
+            determined = _determined(unknown, self.rels)
+            exposed = next(
+                (t for t in self.targets if t in determined and t not in fixed_by_totals), None
+            )
+            if exposed is not None:
+                touching = self.touching(exposed)
+                touching.sort(key=lambda r: (_unknown_count(r, unknown), len(r.members)))
+                if not self.remedy(touching, unknown, exposed):
+                    fixed_by_totals.add(exposed)
+                continue
+            pins = self.pinned(unknown, determined, self.demoted, self.rels)
+            cell = next((t for t in self.targets if t in pins and t not in fixed_by_totals), None)
+            if cell is None:
+                return Protection(self.supp - self.never_shown, self.demoted)
+            if not self.unpin(cell, unknown):
+                fixed_by_totals.add(cell)
+
+    def publishable(self, cell: Hashable) -> Hashable | None:
+        """The published cell that stands for ``cell``, if it is still shown."""
+        shown = self.prox.get(cell) if cell in self.never_shown else cell
+        if shown is None or shown in self.supp or shown in self.never_shown:
+            return None
+        return shown
+
+    def members_by_size(self, relation: SumRelation, zeros: bool) -> list[Hashable]:
+        """Publishable members of ``relation``, smallest first (zeros only with ``zeros``)."""
+        # Sized by the published cell's own value (a complement stands in for its count).
+        options = []
+        for position, cell in enumerate(relation.members):
+            shown = self.publishable(cell)
+            if shown is not None and (self.size.get(shown, 0.0) == 0) == zeros:
+                options.append((self.size.get(shown, 0.0), position, shown))
+        return [shown for *_, shown in sorted(options, key=lambda o: (o[0], o[1]))]
+
+    def touching(self, cell: Hashable) -> list[SumRelation]:
+        """The relations through ``cell``, in the order they were given."""
+        return [self.by_id[k] for k in dict.fromkeys(self.by_cell.get(cell, ()))]
+
+    def reachable(self, start: list[SumRelation], unknown: set) -> list[SumRelation]:
+        """Breadth-first from ``start`` through relations sharing unknown cells."""
+        seen: set[int] = set()
+        order: list[SumRelation] = []
+        queue = deque(id(r) for r in start)
+        while queue:
+            key = queue.popleft()
+            if key in seen:
+                continue
+            seen.add(key)
+            relation = self.by_id[key]
+            order.append(relation)
+            for cell in {*relation.members, relation.total} & unknown:
+                queue.extend(k for k in self.by_cell.get(cell, ()) if k not in seen)
+        return order
+
+    def hide(self, cell: Hashable) -> None:
+        """Suppress ``cell`` and its linked cells, which become targets themselves."""
+        added = _closure([cell], self.links) - self.supp
+        self.supp.update(added)
+        self.targets.update(dict.fromkeys(sorted(added, key=repr)))
+
+    def remedy(self, start: list[SumRelation], unknown: set, exposed: Hashable | None) -> bool:
+        """Rule (a): hide one more published cell of the relations reachable from ``start``;
+        False when nothing publishable is left."""
+        order = self.reachable(start, unknown)
+        for zeros in (False, True):
+            if exposed is not None and self._hide_smallest_freeing(order, zeros, exposed):
+                return True
+            for relation in order:
+                sized = self.members_by_size(relation, zeros)
+                if sized:
+                    self.hide(sized[0])
+                    return True
+        for relation in order:
+            total = None if relation.total is None else self.publishable(relation.total)
+            if total is not None:
+                self.hide(total)
+                return True
+        return False
+
+    def _hide_smallest_freeing(
+        self, order: list[SumRelation], zeros: bool, exposed: Hashable
+    ) -> bool:
+        # Prefer the smallest cell whose suppression alone un-determines the target.
+        pool = [c for r in order for c in self.members_by_size(r, zeros)]
+        for cell in sorted(dict.fromkeys(pool), key=lambda c: self.size.get(c, 0.0)):
+            trial = self.supp | _closure([cell], self.links) | self.never_shown
+            if exposed not in _determined(trial, self.rels):
+                self.hide(cell)
+                return True
+        return False
+
+    def small_hints(self, relabelled: set) -> set:
+        """Hidden cells a reader knows hold 1-4: "<5" primaries and marked complements."""
+        return {c for c in self.primary if c not in relabelled} | {
+            c for c in self.marks if self.prox.get(c) not in relabelled
+        }
+
+    def pinned(
+        self, unknown: set, determined: set, relabelled: set, relations: Sequence[SumRelation]
+    ) -> set:
+        """Rule (b): unknown, undetermined cells holding 1-4 whose reader bounds meet."""
+        free = unknown - determined
+        bounds = _reader_bounds(relations, self.values, free, self.small_hints(relabelled) & free)
+        return {
+            c
+            for c, (low, high) in bounds.items()
+            if c in free and low == high and _small_value(self.values.get(c, 0.0))
+        }
+
+    def relabel_options(
+        self, order: list[SumRelation], touching: list[SumRelation]
+    ) -> list[Hashable]:
+        """Primary cells that could show ``"*"`` instead of ``"<5"``: the totals of the
+        relations through the pinned cell first, then their members, then the rest of the
+        connected relations; each as the published cell to relabel."""
+        cells: list[Hashable] = [r.total for r in touching if r.total is not None]
+        for relation in [*touching, *order]:
+            cells += [*relation.members, *([] if relation.total is None else [relation.total])]
+        hinted = self.small_hints(self.demoted)
+        options = []
+        for cell in dict.fromkeys(cells):
+            shown = self.prox.get(cell) if cell in self.never_shown else cell
+            if shown is None or shown not in self.supp or shown in self.demoted:
+                continue
+            if cell in hinted:
+                options.append(shown)
+        return list(dict.fromkeys(options))
+
+    def unpin(self, cell: Hashable, unknown: set) -> bool:
+        """Rule (b) remedies for a pinned ``cell``: hide the smallest cell that unpins it,
+        else relabel a primary, else fall back to rule (a)'s remedy."""
+        touching = self.touching(cell)
+        order = self.reachable(touching, unknown)
+
+        def still_pinned(trial_supp: set, relabelled: set) -> bool:
+            # Cells determined before may not be after hiding more; propagation finds the
+            # simple ones again, and the main loop rechecks every choice in full.
+            return cell in self.pinned(trial_supp | self.never_shown, set(), relabelled, order)
+
+        pool = [c for r in order for c in self.members_by_size(r, False)]
+        for option in sorted(dict.fromkeys(pool), key=lambda c: self.size.get(c, 0.0)):
+            if not still_pinned(self.supp | _closure([option], self.links), self.demoted):
+                self.hide(option)
+                return True
+        options = self.relabel_options(order, touching)
+        for option in options:
+            relabelled = _closure([option], self.links) & self.supp
+            if not still_pinned(self.supp, self.demoted | relabelled):
+                self.demoted.update(relabelled)
+                return True
+        if options:
+            self.demoted.update(_closure([options[0]], self.links) & self.supp)
+            return True
+        return self.remedy(touching, unknown, None)
+
+
 def protect_cells(
     values: Mapping[Hashable, float],
     suppressed: Iterable[Hashable],
@@ -287,159 +490,18 @@ def protect_cells(
         The published cells to suppress (``suppressed`` and everything added), and those of
         them to mark ``"*"`` instead of ``"<5"``.
     """
-    links = dict(linked or {})
-    prox = dict(proxies or {})
-    never_shown = set(hidden)
-    size = dict(values) | dict(sizes or {})
-    primary = {c for c in suppressed if _small_value(values.get(c, 0.0))}
-    marks = {c for c in marked if c in never_shown}
-    demoted: set[Hashable] = set()
-    # A single member with an external total is simply published elsewhere; nothing here
-    # can protect it, and its own table must.
-    rels = [r for r in relations if len(r.members) >= 2 or r.total is not None]
-    by_id = {id(r): r for r in rels}
-    by_cell: dict[Hashable, list[int]] = {}
-    for relation in rels:
-        for cell in {*relation.members, relation.total} - {None}:
-            by_cell.setdefault(cell, []).append(id(relation))
-    supp = _closure(suppressed, links)
-    # Checked in a fixed order so the result is deterministic.
-    targets = dict.fromkeys(c for c in suppressed if c in supp)
-    targets.update(dict.fromkeys(sorted(supp - set(targets), key=repr)))
-    targets.update(dict.fromkeys(c for c in hidden if _small_value(values.get(c, 0.0))))
-
-    def publishable(cell: Hashable) -> Hashable | None:
-        shown = prox.get(cell) if cell in never_shown else cell
-        return None if shown is None or shown in supp or shown in never_shown else shown
-
-    def members_by_size(relation: SumRelation, zeros: bool) -> list[Hashable]:
-        # Sized by the published cell's own value (a complement stands in for its count).
-        options = []
-        for position, cell in enumerate(relation.members):
-            shown = publishable(cell)
-            if shown is not None and (size.get(shown, 0.0) == 0) == zeros:
-                options.append((size.get(shown, 0.0), position, shown))
-        return [shown for *_, shown in sorted(options, key=lambda o: (o[0], o[1]))]
-
-    def reachable(start: list[SumRelation], unknown: set) -> list[SumRelation]:
-        # Breadth-first from the offending relations through relations sharing unknowns.
-        seen: set[int] = set()
-        order: list[SumRelation] = []
-        queue = deque(id(r) for r in start)
-        while queue:
-            key = queue.popleft()
-            if key in seen:
-                continue
-            seen.add(key)
-            relation = by_id[key]
-            order.append(relation)
-            for cell in {*relation.members, relation.total} & unknown:
-                queue.extend(k for k in by_cell.get(cell, ()) if k not in seen)
-        return order
-
-    def hide(cell: Hashable) -> None:
-        added = _closure([cell], links) - supp
-        supp.update(added)
-        targets.update(dict.fromkeys(sorted(added, key=repr)))
-
-    def remedy(start: list[SumRelation], unknown: set, exposed: Hashable | None) -> bool:
-        order = reachable(start, unknown)
-        for zeros in (False, True):
-            if exposed is not None:
-                # Prefer the smallest cell whose suppression alone un-determines the target.
-                pool = [c for r in order for c in members_by_size(r, zeros)]
-                pool = sorted(dict.fromkeys(pool), key=lambda c: size.get(c, 0.0))
-                for cell in pool:
-                    trial = supp | _closure([cell], links) | never_shown
-                    if exposed not in _determined(trial, rels):
-                        hide(cell)
-                        return True
-            for relation in order:
-                sized = members_by_size(relation, zeros)
-                if sized:
-                    hide(sized[0])
-                    return True
-        for relation in order:
-            total = None if relation.total is None else publishable(relation.total)
-            if total is not None:
-                hide(total)
-                return True
-        return False
-
-    def unknown_count(relation: SumRelation, unknown: set) -> int:
-        return len({*relation.members, relation.total} & unknown)
-
-    def small_hints(relabelled: set) -> set:
-        # Hidden cells a reader knows hold 1-4: "<5" primaries and marked complements.
-        return {c for c in primary if c not in relabelled} | {
-            c for c in marks if prox.get(c) not in relabelled
-        }
-
-    def pinned(unknown: set, determined: set, relabelled: set, relations: Sequence) -> set:
-        free = unknown - determined
-        bounds = _reader_bounds(relations, values, free, small_hints(relabelled) & free)
-        return {
-            c
-            for c, (low, high) in bounds.items()
-            if c in free and low == high and _small_value(values.get(c, 0.0))
-        }
-
-    def relabel_options(order: list[SumRelation], touching: list[SumRelation]) -> list:
-        # Totals of the relations through the pinned cell first, then their members, then
-        # the rest of the connected relations; each as the published cell to relabel.
-        cells: list[Hashable] = [r.total for r in touching if r.total is not None]
-        for relation in [*touching, *order]:
-            cells += [*relation.members, *([] if relation.total is None else [relation.total])]
-        hinted = small_hints(demoted)
-        options = []
-        for cell in dict.fromkeys(cells):
-            shown = prox.get(cell) if cell in never_shown else cell
-            if shown is None or shown not in supp or shown in demoted or cell not in hinted:
-                continue
-            options.append(shown)
-        return list(dict.fromkeys(options))
-
-    def unpin(cell: Hashable, unknown: set) -> bool:
-        touching = [by_id[k] for k in dict.fromkeys(by_cell.get(cell, ()))]
-        order = reachable(touching, unknown)
-
-        def still_pinned(trial_supp: set, relabelled: set) -> bool:
-            # Cells determined before may not be after hiding more; propagation finds the
-            # simple ones again, and the main loop rechecks every choice in full.
-            return cell in pinned(trial_supp | never_shown, set(), relabelled, order)
-
-        pool = [c for r in order for c in members_by_size(r, False)]
-        for option in sorted(dict.fromkeys(pool), key=lambda c: size.get(c, 0.0)):
-            if not still_pinned(supp | _closure([option], links), demoted):
-                hide(option)
-                return True
-        options = relabel_options(order, touching)
-        for option in options:
-            if not still_pinned(supp, demoted | (_closure([option], links) & supp)):
-                demoted.update(_closure([option], links) & supp)
-                return True
-        if options:
-            demoted.update(_closure([options[0]], links) & supp)
-            return True
-        return remedy(touching, unknown, None)
-
-    fixed_by_totals: set[Hashable] = set()
-    while True:
-        unknown = supp | never_shown
-        determined = _determined(unknown, rels)
-        exposed = next((t for t in targets if t in determined and t not in fixed_by_totals), None)
-        if exposed is not None:
-            touching = [by_id[k] for k in dict.fromkeys(by_cell.get(exposed, ()))]
-            touching.sort(key=lambda r: (unknown_count(r, unknown), len(r.members)))
-            if not remedy(touching, unknown, exposed):
-                fixed_by_totals.add(exposed)
-            continue
-        pins = pinned(unknown, determined, demoted, rels)
-        cell = next((t for t in targets if t in pins and t not in fixed_by_totals), None)
-        if cell is None:
-            return Protection(supp - never_shown, demoted)
-        if not unpin(cell, unknown):
-            fixed_by_totals.add(cell)
+    suppressed = list(suppressed)
+    state = _SecondarySuppression(
+        values,
+        suppressed,
+        relations,
+        list(hidden),
+        linked or {},
+        proxies or {},
+        sizes or {},
+        marked,
+    )
+    return state.run()
 
 
 @dataclass(frozen=True)
@@ -493,6 +555,135 @@ class DerivedCell:
     proxy: Hashable
 
 
+@dataclass
+class _CellProblem:
+    """The tables of :func:`suppress_tables` as one :func:`protect_cells` problem; cells are
+    ``(table key, row label, count column)``, complements ``("~complement", key, row, col)``."""
+
+    values: dict[Hashable, float] = field(default_factory=dict)
+    sizes: dict[Hashable, float] = field(default_factory=dict)
+    suppressed: list[Hashable] = field(default_factory=list)
+    links: dict[Hashable, list[Hashable]] = field(default_factory=dict)
+    relations: list[SumRelation] = field(default_factory=list)
+    hidden: list[Hashable] = field(default_factory=list)
+    marked: list[Hashable] = field(default_factory=list)
+    proxies: dict[Hashable, Hashable] = field(default_factory=dict)
+
+    def add_table(self, key: Hashable, spec: TableSpec, primary: pd.DataFrame) -> None:
+        """The count cells of one table, its row-group sums, its complements and its rank."""
+        df = spec.df
+        links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
+        counts = set(spec.count_columns)
+        rows = list(df.index)
+        row_groups = list(spec.groups) if spec.groups is not None else [SumRelation(tuple(rows))]
+        numeric = {col: pd.to_numeric(df[col], errors="coerce").fillna(0.0) for col in counts}
+        for col in spec.count_columns:
+            for row in rows:
+                self.values[(key, row, col)] = float(numeric[col][row])
+                if isinstance(primary.at[row, col], str) and primary.at[row, col] == SUPPRESSED:
+                    self.suppressed.append((key, row, col))
+                self.links[(key, row, col)] = [
+                    (key, row, c) for c in links.get(col, ()) if c in counts
+                ]
+            for group in row_groups:
+                total = None if group.total is None else (key, group.total, col)
+                members = tuple((key, m, col) for m in group.members)
+                self.relations.append(SumRelation(members, total))
+        for col, total_col in (spec.complements or {}).items():
+            self._add_complements(key, df, col, total_col, counts, row_groups)
+        if spec.rank is not None:
+            self._rank(key, spec, rows)
+
+    def _add_complements(
+        self,
+        key: Hashable,
+        df: pd.DataFrame,
+        col: str,
+        total_col: str,
+        counts: set[str],
+        row_groups: list[SumRelation],
+    ) -> None:
+        # The never-published complement total - count of each row, and its group sums.
+        totals = pd.to_numeric(df[total_col], errors="coerce").fillna(0.0)
+        count = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        for row in df.index:
+            comp = ("~complement", key, row, col)
+            self.values[comp] = float(totals[row] - count[row])
+            self.sizes[(key, row, col)] = min(float(count[row]), self.values[comp])
+            self.hidden.append(comp)
+            self.proxies[comp] = (key, row, col)
+            if _small_value(self.values[comp]):
+                self.marked.append(comp)  # its count is shown "<5"
+            total_cell = (key, row, total_col) if total_col in counts else None
+            self.relations.append(SumRelation(((key, row, col), comp), total_cell))
+        for group in row_groups:
+            comp_total = None if group.total is None else ("~complement", key, group.total, col)
+            comps = tuple(("~complement", key, m, col) for m in group.members)
+            self.relations.append(SumRelation(comps, comp_total))
+
+    def _rank(self, key: Hashable, spec: TableSpec, rows: list[Hashable]) -> None:
+        # Sizes from the fixed rank instead of the values; a zero stays a last resort.
+        order = {label: i for i, label in enumerate(spec.rank or ())}
+        for col in spec.count_columns:
+            for row in rows:
+                ranked = (key, row, col)
+                size = self.sizes.get(ranked, self.values[ranked])
+                self.sizes[ranked] = 0.0 if size == 0 else 1.0 + order.get(row, len(order) + size)
+
+    def add_derived(self, derived: Mapping[Hashable, DerivedCell]) -> None:
+        """Never-published counts tied to published cells by cross-table sums."""
+        for cell_key, cell in derived.items():
+            self.values[cell_key] = float(cell.value)
+            self.hidden.append(cell_key)
+            self.proxies[cell_key] = cell.proxy
+
+    def protect(self, forced: Iterable[Hashable]) -> Protection:
+        """:func:`protect_cells` on every table at once, ``forced`` cells hidden as well."""
+        forced_cells = list(dict.fromkeys(forced))
+        if missing := [cell for cell in forced_cells if cell not in self.values]:
+            raise ValueError(f"forced cells not in any table: {missing}")
+        primary = set(self.suppressed)
+        return protect_cells(
+            self.values,
+            [*self.suppressed, *(cell for cell in forced_cells if cell not in primary)],
+            self.relations,
+            hidden=self.hidden,
+            linked=self.links,
+            proxies=self.proxies,
+            sizes=self.sizes,
+            marked=self.marked,
+        )
+
+
+def _mark_hidden(
+    primary: pd.DataFrame,
+    key: Hashable,
+    spec: TableSpec,
+    secondary: Sequence[tuple[Hashable, Hashable, str]],
+    relabelled: Sequence[tuple[Hashable, Hashable, str]],
+) -> pd.DataFrame:
+    """Table ``key`` after primary suppression, with its secondary and relabelled cells (and
+    their linked columns) shown ``"*"``."""
+    safe = primary.copy()
+    links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
+    for table, row, col in secondary:
+        if table != key:
+            continue
+        for target in (col, *links.get(col, ())):
+            safe[target] = safe[target].astype(object)
+            # A cell already hidden as primary keeps its "<5".
+            if safe.at[row, target] != SUPPRESSED:
+                safe.at[row, target] = SECONDARY
+    for table, row, col in relabelled:
+        if table != key:
+            continue
+        # Rule (b) of protect_cells: "<5" would pin it or another cell.
+        for target in (col, *links.get(col, ())):
+            safe[target] = safe[target].astype(object)
+            safe.at[row, target] = SECONDARY
+    return safe
+
+
 def suppress_tables(
     tables: Mapping[Hashable, TableSpec],
     cross: Sequence[SumRelation] = (),
@@ -518,83 +709,20 @@ def suppress_tables(
     Before returning, every ``"<5"`` is checked to mark a count (or complement) of 1-4, or a
     value derived from one; :class:`DisclosureError` otherwise.
     """
-    values: dict[Hashable, float] = {}
-    sizes: dict[Hashable, float] = {}
-    suppressed: list[Hashable] = []
-    cell_links: dict[Hashable, list[Hashable]] = {}
-    relations: list[SumRelation] = []
-    hidden: list[Hashable] = []
-    marked: list[Hashable] = []
-    proxies: dict[Hashable, Hashable] = {}
+    problem = _CellProblem()
     primaries: dict[Hashable, pd.DataFrame] = {}
     for key, spec in tables.items():
-        df = spec.df
-        if not df.index.is_unique:
+        if not spec.df.index.is_unique:
             raise ValueError("suppress_table needs a unique row index")
-        primary = suppress_small_cells(df, spec.count_columns, spec.linked, spec.complements)
-        primaries[key] = primary
-        links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
-        counts = set(spec.count_columns)
-        rows = list(df.index)
-        row_groups = list(spec.groups) if spec.groups is not None else [SumRelation(tuple(rows))]
-        numeric = {col: pd.to_numeric(df[col], errors="coerce").fillna(0.0) for col in counts}
-        for col in spec.count_columns:
-            for row in rows:
-                values[(key, row, col)] = float(numeric[col][row])
-                if isinstance(primary.at[row, col], str) and primary.at[row, col] == SUPPRESSED:
-                    suppressed.append((key, row, col))
-                cell_links[(key, row, col)] = [
-                    (key, row, c) for c in links.get(col, ()) if c in counts
-                ]
-            for group in row_groups:
-                total = None if group.total is None else (key, group.total, col)
-                members = tuple((key, m, col) for m in group.members)
-                relations.append(SumRelation(members, total))
-        for col, total_col in (spec.complements or {}).items():
-            totals = pd.to_numeric(df[total_col], errors="coerce").fillna(0.0)
-            count = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-            for row in rows:
-                comp = ("~complement", key, row, col)
-                values[comp] = float(totals[row] - count[row])
-                sizes[(key, row, col)] = min(float(count[row]), values[comp])
-                hidden.append(comp)
-                proxies[comp] = (key, row, col)
-                if _small_value(values[comp]):
-                    marked.append(comp)  # its count is shown "<5"
-                total_cell = (key, row, total_col) if total_col in counts else None
-                relations.append(SumRelation(((key, row, col), comp), total_cell))
-            for group in row_groups:
-                comp_total = None if group.total is None else ("~complement", key, group.total, col)
-                comps = tuple(("~complement", key, m, col) for m in group.members)
-                relations.append(SumRelation(comps, comp_total))
-        if spec.rank is not None:
-            order = {label: i for i, label in enumerate(spec.rank)}
-            for col in spec.count_columns:
-                for row in rows:
-                    ranked = (key, row, col)
-                    size = sizes.get(ranked, values[ranked])
-                    # Rank among non-zero cells; a zero stays a last resort.
-                    sizes[ranked] = 0.0 if size == 0 else 1.0 + order.get(row, len(order) + size)
-    for cell_key, cell in (derived or {}).items():
-        values[cell_key] = float(cell.value)
-        hidden.append(cell_key)
-        proxies[cell_key] = cell.proxy
-    relations.extend(cross)
-    forced_cells = list(dict.fromkeys(forced))
-    if missing := [cell for cell in forced_cells if cell not in values]:
-        raise ValueError(f"forced cells not in any table: {missing}")
-    final = protect_cells(
-        values,
-        [*suppressed, *(cell for cell in forced_cells if cell not in set(suppressed))],
-        relations,
-        hidden=hidden,
-        linked=cell_links,
-        proxies=proxies,
-        sizes=sizes,
-        marked=marked,
-    )
+        primaries[key] = suppress_small_cells(
+            spec.df, spec.count_columns, spec.linked, spec.complements
+        )
+        problem.add_table(key, spec, primaries[key])
+    problem.add_derived(derived or {})
+    problem.relations.extend(cross)
+    final = problem.protect(forced)
     secondary: list[tuple[Hashable, Hashable, str]] = sorted(
-        final.hidden - set(suppressed),  # type: ignore[arg-type]
+        final.hidden - set(problem.suppressed),  # type: ignore[arg-type]
         key=repr,
     )
     relabelled: list[tuple[Hashable, Hashable, str]] = sorted(
@@ -603,23 +731,7 @@ def suppress_tables(
     )
     out: dict[Hashable, pd.DataFrame] = {}
     for key, spec in tables.items():
-        safe = primaries[key].copy()
-        links = {col: list(targets) for col, targets in (spec.linked or {}).items()}
-        for table, row, col in secondary:
-            if table != key:
-                continue
-            for target in (col, *links.get(col, ())):
-                safe[target] = safe[target].astype(object)
-                # A cell already hidden as primary keeps its "<5".
-                if safe.at[row, target] != SUPPRESSED:
-                    safe.at[row, target] = SECONDARY
-        for table, row, col in relabelled:
-            if table != key:
-                continue
-            # Rule (b) of protect_cells: "<5" would pin it or another cell.
-            for target in (col, *links.get(col, ())):
-                safe[target] = safe[target].astype(object)
-                safe.at[row, target] = SECONDARY
+        safe = _mark_hidden(primaries[key], key, spec, secondary, relabelled)
         _check_markers(safe, spec)
         out[key] = safe
     return out

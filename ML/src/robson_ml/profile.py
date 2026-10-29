@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Hashable, Iterable, Mapping
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -447,6 +447,97 @@ def _apply_markers(cells: dict[str, object], scopes: Mapping[str, str]) -> None:
             cells[scope] = SECONDARY
 
 
+def _add_level_tables(
+    canonical: pd.DataFrame,
+    fields: Sequence[str],
+    tables: dict[Hashable, TableSpec],
+    completeness: Mapping[str, pd.Series],
+) -> tuple[dict[str, int], list[SumRelation], dict[Hashable, DerivedCell]]:
+    """Add the level table of each field to ``tables``; returns the row of each table's
+    ``"(missing)"`` count, the sums tying it to its recorded count (and to the completeness
+    row of the same input), and those never-published recorded counts."""
+    n = len(canonical)
+    missing_rows: dict[str, int] = {}
+    cross: list[SumRelation] = []
+    derived: dict[Hashable, DerivedCell] = {}
+    for field in fields:
+        spec = _counts_spec(_level_series(canonical, field), recorded_group=False)
+        tables[("levels", field)] = spec
+        rows = spec.df.index[spec.df["value"] == MISSING_LABEL]
+        if not len(rows):
+            continue
+        row = missing_rows[field] = int(rows[0])
+        cell = (("levels", field), row, "n")
+        recorded = ("~recorded", field)
+        derived[recorded] = DerivedCell(n - float(spec.df["n"][row]), cell)
+        cross.append(SumRelation((cell, recorded)))
+        if field in completeness:
+            cross.append(SumRelation((cell, (("completeness", field), 0, "n_true"))))
+    return missing_rows, cross, derived
+
+
+def _linked_cells(
+    links: Mapping[str, Mapping[str, str]],
+    completeness: Mapping[str, pd.Series],
+    scope_rows: Mapping[str, int],
+    missing_rows: Mapping[str, int],
+) -> list[Hashable]:
+    """The cells hidden because a linked copy of their count is hidden elsewhere."""
+    forced: list[Hashable] = []
+    for key, scopes in links.items():
+        for scope in scopes:
+            if key in completeness and scope in scope_rows:
+                forced.append((("completeness", key), scope_rows[scope], "n_true"))
+            if key in missing_rows and scope == OVERALL_SCOPE:
+                forced.append((("levels", key), missing_rows[key], "n"))
+    return forced
+
+
+def _completeness_rows(
+    tables: Mapping[Hashable, TableSpec],
+    safe: Mapping[Hashable, pd.DataFrame],
+    labels: Iterable[str],
+    facilities: list[str],
+    links: Mapping[str, Mapping[str, str]],
+) -> list[dict[str, object]]:
+    rows_out = []
+    for label in labels:
+        spec = tables[("completeness", label)]
+        cells: dict[str, object] = dict(
+            _scope_pcts(spec, safe[("completeness", label)], facilities)
+        )
+        _apply_markers(cells, links.get(label, {}))
+        counts, sizes = _scope_counts(spec)
+        for position, scope in enumerate([OVERALL_SCOPE, *facilities]):
+            check_small_marker(cells[scope], counts[position], sizes[position])
+        rows_out.append({"input": label, **cells})
+    return rows_out
+
+
+def _level_outputs(
+    tables: Mapping[Hashable, TableSpec],
+    safe: Mapping[Hashable, pd.DataFrame],
+    fields: Sequence[str],
+    missing_rows: Mapping[str, int],
+    links: Mapping[str, Mapping[str, str]],
+) -> dict[str, pd.DataFrame]:
+    levels: dict[str, pd.DataFrame] = {}
+    for field in fields:
+        table = safe[("levels", field)].copy()
+        if field in missing_rows:
+            row = missing_rows[field]
+            column = table["n"].astype(object).tolist()
+            shown: dict[str, object] = {OVERALL_SCOPE: column[row]}
+            _apply_markers(shown, links.get(field, {}))
+            column[row] = shown[OVERALL_SCOPE]
+            table["n"] = pd.Series(column, index=table.index, dtype=object)
+        spec = tables[("levels", field)]
+        for row in table.index:
+            check_small_marker(table["n"][row], float(spec.df["n"][row]))
+        levels[field] = table
+    return levels
+
+
 def canonical_counts(
     canonical: pd.DataFrame, hide: Mapping[str, Mapping[str, str]] | None = None
 ) -> CanonicalCounts:
@@ -471,75 +562,28 @@ def canonical_counts(
     them; ``"*"`` replaces a ``"<5"``.
     """
     links = hide or {}
-    n = len(canonical)
     facility = canonical["facility_id"].astype(str)
     facilities = sorted(facility.unique())
-    scope_rows = _scope_rows(facilities)
     masks = _completeness_masks(canonical)
     tables: dict[Hashable, TableSpec] = {
         ("completeness", label): _scope_spec(mask, facility, facilities)
         for label, mask in masks.items()
     }
     fields = [field for field in LEVEL_FIELDS if field in canonical.columns]
-    missing_rows: dict[str, int] = {}
-    cross: list[SumRelation] = []
-    derived: dict[Hashable, DerivedCell] = {}
-    for field in fields:
-        spec = _counts_spec(_level_series(canonical, field), recorded_group=False)
-        tables[("levels", field)] = spec
-        rows = spec.df.index[spec.df["value"] == MISSING_LABEL]
-        if not len(rows):
-            continue
-        row = missing_rows[field] = int(rows[0])
-        cell = (("levels", field), row, "n")
-        recorded = ("~recorded", field)
-        derived[recorded] = DerivedCell(n - float(spec.df["n"][row]), cell)
-        cross.append(SumRelation((cell, recorded)))
-        if field in masks:
-            cross.append(SumRelation((cell, (("completeness", field), 0, "n_true"))))
+    missing_rows, cross, derived = _add_level_tables(canonical, fields, tables, masks)
     if "plurality" in fields and "mother_key" in canonical.columns:
         sharing, q9_cross, q9_derived = _q9_specs(canonical, tables[("levels", "plurality")])
         tables["sharing"] = sharing
         cross += q9_cross
         derived.update(q9_derived)
-    forced: list[Hashable] = []
-    for key, scopes in links.items():
-        for scope in scopes:
-            if key in masks and scope in scope_rows:
-                forced.append((("completeness", key), scope_rows[scope], "n_true"))
-            if key in missing_rows and scope == OVERALL_SCOPE:
-                forced.append((("levels", key), missing_rows[key], "n"))
+    forced = _linked_cells(links, masks, _scope_rows(facilities), missing_rows)
     scope_keys = [("completeness", label) for label in masks]
     safe = _suppress_scopes(tables, scope_keys, cross, derived, forced)
-    rows_out = []
-    for label in masks:
-        spec = tables[("completeness", label)]
-        cells: dict[str, object] = dict(
-            _scope_pcts(spec, safe[("completeness", label)], facilities)
-        )
-        _apply_markers(cells, links.get(label, {}))
-        counts, sizes = _scope_counts(spec)
-        for position, scope in enumerate([OVERALL_SCOPE, *facilities]):
-            check_small_marker(cells[scope], counts[position], sizes[position])
-        rows_out.append({"input": label, **cells})
-    levels: dict[str, pd.DataFrame] = {}
-    for field in fields:
-        table = safe[("levels", field)].copy()
-        if field in missing_rows:
-            row = missing_rows[field]
-            column = table["n"].astype(object).tolist()
-            shown: dict[str, object] = {OVERALL_SCOPE: column[row]}
-            _apply_markers(shown, links.get(field, {}))
-            column[row] = shown[OVERALL_SCOPE]
-            table["n"] = pd.Series(column, index=table.index, dtype=object)
-        spec = tables[("levels", field)]
-        for row in table.index:
-            check_small_marker(table["n"][row], float(spec.df["n"][row]))
-        levels[field] = table
+    rows_out = _completeness_rows(tables, safe, masks, facilities, links)
     sharing_shown = safe["sharing"]["n"].tolist() if "sharing" in safe else [None, None]
     return CanonicalCounts(
         completeness=pd.DataFrame(rows_out, columns=["input", OVERALL_SCOPE, *facilities]),
-        levels=levels,
+        levels=_level_outputs(tables, safe, fields, missing_rows, links),
         sharing=(sharing_shown[0], sharing_shown[1]),
     )
 

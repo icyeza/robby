@@ -202,6 +202,69 @@ def _raw_kind(entry: FeatureEntry) -> str:
     raise ValueError(f"{entry.name}: raw feature kind {kind!r} cannot be a model input")
 
 
+def _resolve_legacy_onset(population: str, legacy_onset: bool | None) -> bool:
+    # Default: the legacy onset columns exactly for the onset-coded sensitivity population.
+    if legacy_onset is None:
+        return population == P_PRED_ONSET_CODED
+    if legacy_onset and population != P_PRED_ONSET_CODED:
+        raise ValueError(f"legacy_onset is only allowed for population {P_PRED_ONSET_CODED!r}")
+    return legacy_onset
+
+
+def _included_features(
+    registry: FeatureRegistry, raw_features: pd.DataFrame
+) -> tuple[list[FeatureEntry], list[FeatureEntry]]:
+    """(included entries, those read from the raw export), refusing the legacy onset columns
+    and any raw feature absent from ``raw_features``."""
+    included = registry.included()
+    contaminated = sorted({e.name for e in included} & set(LEGACY_ONSET_COLUMNS))
+    if contaminated:
+        raise ValueError(
+            f"{contaminated} must not be include features: onset is outcome-contaminated "
+            "(coded retrospectively); the onset-coded sensitivity analysis adds them via "
+            "legacy_onset"
+        )
+    raw_entries = [e for e in included if e.source == "raw"]
+    absent = [e.name for e in raw_entries if e.name not in raw_features.columns]
+    if absent:
+        raise ValueError(f"raw feature(s) missing from raw_features: {absent}")
+    return list(included), raw_entries
+
+
+def _with_raw_features(
+    canonical: pd.DataFrame, raw_features: pd.DataFrame, raw_entries: list[FeatureEntry]
+) -> pd.DataFrame:
+    frame = canonical.reset_index(drop=True).copy()
+    for entry in raw_entries:
+        if entry.name in frame.columns:
+            raise ValueError(f"raw feature {entry.name!r} clashes with a canonical column")
+        frame[entry.name] = raw_features[entry.name].reset_index(drop=True)
+    return frame
+
+
+def _model_columns(
+    included: list[FeatureEntry], meta: pd.DataFrame, legacy_onset: bool
+) -> tuple[dict[str, pd.Series], dict[str, str], dict[str, str]]:
+    """(series, kind, group) per model column, in group order, then the facility."""
+    x: dict[str, pd.Series] = {}
+    kinds: dict[str, str] = {}
+    groups: dict[str, str] = {}
+    for group in GROUP_ORDER:
+        for entry in (e for e in included if e.group == group):
+            if legacy_onset and entry.name == ROBSON_NO_ONSET:
+                columns = [
+                    (name, categorical_values(meta[name]), "categorical")
+                    for name in LEGACY_ONSET_COLUMNS
+                ]
+            else:
+                columns = _columns_for(entry, meta)
+            for column, series, kind in columns:
+                x[column], kinds[column], groups[column] = series, kind, group
+    x[FACILITY] = categorical_values(meta[FACILITY])
+    kinds[FACILITY], groups[FACILITY] = "categorical", "G_context"
+    return x, kinds, groups
+
+
 def build_model_data(
     canonical: pd.DataFrame,
     registry: FeatureRegistry,
@@ -226,47 +289,12 @@ def build_model_data(
     """
     if len(raw_features) != len(canonical):
         raise ValueError("raw_features must align with canonical by row position")
-    if legacy_onset is None:
-        legacy_onset = population == P_PRED_ONSET_CODED
-    if legacy_onset and population != P_PRED_ONSET_CODED:
-        raise ValueError(f"legacy_onset is only allowed for population {P_PRED_ONSET_CODED!r}")
-    included = registry.included()
-    contaminated = sorted({e.name for e in included} & set(LEGACY_ONSET_COLUMNS))
-    if contaminated:
-        raise ValueError(
-            f"{contaminated} must not be include features: onset is outcome-contaminated "
-            "(coded retrospectively); the onset-coded sensitivity analysis adds them via "
-            "legacy_onset"
-        )
-    raw_entries = [e for e in included if e.source == "raw"]
-    absent = [e.name for e in raw_entries if e.name not in raw_features.columns]
-    if absent:
-        raise ValueError(f"raw feature(s) missing from raw_features: {absent}")
-
-    frame = canonical.reset_index(drop=True).copy()
-    for entry in raw_entries:
-        if entry.name in frame.columns:
-            raise ValueError(f"raw feature {entry.name!r} clashes with a canonical column")
-        frame[entry.name] = raw_features[entry.name].reset_index(drop=True)
+    legacy_onset = _resolve_legacy_onset(population, legacy_onset)
+    included, raw_entries = _included_features(registry, raw_features)
+    frame = _with_raw_features(canonical, raw_features, raw_entries)
     meta, exclusions, exclusion_table = _population(frame, population)
     meta[ROBSON_NO_ONSET] = robson_group_no_onset(meta, rule_set)
-
-    x: dict[str, pd.Series] = {}
-    kinds: dict[str, str] = {}
-    groups: dict[str, str] = {}
-    for group in GROUP_ORDER:
-        for entry in (e for e in included if e.group == group):
-            if legacy_onset and entry.name == ROBSON_NO_ONSET:
-                columns = [
-                    (name, categorical_values(meta[name]), "categorical")
-                    for name in LEGACY_ONSET_COLUMNS
-                ]
-            else:
-                columns = _columns_for(entry, meta)
-            for column, series, kind in columns:
-                x[column], kinds[column], groups[column] = series, kind, group
-    x[FACILITY] = categorical_values(meta[FACILITY])
-    kinds[FACILITY], groups[FACILITY] = "categorical", "G_context"
+    x, kinds, groups = _model_columns(included, meta, legacy_onset)
     y = np.asarray(meta["cs"].astype(int).to_numpy(), dtype=np.int64)
     return ModelData(
         population,
