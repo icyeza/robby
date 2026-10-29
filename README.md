@@ -346,7 +346,7 @@ The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the sav
 
 ## Testing strategies
 
-There are 1,316 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 428
+There are 1,317 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 429
 application. All run on synthetic data; the real records never enter a test.
 
 - `cd ML && uv run pytest` runs the ML tests.
@@ -386,7 +386,7 @@ PostgreSQL 16, and lint and type checks.
   - audit arithmetic against hand-computed values;
   - registry transitions, reconciliation and monitoring;
   - a check that no page contains inline script or style.
-- **Results.** 428 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
+- **Results.** 429 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
   The skip is a placeholder check with nothing left to check.
 - **Improvements made.** The re-derivation test (NFR4) and the Robson-group monitoring test (FR12)
   were added after this review. An OpenClinic file with missing columns used to crash the upload
@@ -401,7 +401,10 @@ PostgreSQL 16, and lint and type checks.
   fails on any console error or CSP violation coming from the app.
 - **Results.** Chrome 156, Edge 156 and Firefox 157 pass at both sizes against the deployed server.
   WebKit passed on the local run; see [the measurements](docs/testing/performance.md#browsers).
-- **Improvements made.** Pages had no favicon, so every browser logged a 404 (`76d9b75`).
+- **Improvements made.**
+  - Pages had no favicon, so every browser logged a 404 (`76d9b75`).
+  - Against the deployed server, Firefox caught a live-panel preview that the browser had abandoned
+    being logged and answered as a server error. It now ends quietly with status 499 (`f6dc28d`).
 
 ### 4. Performance and resource testing
 
