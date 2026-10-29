@@ -22,7 +22,8 @@ synthetic packaged artefact and runs the golden check.
   national aggregates for the national reviewer.
 - **Model governance**: registry with candidate, shadow and active states, approvals with a named
   approver and reason, approval log; shadow models score every admission without being shown.
-- **Monitoring**: reconciliation of predictions with outcomes, calibration and input-drift alerts.
+- **Monitoring**: reconciliation of predictions with outcomes; discrimination (AUC) and calibration
+  per facility and per Robson group; calibration and input-drift alerts.
 - **Platform**: every table created by Alembic migrations, with PostgreSQL triggers that make
   clinical rows and the event log impossible to update or delete; a hash-chained event log
   (`robby-admin events verify`); sign-in (argon2id, lockout after 5 failed attempts for 15
@@ -30,8 +31,9 @@ synthetic packaged artefact and runs the golden check.
   protection, strict Content-Security-Policy; facilities and users administration; demo mode.
 - The `robby-admin` command line (first administrator, migrations, rule set, model registration,
   reconciliation, API tokens, demo database, event-log verification).
-- Not yet built: the FHIR adapter ([`src/robby/fhir/`](src/robby/fhir/README.md)) and the server
-  deployment files (systemd, nginx, TLS).
+- Deployment: [`../deploy/`](../deploy/) holds the install script, the systemd unit and the nginx
+  site used for the live demonstration server (see [Linux server](#linux-server)).
+- Not yet built: the FHIR adapter ([`src/robby/fhir/`](src/robby/fhir/README.md)).
 
 ## Data model
 
@@ -246,12 +248,13 @@ How to read it:
 
 Source: [`docs/diagrams/prediction-sequence.mmd`](../docs/diagrams/prediction-sequence.mmd); image:
 [`prediction-sequence.png`](../docs/diagrams/prediction-sequence.png). The code is
-`clinical/routes.py` (`_save_response`), `clinical/service.py` (`save_admission`) and
+`clinical/routes.py` (`create_admission`), `clinical/service.py` (`save_admission`) and
 `clinical/scoring.py`.
 
 ```mermaid
 sequenceDiagram
     autonumber
+    actor L as Lab technician (browser)
     actor C as Clinician (browser)
     participant W as Robby web (FastAPI)
     participant F as Form parser (form.parse)
@@ -260,11 +263,11 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant E as Event log
 
-    C->>W: POST /admissions (form fields, CSRF token)
+    L->>W: POST /admissions (form fields, CSRF token)
     W->>F: parse(values)
     F-->>W: Parsed admission, or errors
     alt any error
-        W-->>C: form again with the errors (nothing saved)
+        W-->>L: form again with the errors (nothing saved)
     else valid
         Note over W,DB: service.save_admission, one transaction
         W->>DB: read the active rule_set
@@ -288,14 +291,15 @@ sequenceDiagram
         W->>E: append admission.created (code, group, model, no identifiers)
         E->>DB: INSERT event_log (hash chained to the previous entry)
         W->>DB: COMMIT
-        W-->>C: redirect to /admissions/{code}
-        C->>W: GET /admissions/{code}
-        W->>DB: admission by code, within the user's own facility
-        W-->>C: Robson group, explanation and readiness signal
+        W-->>L: empty form for the next patient, with the note saved DA-0042, group 5
     end
 
-    Note over C,E: Excel import: POST /admissions/import validates every row first, then runs<br/>the same save_admission per row (source import) in one transaction,<br/>one commit, plus one admissions.imported event
+    Note over L,E: Excel import (facility administrator): POST /admissions/import parses every row.<br/>Rows with a problem are left out and listed, the others go through the same<br/>save_admission (source import) in one transaction, plus one admissions.imported event
 
+    C->>W: GET /patients?q=name or number
+    W->>DB: admissions of the user's own facility only
+    C->>W: GET /admissions/{code}
+    W-->>C: read-only page: Robson group, explanation, readiness signal
     C->>W: POST /admissions/{code}/outcome (mode of delivery)
     W->>DB: INSERT delivery_outcome
     W->>E: append outcome.recorded
@@ -305,7 +309,7 @@ sequenceDiagram
         W->>DB: INSERT reconciled_outcome (cesarean yes or no)
         W->>E: append reconciliation.run (counts only)
     end
-    Note over W,DB: /monitoring (model custodian) compares predictions with reconciled outcomes<br/>(calibration by facility) and inputs with the training distributions (drift)
+    Note over W,DB: /monitoring (model custodian): AUC and calibration per facility and per Robson group,<br/>input drift against the training distributions
 ```
 
 How the data is fetched for a prediction: the model never queries old records. It scores the
@@ -389,7 +393,9 @@ and put `postgresql+psycopg://robby:robby-dev-only@localhost:5432/robby` in `ROB
 
 ## Linux server
 
-Deployment files (systemd, nginx, TLS) are not in the repository yet. A manual install:
+`../deploy/install.sh` installs everything on Ubuntu 24.04 (its own user, its own PostgreSQL 16
+cluster, systemd unit, nginx site) and can be re-run to update; it serves the demonstration
+database. The steps it automates, for a manual install against a real database:
 
 ```bash
 sudo apt install postgresql-16          # or the distribution's PostgreSQL 16 package
@@ -469,6 +475,10 @@ its admission. Two ways to run that job; use one:
   run it at once; a failure is logged and the app carries on. Quiet runs write no event.
 - **systemd timer.** Set `ROBBY_RECONCILE_INTERVAL_MINUTES=0` and run `robby-admin reconcile` from
   a timer (for example every 15 minutes).
+
+The page also shows, per facility and per Robson group, the observed and mean predicted cesarean
+rates and the AUC over the last 28 days (a stratum is judged only with at least 50 outcomes and 10 of
+each kind).
 
 Alerts are computed when the page is opened (no alerts table): calibration drift per facility over
 28 days (mean predicted against observed differs by more than 5 points, with at least 50 outcomes
