@@ -31,11 +31,11 @@ flowchart LR
         CAND -->|approval + reason| SHAD -->|approval + reason| ACT
     end
 
-    subgraph USE["5. Clinical use (clinician)"]
-        FORM["admission form<br/>or Excel import"]
+    subgraph USE["5. Clinical use (lab technician, clinician)"]
+        FORM["lab technician: admission form<br/>facility admin: Excel import"]
         CLS["Robson group<br/>active rule set"]
         SCORE["readiness probability<br/>stored with its feature vector"]
-        SHOW["result page<br/>group, explanation, signal"]
+        SHOW["clinician: patient page<br/>group, explanation, signal"]
         FORM --> CLS --> SCORE --> SHOW
     end
 
@@ -46,7 +46,7 @@ flowchart LR
     end
 
     subgraph MON["7. Monitoring (model custodian)"]
-        ALERT["calibration and input-drift alerts<br/>/monitoring"]
+        ALERT["AUC, calibration and input-drift alerts<br/>per facility and Robson group"]
     end
 
     subgraph AUD["8. Audit"]

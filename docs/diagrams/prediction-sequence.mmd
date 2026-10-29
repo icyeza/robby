@@ -3,6 +3,7 @@ title: How a prediction is made, stored and later checked against the outcome
 ---
 sequenceDiagram
     autonumber
+    actor L as Lab technician (browser)
     actor C as Clinician (browser)
     participant W as Robby web (FastAPI)
     participant F as Form parser (form.parse)
@@ -11,11 +12,11 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant E as Event log
 
-    C->>W: POST /admissions (form fields, CSRF token)
+    L->>W: POST /admissions (form fields, CSRF token)
     W->>F: parse(values)
     F-->>W: Parsed admission, or errors
     alt any error
-        W-->>C: form again with the errors (nothing saved)
+        W-->>L: form again with the errors (nothing saved)
     else valid
         Note over W,DB: service.save_admission, one transaction
         W->>DB: read the active rule_set
@@ -39,14 +40,15 @@ sequenceDiagram
         W->>E: append admission.created (code, group, model, no identifiers)
         E->>DB: INSERT event_log (hash chained to the previous entry)
         W->>DB: COMMIT
-        W-->>C: redirect to /admissions/{code}
-        C->>W: GET /admissions/{code}
-        W->>DB: admission by code, within the user's own facility
-        W-->>C: Robson group, explanation and readiness signal
+        W-->>L: empty form for the next patient, with the note saved DA-0042, group 5
     end
 
-    Note over C,E: Excel import: POST /admissions/import validates every row first, then runs<br/>the same save_admission per row (source import) in one transaction,<br/>one commit, plus one admissions.imported event
+    Note over L,E: Excel import (facility administrator): POST /admissions/import parses every row.<br/>Rows with a problem are left out and listed, the others go through the same<br/>save_admission (source import) in one transaction, plus one admissions.imported event
 
+    C->>W: GET /patients?q=name or number
+    W->>DB: admissions of the user's own facility only
+    C->>W: GET /admissions/{code}
+    W-->>C: read-only page: Robson group, explanation, readiness signal
     C->>W: POST /admissions/{code}/outcome (mode of delivery)
     W->>DB: INSERT delivery_outcome
     W->>E: append outcome.recorded
@@ -56,4 +58,4 @@ sequenceDiagram
         W->>DB: INSERT reconciled_outcome (cesarean yes or no)
         W->>E: append reconciliation.run (counts only)
     end
-    Note over W,DB: /monitoring (model custodian) compares predictions with reconciled outcomes<br/>(calibration by facility) and inputs with the training distributions (drift)
+    Note over W,DB: /monitoring (model custodian): AUC and calibration per facility and per Robson group,<br/>input drift against the training distributions
