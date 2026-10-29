@@ -80,7 +80,12 @@ say "database"
 ADMIN="set -a && . $ENV_FILE && set +a && cd $APP && .venv/bin/robby-admin"
 if [ "$(sudo -u robby psql -h /var/run/postgresql -p "$PG_PORT" -d "$DB" -tAc \
         "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")" = 0 ]; then
-    as_robby "$ADMIN demo load --database-url '$DB_URL' --model-dir $SRC/ML/artefacts/packaged/readiness-v1.0"
+    # The loader refuses to fill the configured database, which on a real install holds real
+    # records; this server serves only the demonstration database, so name an unused one here.
+    REAL_URL="postgresql+psycopg://robby@/robby?host=/var/run/postgresql&port=$PG_PORT"
+    as_robby "set -a && . $ENV_FILE && set +a && export ROBBY_DATABASE_URL='$REAL_URL' && cd $APP &&
+        .venv/bin/robby-admin demo load --database-url '$DB_URL' \
+        --model-dir $SRC/ML/artefacts/packaged/readiness-v1.0"
 else
     as_robby "$ADMIN db upgrade"
 fi
