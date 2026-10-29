@@ -1,4 +1,4 @@
-"""Enumerations stored as PostgreSQL enum types (spec §3)."""
+"""Enumerations stored as PostgreSQL enum types (the database refuses any other value)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Admission codes are <FACILITY CODE>-<zero-padded per-facility sequence> (spec §3)."""
+"""Admission codes are <FACILITY CODE>-<zero-padded per-facility sequence>."""
 
 from sqlalchemy.orm import Session
 

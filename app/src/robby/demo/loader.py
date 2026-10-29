@@ -236,21 +236,8 @@ def _mode(rng: random.Random, cesarean: bool) -> DeliveryMode:
     return DeliveryMode.VAGINAL_SPONTANEOUS
 
 
-def load_demo(
-    database_url: str,
-    *,
-    admissions: int = DEFAULT_ADMISSIONS,
-    seed: int = DEFAULT_SEED,
-    force: bool = False,
-    model_dir: Path | None = DEFAULT_MODEL_DIR,
-    say: Callable[[str], Any] = print,
-) -> Summary:
-    url = make_url(database_url)
-    require_demo_name(url)
-    real = make_url(get_settings().database_url)
-    if (url.database, url.host, url.port) == (real.database, real.host, real.port):
-        raise DemoError("Refusing: the target is the real database.")
-    summary = Summary()
+def _fresh_database(url: URL, force: bool, say: Callable[[str], Any]) -> None:
+    """An empty demo database (dropped and rebuilt with --force), migrated to the latest schema."""
     if database_exists(url):
         if has_data(url):
             if not force:
@@ -266,21 +253,20 @@ def load_demo(
     else:
         create_database(url)
         say(f"Created database {url.database}.")
-    plain = url.render_as_string(hide_password=False)
-    upgrade(plain)
+    upgrade(url.render_as_string(hide_password=False))
     say("Ran migrations.")
 
-    factory = get_sessionmaker(plain)
-    rng = random.Random(seed)
-    use_model = model_dir is not None and (model_dir / "manifest.json").exists()
-    keys = _model_facility_keys(model_dir) if use_model and model_dir else []
 
+def _seed_setup(
+    factory: sessionmaker[Session], url: URL, keys: list[str], summary: Summary
+) -> None:
+    """The rule set, the demo facilities and accounts, and the placeholder reference set."""
     with factory() as db:
         load_rule_set_file(db, get_settings().rule_set_path)
         facilities = [
             create_facility(
                 db,
-                None,  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]  # set-up runs before any account exists
                 name=name,
                 code=code,
                 district=district,
@@ -300,20 +286,10 @@ def load_demo(
             version_label="demo-1",
         )
         db.commit()
-    say("Loaded the rule set, 4 facilities, accounts and the demo reference set.")
 
-    if use_model and model_dir is not None:
-        _register_model(plain, model_dir, "custodian")
-        say("Registered and activated the packaged model (development activation).")
-        _register_candidate(plain, model_dir, "custodian")
-        say(f"Registered a copy as candidate {CANDIDATE_LABEL}.")
-    else:
-        summary.notes.append("No model artefact found: admissions are saved without predictions.")
-    runtime = scoring.ModelRuntime(DEMO_ARTEFACT_DIR)
 
-    sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
-    _fill(factory, runtime, rng, admissions, summary, say, sampler, random.Random(seed + 1))
-
+def _finish(factory: sessionmaker[Session], summary: Summary) -> None:
+    """Reconcile outcomes (optional), verify the event log and note the active model."""
     with factory() as db:
         try:
             reconcile = importlib.import_module("robby.monitoring.reconcile").reconcile
@@ -332,6 +308,45 @@ def load_demo(
         summary.model = db.scalar(
             select(ModelVersion.version_label).where(ModelVersion.state == ModelState.ACTIVE)
         )
+
+
+def load_demo(
+    database_url: str,
+    *,
+    admissions: int = DEFAULT_ADMISSIONS,
+    seed: int = DEFAULT_SEED,
+    force: bool = False,
+    model_dir: Path | None = DEFAULT_MODEL_DIR,
+    say: Callable[[str], Any] = print,
+) -> Summary:
+    url = make_url(database_url)
+    require_demo_name(url)
+    real = make_url(get_settings().database_url)
+    if (url.database, url.host, url.port) == (real.database, real.host, real.port):
+        raise DemoError("Refusing: the target is the real database.")
+    summary = Summary()
+    _fresh_database(url, force, say)
+
+    plain = url.render_as_string(hide_password=False)
+    factory = get_sessionmaker(plain)
+    rng = random.Random(seed)
+    use_model = model_dir is not None and (model_dir / "manifest.json").exists()
+    keys = _model_facility_keys(model_dir) if use_model and model_dir else []
+    _seed_setup(factory, url, keys, summary)
+    say("Loaded the rule set, 4 facilities, accounts and the demo reference set.")
+
+    if use_model and model_dir is not None:
+        _register_model(plain, model_dir, "custodian")
+        say("Registered and activated the packaged model (development activation).")
+        _register_candidate(plain, model_dir, "custodian")
+        say(f"Registered a copy as candidate {CANDIDATE_LABEL}.")
+    else:
+        summary.notes.append("No model artefact found: admissions are saved without predictions.")
+    runtime = scoring.ModelRuntime(DEMO_ARTEFACT_DIR)
+
+    sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
+    _fill(factory, runtime, rng, admissions, summary, say, sampler, random.Random(seed + 1))
+    _finish(factory, summary)
     return summary
 
 

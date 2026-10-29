@@ -1,4 +1,5 @@
-"""Navigation per role (ui-mockups extension §1), landing pages and the header identity lines."""
+"""Navigation per role (each role sees only its own pages), landing pages and the header identity
+lines."""
 
 from __future__ import annotations
 
@@ -51,7 +52,7 @@ NAV: dict[Role, tuple[NavItem, ...]] = {
 
 
 def landing_path(role: Role) -> str:
-    """Where a role starts (spec §5): the first item of its navigation."""
+    """Where a role starts after sign-in: the first item of its navigation."""
     return NAV[role][0].path
 
 

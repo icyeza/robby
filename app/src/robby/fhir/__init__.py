@@ -1,1 +1,1 @@
-"""FHIR ingestion adapter (FR8). Filled by sub-project 7."""
+"""FHIR ingestion adapter (FR8): not implemented yet."""

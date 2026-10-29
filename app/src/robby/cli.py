@@ -1,5 +1,6 @@
-"""robby-admin: administration commands (spec §7). Later sub-projects add
-`model register`, `references load` and `demo load|purge`."""
+"""robby-admin: administration commands that need no browser: the first system administrator,
+database upgrade, rule sets, event-log verification, model registration, reference sets,
+reconciliation, API tokens and the demo data."""
 
 from __future__ import annotations
 

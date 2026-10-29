@@ -1,4 +1,5 @@
-"""Append-only, hash-chained event log (spec §4, NFR5).
+"""Append-only, hash-chained event log (NFR5): every change of state is one entry, entries are
+never updated or deleted, and each entry's hash covers the one before it.
 
 hash = sha256(prev_hash || canonical_json({id, occurred_at, actor_id, event_type, entity_type,
 entity_id, payload})), canonical JSON = sorted keys, no whitespace, UTF-8. The first entry's

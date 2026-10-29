@@ -1,4 +1,5 @@
-"""What the schema must contain (spec §3), shared by model and migration tests."""
+"""What the schema must contain (tables, columns, enums, constraints), shared by model and
+migration tests."""
 
 from robby.models.enums import (
     AdmissionSource,

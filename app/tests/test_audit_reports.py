@@ -1,4 +1,4 @@
-"""Smoke tests for sub-project 5: reference CSVs, report arithmetic, unclassified residual,
+"""Smoke tests for audit reporting: reference CSVs, report arithmetic, unclassified residual,
 national aggregates-only, monthly export. All reference numbers here are invented test values."""
 
 from __future__ import annotations

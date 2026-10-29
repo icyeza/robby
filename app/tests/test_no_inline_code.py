@@ -1,4 +1,5 @@
-"""The CSP forbids inline code, so no rendered page may contain any (spec §5, §6)."""
+"""The CSP forbids inline code, so no rendered page may contain any: no inline scripts, styles
+or event handlers."""
 
 import re
 

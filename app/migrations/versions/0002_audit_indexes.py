@@ -1,4 +1,4 @@
-"""Indexes and a uniqueness rule for the audit and national reports (sub-project 5).
+"""Indexes and a uniqueness rule for the audit and national reports.
 
 Revision ID: 0002
 Revises: 0001

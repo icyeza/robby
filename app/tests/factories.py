@@ -134,7 +134,7 @@ def make_model_version(db: Session, *, state: ModelState = ModelState.CANDIDATE)
 
 
 def make_clinical_chain(db: Session) -> dict[str, Any]:
-    """One row in every immutable table, linked the way later sub-projects will link them."""
+    """One row in every immutable table, linked the way the application links them."""
     facility = make_facility(db)
     clinician = make_user(db, role=Role.CLINICIAN, facility=facility)
     rule_set = make_rule_set(db)

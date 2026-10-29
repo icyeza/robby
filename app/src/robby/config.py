@@ -21,7 +21,7 @@ def default_rule_set_path() -> Path:
 
 
 class Settings(BaseSettings):
-    """Every setting the application reads (spec §2)."""
+    """Every setting the application reads, from ROBBY_* environment variables or app/.env."""
 
     model_config = SettingsConfigDict(
         env_prefix="ROBBY_", env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore"

@@ -98,7 +98,8 @@ def main() -> int:
             for p in result.get("problems", []):
                 row = start + p["row"]
                 print(
-                    f"  record {row} ({rows[row - 1].get('Patient ID')}) · {p['column'] or '-'} · {p['message']}",
+                    f"  record {row} ({rows[row - 1].get('Patient ID')}) · "
+                    f"{p['column'] or '-'} · {p['message']}",
                     file=sys.stderr,
                 )
             if "error" in result:

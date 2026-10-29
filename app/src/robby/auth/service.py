@@ -1,4 +1,6 @@
-"""Sign-in, sessions and password changes (spec §5, FR1, NFR6)."""
+"""Sign-in, sessions and password changes (FR1, NFR6). After MAX_FAILED_LOGINS failures in a
+row an account is locked for LOCKOUT; a session ends after the configured idle time or absolute
+lifetime, whichever comes first."""
 
 from __future__ import annotations
 

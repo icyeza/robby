@@ -65,7 +65,8 @@ warn_redundant_casts = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["openpyxl.*"]
+# No usable stubs: openpyxl ships none, and types-reportlab rejects valid keyword arguments.
+module = ["openpyxl.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -81,6 +82,7 @@ robson-serving = { path = "../ML/packages/robson_serving", editable = true }
 dev = [
     "httpx2>=2.13.1",
     "mypy>=2.4.0",
+    "pandas-stubs>=3.0.5.260914",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.4",
     "ruff>=0.17.0",

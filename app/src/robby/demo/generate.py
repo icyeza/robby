@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import math
 import random
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -96,8 +96,8 @@ class DetailSampler:
         edges = entry["edges"]
         lo, hi = item.get("range") or (None, None)
         step = (edges[1] - edges[0]) if len(edges) > 1 else 1.0
-        low = edges[index - 1] if index > 0 else edges[0] - 2 * step
-        high = edges[index] if index < len(edges) else edges[-1] + 2 * step
+        low: float = edges[index - 1] if index > 0 else edges[0] - 2 * step
+        high: float = edges[index] if index < len(edges) else edges[-1] + 2 * step
         if lo is not None:
             low = max(low, lo)
         if hi is not None:
@@ -111,20 +111,20 @@ class DetailSampler:
         return min(max(value, round(low + 0.1, 1)), high)
 
 
-def make_parsed(
-    rng: random.Random,
-    admitted_at: datetime,
-    facility_index: int,
-    sampler: DetailSampler | None = None,
-    *,
-    patient_number: str,
-    name_rng: random.Random,
-    low_anc: bool = False,
-) -> Parsed:
-    """One plausible, complete admission. With a sampler, ~90% have the optional details.
+@dataclass(frozen=True)
+class _RobsonValues:
+    parity: int
+    age: int
+    previous_cs: int
+    presentation: str
+    plurality: int
+    ga: int
+    onset: str
 
-    The name is drawn from its own generator, so adding names left the clinical values (and
-    the demo's drift story) exactly as they were for a given seed."""
+
+def _robson_values(rng: random.Random, facility_index: int) -> _RobsonValues:
+    """Parity, age, previous cesareans, presentation, fetuses, gestation and onset, drawn in
+    this order (the order fixes the values a seed gives)."""
     parity = _pick(rng, (0, 1, 2, 3, 4, 5), (0.38, 0.24, 0.17, 0.11, 0.06, 0.04))
     assert isinstance(parity, int)
     base_age = 23.5 if parity == 0 else 25 + 3.0 * parity
@@ -151,13 +151,11 @@ def make_parsed(
         onset = "induced"
     else:
         onset = "spontaneous"
+    return _RobsonValues(parity, age, previous_cs, str(presentation), plurality, ga, onset)
 
-    details: dict[str, int | float | str] = {}
-    if sampler is not None and rng.random() < DETAILS_GIVEN:
-        details = sampler.sample(rng, low_anc=low_anc)
-        if "gravidity" in details:  # consistent with parity: at least one pregnancy per birth
-            details["gravidity"] = parity + 1 + (1 if rng.random() < 0.1 else 0)
 
+def _screening_values(rng: random.Random) -> tuple[int, int, str, Decimal]:
+    """Blood pressure (higher for ~10% hypertensive women), proteinuria and glucose."""
     hypertensive = rng.random() < 0.10
     if hypertensive:
         sys_bp, dia_bp = rng.randint(140, 175), rng.randint(90, 112)
@@ -170,25 +168,11 @@ def make_parsed(
     protein = _pick(rng, ("negative", "trace", "+", "++", "+++"), protein_weights)
     assert isinstance(protein, str)
     glucose = Decimal(str(round(min(max(rng.gauss(5.0, 0.9), 2.8), 14.0), 1)))
+    return sys_bp, dia_bp, protein, glucose
 
-    parsed = Parsed(
-        patient_number=patient_number,
-        patient_name=demo_patient_name(name_rng),
-        admitted_at=admitted_at,
-        maternal_age=age,
-        ga_weeks=ga,
-        parity=parity,
-        previous_cs_count=previous_cs,
-        plurality=plurality,
-        presentation=str(presentation),
-        onset=onset,
-        systolic=sys_bp,
-        diastolic=dia_bp,
-        proteinuria=protein,
-        glucose=glucose,
-        details=details,
-    )
-    # Screening not done, with the reason the form asks for.
+
+def _with_screening_not_done(rng: random.Random, parsed: Parsed) -> Parsed:
+    """Some screening tests not done, with the reason the form asks for."""
     if rng.random() < 0.06:
         parsed = replace(
             parsed,
@@ -209,6 +193,47 @@ def make_parsed(
             glucose_reason=rng.choice(("equipment_unavailable", "declined", "other")),
         )
     return parsed
+
+
+def make_parsed(
+    rng: random.Random,
+    admitted_at: datetime,
+    facility_index: int,
+    sampler: DetailSampler | None = None,
+    *,
+    patient_number: str,
+    name_rng: random.Random,
+    low_anc: bool = False,
+) -> Parsed:
+    """One plausible, complete admission. With a sampler, ~90% have the optional details.
+
+    The name is drawn from its own generator, so adding names left the clinical values (and
+    the demo's drift story) exactly as they were for a given seed."""
+    robson = _robson_values(rng, facility_index)
+    details: dict[str, int | float | str] = {}
+    if sampler is not None and rng.random() < DETAILS_GIVEN:
+        details = sampler.sample(rng, low_anc=low_anc)
+        if "gravidity" in details:  # consistent with parity: at least one pregnancy per birth
+            details["gravidity"] = robson.parity + 1 + (1 if rng.random() < 0.1 else 0)
+    sys_bp, dia_bp, protein, glucose = _screening_values(rng)
+    parsed = Parsed(
+        patient_number=patient_number,
+        patient_name=demo_patient_name(name_rng),
+        admitted_at=admitted_at,
+        maternal_age=robson.age,
+        ga_weeks=robson.ga,
+        parity=robson.parity,
+        previous_cs_count=robson.previous_cs,
+        plurality=robson.plurality,
+        presentation=robson.presentation,
+        onset=robson.onset,
+        systolic=sys_bp,
+        diastolic=dia_bp,
+        proteinuria=protein,
+        glucose=glucose,
+        details=details,
+    )
+    return _with_screening_not_done(rng, parsed)
 
 
 def make_flawed(rng: random.Random, parsed: Parsed) -> Parsed:

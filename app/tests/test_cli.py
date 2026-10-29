@@ -1,4 +1,4 @@
-"""robby-admin: create-system-admin, db upgrade, rules load, events verify (spec §7)."""
+"""robby-admin: create-system-admin, db upgrade, rules load, events verify."""
 
 import json
 from pathlib import Path

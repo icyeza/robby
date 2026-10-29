@@ -1,4 +1,4 @@
-"""The ORM metadata describes every table of spec §3."""
+"""The ORM metadata describes every table the schema must contain (tests/expected.py)."""
 
 from sqlalchemy import Enum
 

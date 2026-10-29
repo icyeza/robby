@@ -1,5 +1,6 @@
-"""Pages that later sub-projects build. Until then the nav items lead to a plain
-"Not available yet" page (spec §6): role-checked like the real page will be, and no fake data."""
+"""Pages listed in the navigation before they are built. Each leads to a plain "Not available yet"
+page: role-checked like the real page will be, and never filled with fake data. None are listed
+now."""
 
 from collections.abc import Callable
 from typing import Annotated

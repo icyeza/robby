@@ -1,9 +1,11 @@
 """Fill the stand-in OpenClinic database with invented patients (not real data).
 
-    uv run --with pymysql python scripts/openclinic_standin/seed.py seed        # 60 maternity admissions
-    uv run --with pymysql python scripts/openclinic_standin/seed.py add 3       # 3 new admissions, now
-    uv run --with pymysql python scripts/openclinic_standin/seed.py add 1 --bad # one with a bad value
-    uv run --with pymysql python scripts/openclinic_standin/seed.py reset       # empty the tables
+    uv run --with pymysql python scripts/openclinic_standin/seed.py COMMAND
+
+    seed        60 maternity admissions
+    add 3       3 new admissions, now
+    add 1 --bad one with a bad value
+    reset       empty the tables
 
 `seed` also adds some non-maternity encounters, which the connector must ignore. Admissions are
 spread over the last 20 days (the app only accepts admission times within 30 days). The spread of
@@ -20,7 +22,8 @@ import pymysql
 
 FIRST = ["Marie", "Jeanne", "Grace", "Alice", "Claudine", "Beatha", "Rose", "Divine", "Solange",
          "Anita", "Josiane", "Esperance", "Immaculee", "Vestine", "Christine", "Aline", "Yvonne",
-         "Francoise", "Providence", "Odette", "Eugenie", "Console", "Daphrose", "Speciose"]  # fmt: skip
+         "Francoise", "Providence", "Odette", "Eugenie", "Console", "Daphrose",
+         "Speciose"]  # fmt: skip
 LAST = ["Uwase", "Mukamana", "Ingabire", "Nyirahabimana", "Mutesi", "Uwimana", "Niyonsenga",
         "Umutoni", "Kayitesi", "Mukashema", "Nyiransabimana", "Mukeshimana", "Uwamahoro",
         "Iradukunda", "Murekatete", "Mukagasana", "Uwizeye", "Nyirarukundo"]  # fmt: skip
@@ -97,12 +100,14 @@ def add_admission(cur, rng: random.Random, number: int, at: datetime, bad: bool 
     if rng.random() > 0.08:  # a few admissions have no blood pressure recorded
         for k in range(rng.randint(1, 3)):
             cur.execute(
-                "INSERT INTO vitals (encounter_id, measured_at, bp_systolic, bp_diastolic) VALUES (%s,%s,%s,%s)",
+                "INSERT INTO vitals (encounter_id, measured_at, bp_systolic, bp_diastolic) "
+                "VALUES (%s,%s,%s,%s)",
                 (eid, at + timedelta(minutes=20 * k), rng.randint(100, 150), rng.randint(62, 96)),
             )
     if rng.random() > 0.15:
         cur.execute(
-            "INSERT INTO lab_result (encounter_id, test_code, result_text, resulted_at) VALUES (%s,'URINE_PROTEIN',%s,%s)",
+            "INSERT INTO lab_result (encounter_id, test_code, result_text, resulted_at) "
+            "VALUES (%s,'URINE_PROTEIN',%s,%s)",
             (
                 eid,
                 rng.choices(["neg", "trace", "1+", "2+", "3+"], [60, 12, 14, 9, 5])[0],
@@ -111,17 +116,20 @@ def add_admission(cur, rng: random.Random, number: int, at: datetime, bad: bool 
         )
     if rng.random() > 0.2:
         cur.execute(
-            "INSERT INTO lab_result (encounter_id, test_code, result_text, resulted_at) VALUES (%s,'GLUCOSE_MGDL',%s,%s)",
+            "INSERT INTO lab_result (encounter_id, test_code, result_text, resulted_at) "
+            "VALUES (%s,'GLUCOSE_MGDL',%s,%s)",
             (eid, str(rng.randint(68, 130)), at + timedelta(minutes=15)),
         )
 
 
 def add_other_ward(cur, rng: random.Random, number: int, at: datetime) -> None:
     pid = f"OC-{number}"
+    born = datetime(1980, 1, 1).date()
     cur.execute("INSERT INTO patient VALUES (%s,%s,%s,%s)",
-                (pid, rng.choice(FIRST), rng.choice(LAST), datetime(1980, 1, 1).date()))  # fmt: skip
+                (pid, rng.choice(FIRST), rng.choice(LAST), born))  # fmt: skip
+    other_ward = rng.choice(["General medicine", "Surgery", "Paediatrics"])
     cur.execute("INSERT INTO encounter (patient_id, ward, admission_at) VALUES (%s,%s,%s)",
-                (pid, rng.choice(["General medicine", "Surgery", "Paediatrics"]), at))  # fmt: skip
+                (pid, other_ward, at))  # fmt: skip
 
 
 def next_number(cur) -> int:
@@ -169,9 +177,8 @@ def main() -> None:
                 now - timedelta(minutes=5 * (args.count - i)),
                 bad=args.bad and i == 0,
             )
-        print(
-            f"Added {args.count} maternity admission(s){' (first one has a bad value)' if args.bad else ''}."
-        )
+        note = " (first one has a bad value)" if args.bad else ""
+        print(f"Added {args.count} maternity admission(s){note}.")
     db.commit()
     db.close()
 
