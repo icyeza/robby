@@ -33,7 +33,9 @@ synthetic packaged artefact and runs the golden check.
   reconciliation, API tokens, demo database, event-log verification).
 - Deployment: [`../deploy/`](../deploy/) holds the install script, the systemd unit and the nginx
   site used for the live demonstration server (see [Linux server](#linux-server)).
-- Not yet built: the FHIR adapter ([`src/robby/fhir/`](src/robby/fhir/README.md)).
+- **FHIR** (FR8): admissions sent as a FHIR R4 Bundle, or fetched from the hospital's FHIR server
+  by patient number on the admission form, through an explicit adapter
+  ([`src/robby/fhir/`](src/robby/fhir/README.md)); see [FHIR](#fhir) below.
 
 ## Data model
 
@@ -343,6 +345,9 @@ Environment variables win over the file.
 | `ROBBY_ARTEFACT_DIR` | `artefacts` | Where registered model artefacts live |
 | `ROBBY_DEMO` | `false` | Shows the example-data banner (demo database only) |
 | `ROBBY_RECONCILE_INTERVAL_MINUTES` | `15` | How often the app reconciles predictions with recorded outcomes in the background; `0` turns the in-app job off |
+| `ROBBY_FHIR_BASE_URL` | (unset) | The hospital's FHIR server; when set, the admission form shows "Fetch from hospital system" |
+| `ROBBY_FHIR_TIMEOUT_SECONDS` | `3` | Longest the whole fetch may take before the form says the hospital system did not answer |
+| `ROBBY_FHIR_PATIENT_ID_SYSTEM` | (unset) | Identifier system of the hospital's patient number; unset: the Patient's first identifier |
 | `ROBBY_TEST_DATABASE_URL` | (tests only) | Server for the test suite; the database name is a prefix |
 
 ## Development on Windows (Git Bash)
@@ -470,6 +475,37 @@ ROBBY_API_TOKEN=rbk_... python openclinic_push.py export.csv --url https://robby
 
 Serve the API over TLS only; a token sent over plain http can be read by anyone on the path.
 There is no rate limit yet.
+
+## FHIR
+
+Admissions can also arrive as FHIR R4 resources (Patient, Encounter, Observation, Condition). An
+explicit adapter maps them onto the admission template, so they pass the same checks as the form
+and the Excel import. The codes understood, the units and the placeholder codes are listed in
+[`src/robby/fhir/README.md`](src/robby/fhir/README.md).
+
+- **Push**: `POST /api/v1/fhir/Bundle` with the same bearer token as the import API and
+  `Content-Type: application/fhir+json` (or `application/json`); one admission per Encounter,
+  saved with source `fhir`. Answers: `201`/`200` a `transaction-response` Bundle (per Encounter:
+  status, `location` `/admissions/<code>`, Robson group and readiness signal as extensions);
+  `422` an `OperationOutcome` naming every problem by FHIR element (for example
+  `Observation/obs-3.valueQuantity`), nothing saved; `401`, `400`, `415`, `503` as for the import
+  API, as OperationOutcomes. `GET /api/v1/fhir/metadata` is the CapabilityStatement.
+- **Pull**: with `ROBBY_FHIR_BASE_URL` set, the lab technician's form has "Fetch from hospital
+  system" next to the patient number. It pre-fills the form for review and never saves. If the
+  hospital system is down, slow (`ROBBY_FHIR_TIMEOUT_SECONDS`) or answers an error, the form says
+  so and works as usual (NFR7).
+
+Try it with the examples and the stand-in server (from `app/`):
+
+```bash
+ROBBY_API_TOKEN=rbk_... python scripts/fhir_push.py scripts/fhir_examples/two_admissions.json \
+  --url http://127.0.0.1:8000 --recent      # --recent moves the example times to today
+uv run uvicorn --app-dir scripts/fhir_standin server:app --port 8091     # stand-in hospital
+ROBBY_FHIR_BASE_URL=http://127.0.0.1:8091 uv run uvicorn robby.main:create_app --factory
+```
+
+`scripts/fhir_standin/README.md` lists the stand-in's patient numbers (complete, not measured,
+unusable values, no admission in progress, slow, failing).
 
 ## Reconciliation and monitoring
 
