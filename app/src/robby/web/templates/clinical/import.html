@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Import from Excel{% endblock %}
 {% block content %}
+<div class="crumbs"><a href="/audit">Hospital report</a> / Import from Excel</div>
 <div class="titlebar"><h1>Import admissions from Excel</h1><span class="meta">{{ who.place }}</span></div>
 
 <section class="sec">
@@ -11,7 +12,7 @@
       <li>Fill in one row per admission (at most {{ max_rows }} rows). Patient number, patient name and admission time are required.</li>
       <li>Upload the file. Every row is checked like the admission form. Rows with a problem are left out and listed so you can fix and upload them again; the other rows are imported. Columns the system does not use are ignored. A patient already recorded at the same admission time is not added again; the list afterwards shows their existing record.</li>
     </ol>
-    <p class="muted">Or upload an export from OpenClinic as it is: it is recognised by its column names (patient ID, admission date, para, presentation and so on) and columns the system does not use are ignored. Where OpenClinic holds no blood pressure, proteinuria or glucose, the test is recorded as not measured with the reason "Other".</p>
+    <p class="muted">Or upload an export from the hospital's patient record system as it is: it is recognised by its column names (patient ID, admission date, para, presentation and so on) and columns the system does not use are ignored. Where the export holds no blood pressure, proteinuria or glucose, the test is recorded as not measured with the reason "Other".</p>
     <p class="muted">The UR-CMHS research export (KoboToolbox, with labels) can also be uploaded as it is. Only this hospital's deliveries are imported; the delivery date is used as the admission time and the mode of delivery is recorded as the outcome. The patient UPI is not stored: the patient number is a code made from it, and the name is shown as "Research record".</p>
     <form method="post" action="/admissions/import" enctype="multipart/form-data">
       {{ ui.csrf_input() }}
@@ -53,7 +54,7 @@
     <tbody>
     {% for line in lines %}
       <tr>
-        <td><a href="/admissions/{{ line.code }}"><b>{{ line.code }}</b></a>{% if line.already %} <span class="muted">· already recorded</span>{% endif %}</td>
+        <td><b>{{ line.code }}</b>{% if line.already %} <span class="muted">· already recorded</span>{% endif %}</td>
         <td><span class="gnum">{{ line.group or '—' }}</span></td>
         {% if line.percent is not none %}<td class="r num">{{ line.percent }} in 100</td>{% else %}<td class="r muted">{{ 'no group' if not line.group else 'not available' }}</td>{% endif %}
       </tr>

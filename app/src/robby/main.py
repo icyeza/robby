@@ -15,8 +15,6 @@ from robby.clinical.routes import router as clinical_router
 from robby.config import Settings, get_settings
 from robby.db import get_sessionmaker
 from robby.facilities.routes import router as facilities_router
-from robby.integrations.routes import router as integrations_router
-from robby.monitoring.readiness import router as readiness_router
 from robby.monitoring.reconcile import reconcile_loop
 from robby.monitoring.routes import router as monitoring_router
 from robby.registry.approval_log import router as approval_log_router
@@ -61,12 +59,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(facilities_router)
     app.include_router(users_router)
     app.include_router(clinical_router)
-    app.include_router(integrations_router)
     app.include_router(api_router)
     app.include_router(audit_router)
     app.include_router(national_router)
     app.include_router(monitoring_router)
-    app.include_router(readiness_router)
     app.include_router(models_router)
     app.include_router(approval_log_router)
     app.include_router(build_placeholder_router())

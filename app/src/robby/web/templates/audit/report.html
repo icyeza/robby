@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "partials/_macros.html" as ui with context %}
-{% block title %}{% if readonly %}{{ facility.name }} · Robson report{% else %}Audit report{% endif %}{% endblock %}
+{% block title %}{% if readonly %}{{ facility.name }} · Robson report{% else %}Hospital report{% endif %}{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="/static/report.css">
 {% if readonly %}
@@ -76,6 +76,8 @@
   </table>
   <div class="tc-foot">Group size: the facility's share of births in the group; the black tick is the reference share (axis 0–45%, or 0–100% when a share is larger). Cesarean rate: cesareans ÷ births in the group (axis 0–100%). Share of all cesareans: the group's cesareans ÷ all cesareans. Absolute contribution: the group's cesareans ÷ all births. Flags: group size at least 3 points above the reference, or rate at least 10 points above (rates are not flagged below 10 births in a group). Births are current admissions with a recorded delivery outcome in the period. Unclassified records are counted and never dropped.</div>
 </section>
+
+{% if not readonly %}<p class="muted">Records kept on paper or in a spreadsheet? <a href="/admissions/import">Import admissions from Excel</a>.</p>{% endif %}
 
 {% if not readonly and recent_exports %}
 <section class="tablecard">

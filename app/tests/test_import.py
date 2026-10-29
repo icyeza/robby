@@ -169,7 +169,9 @@ def test_file_level_problems() -> None:
         RowProblem(0, "", "The file could not be read as an Excel workbook.")
     ]
     many = make_xlsx(HEADER, [good_row(f"RW-{i}") for i in range(importer.MAX_ROWS + 1)])
-    assert problems_of(many) == [RowProblem(0, "", "At most 500 rows can be imported at once.")]
+    assert problems_of(many) == [
+        RowProblem(0, "", f"At most {importer.MAX_ROWS} rows can be imported at once.")
+    ]
 
 
 def test_header_problems() -> None:
@@ -295,7 +297,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 def clinic(app: FastAPI, client: TestClient, db: Session, settings: Settings) -> dict[str, Any]:
     load_rule_set_file(db, default_rule_set_path())
     facility = make_facility(db)
-    user = make_user(db, role=Role.CLINICIAN, facility=facility)
+    user = make_user(db, role=Role.FACILITY_ADMIN, facility=facility)
     row = sign_in_client(client, db, settings, user)
     make_model_version(db, state=ModelState.ACTIVE)
     db.commit()
@@ -323,7 +325,7 @@ def test_import_page_and_template_download(client: TestClient, clinic: dict[str,
     assert page.status_code == 200
     assert 'href="/admissions/import/template.xlsx"' in page.text
     assert 'type="file" name="file"' in page.text and 'enctype="multipart/form-data"' in page.text
-    assert '<a class="on" aria-current="page" href="/admissions/import">' in page.text
+    assert '<a href="/audit">Hospital report</a> / Import from Excel' in page.text
     template = client.get("/admissions/import/template.xlsx")
     assert template.status_code == 200
     assert template.headers["content-type"] == XLSX
@@ -344,7 +346,7 @@ def test_a_valid_upload_saves_every_row(
         ("RW-1", AdmissionSource.IMPORT),
         ("RW-2", AdmissionSource.IMPORT),
     ]
-    assert all(f'href="/admissions/{a.code}"' in response.text for a in saved)
+    assert all(f"<b>{a.code}</b>" in response.text for a in saved)
     assert len(list(db.scalars(select(Classification)))) == 2
     assert len(list(db.scalars(select(Prediction)))) == 2
     imported = events_of(db, "admissions.imported")
@@ -357,14 +359,24 @@ def test_a_valid_upload_saves_every_row(
     assert all("RW-" not in json.dumps(e.payload) for e in [*created, *imported])
 
 
-def test_one_bad_row_saves_nothing(client: TestClient, clinic: dict[str, Any], db: Session) -> None:
+def test_a_bad_row_is_left_out_and_the_rest_imported(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
     bad = good_row("", clinic["admitted"])
     response = upload(
         client, clinic, make_xlsx(HEADER, [good_row("RW-1", clinic["admitted"]), bad])
     )
-    assert response.status_code == 400
-    assert "Nothing was imported" in response.text
+    assert response.status_code == 200
+    assert "1 row left out" in response.text and "1 admission imported" in response.text
     assert "Enter the patient number." in response.text and "<td>3</td>" in response.text
+    assert admission_count(db) == 1
+
+
+def test_a_file_with_only_bad_rows_saves_nothing(
+    client: TestClient, clinic: dict[str, Any], db: Session
+) -> None:
+    response = upload(client, clinic, make_xlsx(HEADER, [good_row("", clinic["admitted"])]))
+    assert response.status_code == 400 and "Nothing was imported" in response.text
     assert admission_count(db) == 0
     assert events_of(db, "admissions.imported") == []
 
@@ -379,7 +391,7 @@ def test_a_repeated_upload_shows_the_existing_records_and_adds_nothing(
     again = upload(client, clinic, data)
     assert again.status_code == 200
     assert "0 admissions imported, 1 already recorded" in again.text
-    assert f'href="/admissions/{code}"' in again.text and "already recorded</span>" in again.text
+    assert f"<b>{code}</b>" in again.text and "already recorded</span>" in again.text
     assert "gnum" in again.text  # the Robson group is shown, as for a new row
     assert admission_count(db) == 1
     assert len(events_of(db, "admissions.imported")) == 1  # the second upload saved nothing
@@ -394,19 +406,19 @@ def test_a_mixed_upload_imports_the_new_rows_and_lists_both_in_file_order(
     assert (
         response.status_code == 200 and "1 admission imported, 1 already recorded" in response.text
     )
-    codes = re.findall(r'href="/admissions/(DA-\d+|[A-Z]+-\d+)"', response.text)
+    codes = re.findall(r"<b>([A-Z]+-\d+)</b>", response.text)
     assert len(codes) >= 2 and admission_count(db) == 2
 
 
-def test_a_row_repeated_inside_one_file_is_still_refused(
+def test_a_row_repeated_inside_one_file_is_left_out(
     client: TestClient, clinic: dict[str, Any], db: Session
 ) -> None:
     row = good_row("RW-1", clinic["admitted"])
     response = upload(client, clinic, make_xlsx(HEADER, [row, row]))
     assert (
-        response.status_code == 400 and "Same patient and admission time as row 2" in response.text
+        response.status_code == 200 and "Same patient and admission time as row 2" in response.text
     )
-    assert admission_count(db) == 0
+    assert admission_count(db) == 1
 
 
 def test_upload_needs_a_file_and_a_csrf_token(
@@ -423,8 +435,9 @@ def test_upload_needs_a_file_and_a_csrf_token(
 def test_save_admission_marks_only_imports_in_the_event(
     client: TestClient, clinic: dict[str, Any], db: Session, settings: Settings
 ) -> None:
+    client.cookies.clear()
+    entry = make_user(db, role=Role.CLINICIAN, facility=clinic["facility"])
+    csrf = csrf_for(settings, sign_in_client(client, db, settings, entry))
     form = {**GOOD, "admitted_at": now_text(settings)}
-    assert (
-        client.post("/admissions", data={**form, "csrf_token": clinic["csrf"]}).status_code == 303
-    )
+    assert client.post("/admissions", data={**form, "csrf_token": csrf}).status_code == 303
     assert "source" not in events_of(db, "admission.created")[0].payload

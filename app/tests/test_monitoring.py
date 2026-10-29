@@ -1,4 +1,4 @@
-"""Smoke tests for reconciliation, monitoring alerts and the theatre readiness board."""
+"""Smoke tests for reconciliation and monitoring alerts."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from robby.models import (
     Role,
     RuleSet,
 )
-from robby.monitoring import readiness, service
+from robby.monitoring import service
 from robby.monitoring.reconcile import reconcile
 from robby.timeutil import utcnow
 from tests.factories import (
@@ -184,32 +184,3 @@ def test_monitoring_without_data_says_so(
     sign_in_client(client, db, settings, make_user(db, role=Role.MODEL_CUSTODIAN))
     page = client.get("/monitoring")
     assert page.status_code == 200 and "no active model" in page.text.lower()
-
-
-def test_readiness_board_counts_and_scoping(
-    client: TestClient, db: Session, settings: Settings
-) -> None:
-    facility = make_facility(db)
-    other = make_facility(db)
-    clinician = make_user(db, role=Role.CLINICIAN, facility=facility)
-    rules, model = make_rule_set(db), make_model_version(db, state=ModelState.ACTIVE)
-    add_admission(db, facility, rules, model, probability="0.50000", group=1)
-    add_admission(db, facility, rules, model, probability="0.30000", group=5)
-    add_admission(db, facility, rules, model, probability=None, group=None)  # not included
-    add_admission(
-        db, facility, rules, model, outcome=DeliveryMode.CESAREAN, recorded_by=clinician.id
-    )  # has an outcome
-    add_admission(db, facility, rules, model, hours_ago=30)  # too old
-    add_admission(db, other, rules, model, probability="0.90000")  # another facility
-
-    board = readiness.build(db, facility.id)
-    assert (board.included, board.not_included, board.awaiting) == (2, 1, 3)
-    assert abs(board.expected - 0.8) < 1e-9
-    assert [(g.group, g.n) for g in board.groups] == [(1, 1), (5, 1)]
-
-    sign_in_client(client, db, settings, clinician)
-    page = client.get("/readiness")
-    assert page.status_code == 200
-    assert "about 0.8" in page.text and "Admissions not included" in page.text
-    assert "not a recommendation for or against cesarean" in page.text
-    assert facility.code not in page.text

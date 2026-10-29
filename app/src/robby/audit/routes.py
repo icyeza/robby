@@ -1,4 +1,4 @@
-"""Facility administrator pages: audit report, unclassified records, monthly export (FR10)."""
+"""Facility administrator pages: hospital report and monthly export (FR10)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from robby.audit.service import (
     parse_period,
     report_context,
     today_local,
-    unclassified_page,
 )
 from robby.audit.status import complete_months
 from robby.auth.dependencies import CurrentUser, DbDep, require
@@ -67,21 +66,6 @@ def audit_page(
         recent_exports=recent,
         zone=zone,
         **context,
-    )
-
-
-@router.get("/unclassified")
-def unclassified(request: Request, db: DbDep, current: FacilityAdmin, page: int = 1) -> Response:
-    zone = request.app.state.settings.zone
-    query = request.query_params
-    period = parse_period(query.get("from"), query.get("to"), zone)
-    facility = _facility(db, current)
-    return render(
-        request,
-        "audit/unclassified.html",
-        current=current,
-        facility=facility,
-        **unclassified_page(db, zone, facility.id, period, page),
     )
 
 

@@ -1,10 +1,7 @@
-"""Page-level assembly shared by the facility and national routes (aggregates only here, except
-`unclassified_page`, which is facility-administrator only)."""
+"""Page-level assembly shared by the facility and national routes (aggregates only)."""
 
 from __future__ import annotations
 
-import uuid
-from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -17,7 +14,6 @@ from robby.audit.counts import (
     UnclassifiedBirth,
     awaiting_outcome,
     birth_counts,
-    unclassified_births,
 )
 from robby.audit.measures import GROUP_DEFINITIONS, build_report
 from robby.audit.narrative import facility_stands_out
@@ -42,7 +38,6 @@ MISSING_LABELS = {
 }
 CONFLICT = "Inputs conflict"
 NOT_CLASSIFIED = "Not classified"
-PAGE_SIZE = 50
 
 
 @dataclass(frozen=True)
@@ -109,55 +104,6 @@ def reason_labels(row: UnclassifiedBirth) -> list[str]:
         MISSING_LABELS.get(f, f"{FIELD_LABELS.get(f, f).capitalize()} missing")
         for f in row.resolving_fields
     ] or ["Missing or imprecise input"]
-
-
-@dataclass(frozen=True)
-class UnclassifiedLine:
-    code: str
-    patient_number: str  # "—" for rows saved before identifiers existed; names never reach here
-    admitted: str
-    reason: str
-    fields: str
-
-
-def unclassified_page(
-    db: Session, zone: ZoneInfo, facility_id: uuid.UUID, period: Period, page: int
-) -> dict[str, Any]:
-    rows = unclassified_births(db, period.start, period.end, zone, facility_id)
-    tally: Counter[str] = Counter()
-    for r in rows:
-        tally.update(reason_labels(r))
-    tiles = tally.most_common(4)
-    last_page = max(1, -(-len(rows) // PAGE_SIZE))
-    page = min(max(page, 1), last_page)
-    chunk = rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
-    lines = [
-        UnclassifiedLine(
-            r.code,
-            r.patient_number or "—",
-            r.admitted_at.astimezone(zone).strftime("%d %b"),
-            "; ".join(reason_labels(r)),
-            ", ".join(
-                FIELD_LABELS.get(f, f)
-                for f in dict.fromkeys(
-                    r.conflict_fields if r.status == "conflict" else r.resolving_fields
-                )
-            )
-            or "—",
-        )
-        for r in chunk
-    ]
-    return {
-        "period": period,
-        "total": len(rows),
-        "tiles": tiles,
-        "lines": lines,
-        "page": page,
-        "last_page": last_page,
-        "shown_from": (page - 1) * PAGE_SIZE + 1 if rows else 0,
-        "shown_to": (page - 1) * PAGE_SIZE + len(chunk),
-        "fmt": formatting,
-    }
 
 
 def month_range(month: date) -> tuple[date, date]:

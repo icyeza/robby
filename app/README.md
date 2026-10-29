@@ -13,14 +13,14 @@ synthetic packaged artefact and runs the golden check.
 - **Clinical flow**: admission form with a live Robson panel (partial and conflict states) and
   enforced screening (value or recorded reason), result page with the explanation and readiness
   signal, recent admissions, delivery outcome, and corrections that supersede rather than edit.
-- **Import**: Excel template download and upload (all rows or none), and token-authenticated
-  automated import for OpenClinic and other systems.
-- **Audit**: facility Robson report with CSV export and comparison with a reference population,
-  unclassified records, and national aggregates for the national reviewer.
+- **Import**: Excel template download and upload for the facility administrator (rows with a
+  problem are left out and listed), and token-authenticated automated import for the hospital's
+  patient record system (tokens from `robby-admin api-token create`).
+- **Audit**: hospital report with CSV export and comparison with a reference population, and
+  national aggregates for the national reviewer.
 - **Model governance**: registry with candidate, shadow and active states, approvals with a named
   approver and reason, approval log; shadow models score every admission without being shown.
-- **Monitoring**: reconciliation of predictions with outcomes, calibration and input-drift alerts,
-  and the theatre readiness board.
+- **Monitoring**: reconciliation of predictions with outcomes, calibration and input-drift alerts.
 - **Platform**: every table created by Alembic migrations, with PostgreSQL triggers that make
   clinical rows and the event log impossible to update or delete; a hash-chained event log
   (`robby-admin events verify`); sign-in (argon2id, lockout after 5 failed attempts for 15
@@ -473,9 +473,7 @@ and 10 of each kind), input drift (PSI above 0.20 against the active model's
 `reference_distributions.json`, from at least 50 recently scored admissions), and a facility with
 outcomes recorded for under 70% of admissions scored 3 or more days ago (at least 20 such
 admissions). "Acknowledge" writes a `monitoring.alert_acknowledged` event; the alert key contains
-the ISO week, so an acknowledged alert that is still present reappears the next week. The
-readiness board (`/readiness`, clinicians and facility administrators) shows a unit-level expected
-cesarean count for the facility's admissions of the last 24 hours without an outcome.
+the ISO week, so an acknowledged alert that is still present reappears the next week.
 
 ## Demo mode
 

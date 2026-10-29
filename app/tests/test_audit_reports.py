@@ -229,8 +229,6 @@ def test_pages_export_and_national_aggregates_only(
     sign_in_client(client, db, settings, admin)
     page = client.get("/audit")
     assert page.status_code == 200 and "No reference set loaded" in page.text
-    listing = client.get("/audit/unclassified")
-    assert f"{facility.code}-0099" in listing.text and "Inputs conflict" in listing.text
     assert client.get("/national").status_code == 403
 
     csv_response = client.get(f"/audit/export.csv?month={month:%Y-%m}")
@@ -284,10 +282,9 @@ def test_patient_number_reaches_the_facility_admin_and_the_name_nobody_outside_c
             assert response.status_code == 200, (role, path)
         return [response.text for _, response in responses]
 
-    *admin_pages, listing, monthly_csv = pages_of(
-        Role.FACILITY_ADMIN, "/audit/unclassified", f"/audit/export.csv?month={month:%Y-%m}"
+    *admin_pages, monthly_csv = pages_of(
+        Role.FACILITY_ADMIN, f"/audit/export.csv?month={month:%Y-%m}"
     )
-    assert "ZQ-99" in listing and "Zzyzx" not in listing
     assert all("Zzyzx" not in text for text in [*admin_pages, monthly_csv])
     assert "ZQ-99" not in monthly_csv  # counts only
     for role in (Role.NATIONAL_REVIEWER, Role.MODEL_CUSTODIAN, Role.SYSTEM_ADMIN):

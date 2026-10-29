@@ -1,6 +1,6 @@
-"""Clinician pages: new admission, live Robson panel, result, recent admissions, outcome,
-correction and import from Excel. The facility always comes from the signed-in user; another
-facility's code is a 404."""
+"""Clinician pages: new admission, live Robson panel, result, recent admissions, outcome and
+correction; import from Excel for the facility administrator. The facility always comes from the
+signed-in user; another facility's code is a 404."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from robby.web.render import render
 
 router = APIRouter(prefix="/admissions")
 Clinician = Annotated[CurrentUser, Depends(require(Role.CLINICIAN))]
+FacilityAdmin = Annotated[CurrentUser, Depends(require(Role.FACILITY_ADMIN))]
 
 
 def runtime_of(request: Request) -> scoring.ModelRuntime:
@@ -253,7 +254,8 @@ def recent(request: Request, db: DbDep, current: Clinician) -> Response:
 
 
 # ---------------------------------------------------------------- import from Excel
-# Declared before /{code} so "import" is never read as an admission code.
+# Facility administrators only, reached from the hospital report. Declared before /{code} so
+# "import" is never read as an admission code.
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PROBLEMS_SHOWN = 100
@@ -306,12 +308,12 @@ def _import_page(
 
 
 @router.get("/import")
-def import_page(request: Request, current: Clinician) -> Response:
+def import_page(request: Request, current: FacilityAdmin) -> Response:
     return _import_page(request, current)
 
 
 @router.get("/import/template.xlsx")
-def import_template(request: Request, db: DbDep, current: Clinician) -> Response:
+def import_template(request: Request, db: DbDep, current: FacilityAdmin) -> Response:
     return Response(
         xlsx_template.build_template(_specs(request, db)),
         media_type=XLSX_TYPE,
@@ -321,7 +323,7 @@ def import_template(request: Request, db: DbDep, current: Clinician) -> Response
 
 @router.post("/import")
 async def import_upload(
-    request: Request, db: DbDep, current: Clinician, _csrf: CsrfChecked
+    request: Request, db: DbDep, current: FacilityAdmin, _csrf: CsrfChecked
 ) -> Response:
     form = await request.form()
     upload = form.get("file")
