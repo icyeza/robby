@@ -9,13 +9,13 @@ import io
 import uuid
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from robby.audit import formatting
+from robby.audit import formatting, pdf, plain
 from robby.audit.counts import birth_counts
 from robby.audit.measures import (
     UNCLASSIFIED_CALLOUT,
@@ -125,8 +125,7 @@ def _lines(
     return period, refs, reference, lines
 
 
-@router.get("")
-def overview(request: Request, db: DbDep, current: Reviewer, ref: str | None = None) -> Response:
+def _overview_context(request: Request, db: DbDep, ref: str | None) -> dict[str, Any]:
     q = request.query_params
     period, refs, reference, lines = _lines(db, request, q.get("from"), q.get("to"), ref)
     births = sum(line.report.births for line in lines)
@@ -149,10 +148,7 @@ def overview(request: Request, db: DbDep, current: Reviewer, ref: str | None = N
         ],
         reference is not None,
     )
-    return render(
-        request,
-        "audit/national_overview.html",
-        current=current,
+    return dict(
         period=period,
         refs=refs,
         reference=reference,
@@ -168,6 +164,43 @@ def overview(request: Request, db: DbDep, current: Reviewer, ref: str | None = N
         stands_out=stands,
         fmt=formatting,
         heat_groups=HEAT_GROUPS,
+        presets=plain.period_presets(
+            today_local(request.app.state.settings.zone), period.start, period.end
+        ),
+        verdicts={line.facility.id: plain.hospital_verdict(line.comparison) for line in lines},
+        in_100=plain.in_100,
+        hospitals=[line.facility for line in lines],
+        picker_label="Look at one hospital",
+    )
+
+
+@router.get("")
+def overview(request: Request, db: DbDep, current: Reviewer, ref: str | None = None) -> Response:
+    return render(
+        request,
+        "audit/national_overview.html",
+        current=current,
+        **_overview_context(request, db, ref),
+    )
+
+
+def _pdf(body: bytes, filename: str) -> Response:
+    return Response(
+        body,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/report.pdf")
+def overview_pdf(
+    request: Request, db: DbDep, current: Reviewer, ref: str | None = None
+) -> Response:
+    settings = request.app.state.settings
+    context = _overview_context(request, db, ref)
+    return _pdf(
+        pdf.national_pdf(context, demo=settings.demo, zone=settings.zone),
+        "robby-national-overview.pdf",
     )
 
 
@@ -232,6 +265,23 @@ def pick_hospital(request: Request, db: DbDep, current: Reviewer, facility: str 
         return RedirectResponse(f"/national?from={q.get('from', '')}&to={q.get('to', '')}", 303)
     return RedirectResponse(
         f"/national/facilities/{chosen.id}?from={q.get('from', '')}&to={q.get('to', '')}", 303
+    )
+
+
+@router.get("/facilities/{facility_id}/report.pdf")
+def facility_report_pdf(
+    facility_id: uuid.UUID, request: Request, db: DbDep, current: Reviewer, ref: str | None = None
+) -> Response:
+    facility = db.get(Facility, facility_id)
+    if facility is None:
+        raise HTTPException(status_code=404)
+    settings = request.app.state.settings
+    q = request.query_params
+    period = parse_period(q.get("from"), q.get("to"), settings.zone)
+    context = report_context(db, settings.zone, facility, period, ref)
+    return _pdf(
+        pdf.hospital_pdf(context, demo=settings.demo, zone=settings.zone),
+        f"robby-{facility.code.lower()}-report.pdf",
     )
 
 

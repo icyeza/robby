@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 
 from robby import events
-from robby.audit import export_format
+from robby.audit import export_format, pdf
 from robby.audit.counts import birth_counts
 from robby.audit.service import (
     month_range,
@@ -68,6 +68,25 @@ def audit_page(
         reasons=unclassified_reasons(db, zone, facility.id, period),
         zone=zone,
         **context,
+    )
+
+
+@router.get("/report.pdf")
+def report_pdf(
+    request: Request, db: DbDep, current: FacilityAdmin, ref: str | None = None
+) -> Response:
+    settings = request.app.state.settings
+    period = parse_period(
+        request.query_params.get("from"), request.query_params.get("to"), settings.zone
+    )
+    facility = _facility(db, current)
+    context = report_context(db, settings.zone, facility, period, ref)
+    context["reasons"] = unclassified_reasons(db, settings.zone, facility.id, period)
+    name = f"robby-{facility.code.lower()}-report.pdf"
+    return Response(
+        pdf.hospital_pdf(context, demo=settings.demo, zone=settings.zone),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 

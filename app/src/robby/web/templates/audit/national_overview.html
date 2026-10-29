@@ -2,43 +2,22 @@
 {% block title %}National overview{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="/static/report.css">
-<h1>National overview</h1>
-<p class="lede">Robson profile and cesarean rates for every participating facility, compared with the reference population and with the rate expected for each facility's case mix.</p>
+<div class="titlebar">
+  <h1>National overview</h1>
+  <div class="title-actions">{% if hospitals %}{% include "audit/_hospital_picker.html" %}{% endif %}</div>
+</div>
+<p class="lede">How many women gave birth at each hospital, how many had a cesarean, and whether that is more or fewer than expected for the women each hospital sees.</p>
 {% if period.error %}<div class="notice warn">⚠ {{ period.error }}</div>{% endif %}
 
-<div class="filters">
-  <form method="get" action="/national">
-    <div class="f"><label for="from">From</label><input id="from" name="from" type="date" value="{{ period.start.isoformat() }}"></div>
-    <div class="f"><label for="to">To</label><input id="to" name="to" type="date" value="{{ period.end.isoformat() }}"></div>
-    {% if refs %}
-    <div class="f">
-      <span class="label" id="f-ref-label">Compare with</span>
-      <div class="seg" role="radiogroup" aria-labelledby="f-ref-label">
-        {% for r in refs %}<label><input type="radio" name="ref" value="{{ r.id }}"{% if r.id == reference.id %} checked{% endif %}><span>{{ r.label }}</span></label>{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    <button class="btn btn-s btn-sm" type="submit">Apply</button>
-  </form>
-  <form method="get" action="/national/export.csv">
-    <input type="hidden" name="from" value="{{ period.start.isoformat() }}">
-    <input type="hidden" name="to" value="{{ period.end.isoformat() }}">
-    {% if reference %}<input type="hidden" name="ref" value="{{ reference.id }}">{% endif %}
-    <button class="btn btn-s btn-sm push" type="submit">Export national report (CSV)</button>
-  </form>
-</div>
+{% include "audit/_period.html" %}
 
-{% if reference %}
-<p class="muted">Reference: {{ reference.name }} ({{ reference.version_label }}) · {{ reference.citation }} · {{ reference.population }}</p>
-{% else %}
-<div class="notice">No reference set loaded. Each facility's own figures are shown; expected rates are not available.</div>
+{% if births %}
+<p class="headline">From {{ fmt.day(period.start) }} to {{ fmt.day(period.end) }}, <b>{{ fmt.count(births) }}</b> women gave birth at {{ reporting }} hospital{{ "" if reporting == 1 else "s" }} and <b>{{ fmt.count(cesareans) }}</b> had a cesarean: {{ in_100(cs_rate) }}.</p>
 {% endif %}
-
-<div class="tiles">
-  <div class="tile"><div class="k">Facilities reporting</div><div class="v">{{ reporting }} of {{ total_facilities }}</div><div class="s">With births in this period</div></div>
-  <div class="tile"><div class="k">Births in period</div><div class="v">{{ fmt.count(births) }}</div><div class="s">Deliveries with a recorded outcome</div></div>
-  <div class="tile"><div class="k">Cesarean rate</div><div class="v">{{ fmt.pct(cs_rate) }}</div><div class="s">{{ fmt.count(cesareans) }} cesareans</div></div>
-  <div class="tile"><div class="k">Could not be classified</div><div class="v">{{ fmt.pct(residual_pct) }}</div><div class="s">{{ fmt.count(residual) }} records{% if high %} · above 5% at {{ high }} facilit{{ "y" if high == 1 else "ies" }}{% endif %}</div></div>
+<div class="tiles three">
+  <div class="tile"><div class="k">Hospitals reporting</div><div class="v">{{ reporting }} of {{ total_facilities }}</div><div class="s">With births in this period</div></div>
+  <div class="tile"><div class="k">Births</div><div class="v">{{ fmt.count(births) }}</div><div class="s">With the delivery recorded</div></div>
+  <div class="tile"><div class="k">Cesareans</div><div class="v">{{ fmt.count(cesareans) }}</div><div class="s">{{ in_100(cs_rate) | capitalize }} births</div></div>
 </div>
 
 <section class="key">
@@ -47,39 +26,64 @@
 </section>
 
 <section class="tablecard">
-  <div class="tc-h">
-    <h2>Observed vs expected cesarean rate</h2>
-    <div class="lg"><span><i class="sw"></i>Observed</span><span><i class="tk"></i>Expected for case mix</span></div>
-  </div>
+  <div class="tc-h"><h2>Each hospital</h2><span class="tc-sub">"Expected" allows for the mix of women each hospital sees, so hospitals can be compared fairly.</span></div>
+  <table class="groups">
+    <thead><tr><th>Hospital</th><th class="r">Births</th><th>Cesareans</th><th>Compared with expected</th><th>Monthly report</th><th></th></tr></thead>
+    <tbody>
+    {% for line in lines %}
+      {% set v = verdicts[line.facility.id] %}
+      {% set latest = line.statuses[0] if line.statuses else none %}
+      <tr>
+        <td><b>{{ line.facility.name }}</b>{% if line.unclassified_high %}<div class="note-more">{{ fmt.pct(line.report.unclassified_pct) }} of births have no group</div>{% endif %}</td>
+        <td class="r num">{{ fmt.count(line.report.births) }}</td>
+        <td>{% if line.report.births %}{{ line.report.cesareans }} of {{ line.report.births }}<div class="muted small">{{ in_100(line.report.cs_rate) }}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td><span class="verdict {{ v.css }}">{{ v.label }}</span>{% if line.comparison.expected is not none %}<div class="muted small">Expected: {{ in_100(line.comparison.expected) }}</div>{% endif %}</td>
+        <td>{% if latest %}<span class="st {{ latest.css }}">{{ latest.label }}</span>{% endif %}</td>
+        <td class="r"><a href="/national/facilities/{{ line.facility.id }}?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}{% if reference %}&amp;ref={{ reference.id }}{% endif %}">Open report</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No hospitals yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">"More" or "Fewer than expected" means at least 10% away from the rate expected for the hospital's mix of women. Monthly report: whether the hospital downloaded last month's file from Robby (due on the 10th).</div>
+</section>
+
+<details class="tablecard detail">
+  <summary><b>Show detailed figures</b> <span class="muted">observed against expected rates, and differences in key groups</span></summary>
+  <div class="tc-h"><div class="lg"><span><i class="sw"></i>Observed</span><span><i class="tk"></i>Expected for case mix</span></div></div>
   <table class="wide">
-    <thead><tr><th>Facility</th><th class="r">Births</th><th>Cesarean rate</th><th>Observed ÷ expected</th><th>Unclassified</th><th>Monthly report</th><th></th></tr></thead>
+    <thead><tr><th>Hospital</th><th class="r">Births</th><th>Cesarean rate</th><th>Observed ÷ expected</th><th>No group</th><th>Monthly reports</th></tr></thead>
     <tbody>
     {% for line in lines %}
       <tr><td><b>{{ line.facility.name }}</b></td><td class="r num">{{ fmt.count(line.report.births) }}</td>
         <td><div class="cell"><div class="bar" title="Observed: {{ fmt.pct(line.comparison.observed) }}; expected for case mix: {{ fmt.pct(line.comparison.expected) }}"><div class="fill w{{ line.obs_w or 0 }}"></div>{% if line.exp_t is not none %}<div class="ref t{{ line.exp_t }}"></div>{% endif %}</div><span class="num">{{ fmt.pct(line.comparison.observed) }}</span><span class="diff">{{ fmt.signed(line.comparison.diff) if line.comparison.diff is not none else "no ref." }}</span></div></td>
         <td class="num left">{{ line.comparison.ratio if line.comparison.ratio is not none else "—" }}</td>
-        <td>{% if line.unclassified_high %}<span class="chip warn">⚠ {{ fmt.pct(line.report.unclassified_pct) }}</span>{% else %}{{ fmt.pct(line.report.unclassified_pct) }}{% endif %}</td>
-        <td>{% for s in line.statuses %}<span class="st {{ s.css }}">{{ s.label }}</span> {% endfor %}</td>
-        <td class="r"><a href="/national/facilities/{{ line.facility.id }}?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}{% if reference %}&amp;ref={{ reference.id }}{% endif %}">Robson report</a></td></tr>
-    {% else %}
-      <tr><td colspan="7" class="muted">No facilities yet.</td></tr>
+        <td>{{ fmt.pct(line.report.unclassified_pct) }}</td>
+        <td>{% for s in line.statuses %}<span class="st {{ s.css }}">{{ s.label }}</span> {% endfor %}</td></tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="tc-foot">Bar: observed cesarean rate among classified births (axis 0–50%, or 0–100% when a rate is higher). Black tick: the rate expected for the facility's case mix, the sum over groups of the facility's group share × the reference cesarean rate. Observed ÷ expected above 1 means more cesareans than expected. Unclassified above 5% is flagged because comparisons are less reliable. Monthly report: "exported" means the facility exported the file from Robby; receipt by the national system is not visible here; due on the 10th of the following month.</div>
-</section>
-
-<section class="tablecard">
   <div class="tc-h"><h2>Cesarean rate difference from reference, key groups (points)</h2></div>
   <table class="heat">
-    <thead><tr><th>Facility</th>{% for g in heat_groups %}<th class="c">Group {{ g }}</th>{% endfor %}</tr></thead>
+    <thead><tr><th>Hospital</th>{% for g in heat_groups %}<th class="c">Group {{ g }}</th>{% endfor %}</tr></thead>
     <tbody>
     {% for line in lines %}
       <tr><td><b>{{ line.facility.name }}</b></td>{% for cell in line.heat %}<td{% if cell.css %} class="{{ cell.css }}"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="tc-foot">Positive: rate above the reference for that group. Colour shows size only; the sign is always printed. A dash means no reference or fewer than 10 births in the group.</div>
+  <div class="tc-foot">Bar: observed cesarean rate among births with a group; black tick: the rate expected for the hospital's case mix (each group's share × the reference rate). Heat table: positive means the group's rate is above the reference; a dash means no reference or fewer than 10 births.</div>
+</details>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Download</h2></div>
+  <div class="tc-body">
+    <div class="inline-form">
+      <a class="btn btn-p btn-sm" href="/national/report.pdf?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}{% if reference %}&amp;ref={{ reference.id }}{% endif %}">Download PDF</a>
+      <a class="btn btn-s btn-sm" href="/national/export.csv?from={{ period.start.isoformat() }}&amp;to={{ period.end.isoformat() }}{% if reference %}&amp;ref={{ reference.id }}{% endif %}">Download data (CSV)</a>
+    </div>
+    <p class="muted small">Totals only. Individual admissions are never shown to national reviewers.</p>
+  </div>
 </section>
-<p class="muted">Aggregates only. Individual admissions are never shown to national reviewers.</p>
 {% endblock %}

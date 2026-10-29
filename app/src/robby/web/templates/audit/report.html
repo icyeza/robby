@@ -9,7 +9,11 @@
 <div class="titlebar">
   <h1>{{ facility.name }}</h1>
   <span class="meta">Hospital report</span>
-  {% if readonly and hospitals %}{% include "audit/_hospital_picker.html" %}{% endif %}
+  <div class="title-actions">
+    {% if readonly and hospitals %}{% include "audit/_hospital_picker.html" %}{% endif %}
+    {% set pdfq = "?from=" ~ period.start.isoformat() ~ "&to=" ~ period.end.isoformat() ~ (("&ref=" ~ reference.id) if reference else "") %}
+    <a class="btn btn-p btn-sm" href="{{ ('/national/facilities/' ~ facility.id ~ '/report.pdf') if readonly else '/audit/report.pdf' }}{{ pdfq }}">Download PDF</a>
+  </div>
 </div>
 <p class="lede">How many women gave birth here, how many had a cesarean, and which groups of women the cesareans come from.</p>
 {% if readonly %}<div class="notice"><b>Read-only view for national reviewers.</b> Figures are totals; individual admissions are not available.</div>{% endif %}
