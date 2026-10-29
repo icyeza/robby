@@ -76,6 +76,15 @@ def test_missing_required_openclinic_columns() -> None:
     assert [p.column for p in result.problems] == ["Patient ID"]
 
 
+def test_missing_required_columns_refuse_the_file_when_bad_rows_are_skipped() -> None:
+    # The web upload skips bad rows; with no translatable sheet it used to fail with IndexError.
+    header = [h for h in HEADER if h != "Patient ID"]
+    row = [v for h, v in zip(HEADER, oc_row(), strict=True) if h != "Patient ID"]
+    result = read_upload(make_xlsx(header, [row]), "export.xlsx", [], ZONE, NOW, skip_bad=True)
+    assert [p.column for p in result.problems] == ["Patient ID"]
+    assert result.rows == []
+
+
 def test_the_apps_own_template_is_not_mistaken_for_openclinic() -> None:
     result = read([["x"] * 3], ["Patient number", "Patient name", "Admitted at", "Para", "Age"])
     assert {p.column for p in result.problems} == {"Para", "Age"}  # template rules, not OpenClinic

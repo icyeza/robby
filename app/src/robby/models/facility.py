@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from robby.models.base import UUIDPK, Base, CreatedAt
 
+DEFAULT_READINESS_CUT_PERCENT = 30
+
 
 class Facility(Base):
     __tablename__ = "facility"
@@ -19,5 +21,7 @@ class Facility(Base):
     model_facility_key: Mapped[str | None]
     active: Mapped[bool] = mapped_column(default=True, server_default=true())
     # Probability (percent) at or above which an admission shows as high readiness.
-    readiness_cut_percent: Mapped[int] = mapped_column(default=30, server_default="30")
+    readiness_cut_percent: Mapped[int] = mapped_column(
+        default=DEFAULT_READINESS_CUT_PERCENT, server_default=str(DEFAULT_READINESS_CUT_PERCENT)
+    )
     created_at: Mapped[CreatedAt]

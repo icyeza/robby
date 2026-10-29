@@ -9,12 +9,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timedelta
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
@@ -22,15 +20,17 @@ from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.clinical import classify as cls
 from robby.clinical import importer, labels, scoring, service, xlsx_template
 from robby.clinical.form import (
+    FUTURE_SLACK,
+    TIME_SHOWN,
     DetailSpec,
     Parsed,
     detail_specs,
     parse,
     parse_time,
 )
+from robby.clinical.views import result_view
 from robby.errors import NotAllowed, NotFound
-from robby.models import Admission, DeliveryMode, Facility, ModelState, ModelVersion, Role
-from robby.monitoring.readiness import is_high
+from robby.models import Admission, DeliveryMode, Role
 from robby.timeutil import utcnow
 from robby.web.csrf import CsrfChecked
 from robby.web.errors import error_page, redirect
@@ -127,7 +127,7 @@ def _form_page(
 
 
 def _now_text(request: Request) -> str:
-    return utcnow().astimezone(request.app.state.settings.zone).strftime("%d %b %Y, %H:%M")
+    return utcnow().astimezone(request.app.state.settings.zone).strftime(TIME_SHOWN)
 
 
 @router.get("/new")
@@ -185,10 +185,7 @@ async def create_admission(
             return redirect(request, f"/admissions/new?saved={saved.admission.code}")
         except cls.NoRuleSetError:
             db.rollback()
-            errors["_form"] = (
-                "No Robson rule set is active, so nothing can be saved. "
-                "Tell your system administrator."
-            )
+            errors["_form"] = cls.NOTHING_SAVED_ASK_ADMIN
     return _form_page(
         request,
         db,
@@ -198,46 +195,6 @@ async def create_admission(
         status_code=200 if htmx else 400,
         fragment=htmx,
     )
-
-
-def _details_view(admission: Admission) -> list[tuple[str, str]]:
-    """The Robson inputs and age as entered, in words; empty text for a value not recorded."""
-
-    def word(options: tuple[tuple[str, str], ...], value: object) -> str:
-        return "" if value is None else dict(options).get(str(value), str(value))
-
-    def number(value: object, unit: str = "") -> str:
-        return "" if value is None else f"{float(str(value)):g}{unit}"
-
-    babies = None if admission.plurality is None else min(admission.plurality, 2)
-    return [
-        ("Age", number(admission.maternal_age, " years")),
-        ("Previous births (parity)", number(admission.parity)),
-        ("Previous cesareans", number(admission.previous_cs_count)),
-        ("Babies", word(labels.PLURALITY_OPTIONS, babies)),
-        ("Presentation", word(labels.PRESENTATION_OPTIONS, admission.fetal_presentation)),
-        ("Gestational age", number(admission.gestational_age_weeks, " weeks")),
-        ("Onset of labour", word(labels.ONSET_OPTIONS, admission.onset_of_labour)),
-    ]
-
-
-def _screening_view(admission: Admission, omissions: list[Any]) -> dict[str, dict[str, str | None]]:
-    reasons = {o.field.value: labels.REASON_TEXT[o.reason.value] for o in omissions}
-    bp = (
-        f"{admission.systolic_bp} / {admission.diastolic_bp} mmHg"
-        if admission.systolic_bp is not None
-        else ""
-    )
-    return {
-        "bp": {"text": bp, "reason": reasons.get("blood_pressure")},
-        "protein": {"text": admission.proteinuria or "", "reason": reasons.get("proteinuria")},
-        "glucose": {
-            "text": f"{admission.glucose_mmol} mmol/L"
-            if admission.glucose_mmol is not None
-            else "",
-            "reason": reasons.get("glucose"),
-        },
-    }
 
 
 @router.get("")
@@ -283,14 +240,27 @@ class ImportedLine:
     already: bool = False  # recorded before this upload; shown, not imported again
 
 
-def _line_of(db: Session, admission: Admission) -> ImportedLine:
-    predicted = service.prediction_of(db, admission)
-    return ImportedLine(
-        admission.code,
-        service.classification_of(db, admission).robson_group,
-        service.percent_of(predicted[0].probability) if predicted else None,
-        already=True,
-    )
+def _imported_lines(
+    db: Session,
+    fresh: list[tuple[int, Parsed]],
+    saved: list[service.Saved],
+    recorded: dict[int, Admission],
+) -> dict[int, ImportedLine]:
+    """A line by Excel row: the admissions just saved, and those recorded before this upload
+    (their group and percent read in one batch, not per row)."""
+    lines = {
+        n: ImportedLine(
+            s.admission.code,
+            s.classification.robson_group,
+            service.percent_of(s.prediction.probability) if s.prediction else None,
+        )
+        for (n, _), s in zip(fresh, saved, strict=True)
+    }
+    summaries = service.summaries_of(db, list(recorded.values()))
+    for n, admission in recorded.items():
+        group, percent = summaries[admission.id]
+        lines[n] = ImportedLine(admission.code, group, percent, already=True)
+    return lines
 
 
 def _import_page(
@@ -335,134 +305,66 @@ def import_template(request: Request, db: DbDep, current: FacilityAdmin) -> Resp
     )
 
 
+def _import_refused(request: Request, current: CurrentUser, message: str) -> Response:
+    """The import page with one problem about the whole upload."""
+    problem = importer.RowProblem(0, "", message)
+    return _import_page(request, current, problems=[problem], status_code=400)
+
+
 @router.post("/import")
 async def import_upload(
     request: Request, db: DbDep, current: FacilityAdmin, _csrf: CsrfChecked
 ) -> Response:
-    form = await request.form()
-    upload = form.get("file")
+    upload = (await request.form()).get("file")
     if not isinstance(upload, UploadFile) or not upload.filename:
-        problem = importer.RowProblem(0, "", "Choose a file to upload.")
-        return _import_page(request, current, problems=[problem], status_code=400)
+        return _import_refused(request, current, "Choose a file to upload.")
     data = await upload.read()
-    assert current.user.facility_id is not None
-    facility = db.get(Facility, current.user.facility_id)
-    assert facility is not None
+    zone = request.app.state.settings.zone
+    facility = service.facility_of(db, current.user)
     read = importer.read_upload(
         data,
         upload.filename,
         _specs(request, db),
-        request.app.state.settings.zone,
+        zone,
         utcnow(),
         skip_bad=True,
         facility_keys={facility.name, facility.model_facility_key or ""},
     )
     if not read.rows:
         return _import_page(request, current, problems=read.problems, status_code=400)
-    scan = importer.find_duplicates(db, current.user.facility_id, read.rows)
-    skipped = read.problems + scan.in_file
+    scan = importer.find_duplicates(db, facility.id, read.rows)
     repeated = {p.row for p in scan.in_file}
     rows = [(n, parsed) for n, parsed in read.rows if n not in repeated]
     fresh = [(n, parsed) for n, parsed in rows if n not in scan.recorded]
+    digest = hashlib.sha256(data).hexdigest()
     try:
         saved = (
-            service.import_admissions(
-                db, runtime_of(request), current.user, fresh, hashlib.sha256(data).hexdigest()
-            )
+            service.import_admissions(db, runtime_of(request), current.user, fresh, digest)
             if fresh
             else []
         )
-        for (n, _), s in zip(fresh, saved, strict=True):
-            if n in read.outcomes:
-                mode, delivered = read.outcomes[n]
-                service.record_outcome(
-                    db,
-                    current.user,
-                    s.admission,
-                    DeliveryMode(mode),
-                    delivered.replace(tzinfo=request.app.state.settings.zone),
-                )
+        outcomes = service.record_import_outcomes(
+            db, current.user, fresh, saved, read.outcomes, zone
+        )
         db.commit()
     except cls.NoRuleSetError:
         db.rollback()
-        problem = importer.RowProblem(
-            0,
-            "",
-            "No Robson rule set is active, so nothing can be saved. "
-            "Tell your system administrator.",
-        )
-        return _import_page(request, current, problems=[problem], status_code=400)
-    by_row: dict[int, ImportedLine] = {
-        n: ImportedLine(
-            s.admission.code,
-            s.classification.robson_group,
-            service.percent_of(s.prediction.probability) if s.prediction else None,
-        )
-        for (n, _), s in zip(fresh, saved, strict=True)
-    }
-    by_row.update({n: _line_of(db, a) for n, a in scan.recorded.items()})
+        return _import_refused(request, current, cls.NOTHING_SAVED_ASK_ADMIN)
+    lines = _imported_lines(db, fresh, saved, scan.recorded)
     return _import_page(
         request,
         current,
-        lines=[by_row[n] for n, _ in rows],
-        problems=skipped,
+        lines=[lines[n] for n, _ in rows],
+        problems=read.problems + scan.in_file,
         other_hospitals=read.other_hospitals,
-        outcomes=sum(1 for n, _ in fresh if n in read.outcomes),
+        outcomes=outcomes,
     )
 
 
 @router.get("/{code}")
 def result(request: Request, code: str, db: DbDep, current: Clinician) -> Response:
     admission = _get(db, current, code)
-    classification = service.classification_of(db, admission)
-    panel = cls.panel_view(
-        status=classification.status.value,
-        group=classification.robson_group,
-        subgroup=classification.subgroup,
-        candidates=list(classification.candidates),
-        resolving=list(classification.resolving_fields),
-        conflict=list(classification.conflict_fields),
-        trace=classification.trace,
-    )
-    predicted = service.prediction_of(db, admission)
-    view: dict[str, Any] = {
-        "panel": panel,
-        "percent": None,
-        "saved_at": admission.created_at.astimezone(request.app.state.settings.zone).strftime(
-            "%H:%M"
-        ),
-        "replaces": db.get(Admission, admission.supersedes_id) if admission.supersedes_id else None,
-        "replaced_by": service.replacement_of(db, admission),
-        "outcome": service.chain_outcome(db, admission),
-        "screening": _screening_view(admission, service.omissions_for(db, admission)),
-        "model_active": False,
-        "not_given": [],
-    }
-    view["details"] = _details_view(admission)
-    if view["outcome"] is not None:
-        view["outcome_text"] = dict(labels.DELIVERY_OPTIONS)[view["outcome"].mode.value]
-    if predicted is not None:
-        prediction, model = predicted
-        view["percent"] = service.percent_of(prediction.probability)
-        facility = db.get(Facility, admission.facility_id)
-        view["cut_percent"] = facility.readiness_cut_percent if facility else 30
-        view["high"] = is_high(prediction.probability, view["cut_percent"])
-        view["model_label"] = model.version_label
-        view["active_since"] = (
-            service.activated_at(db, model)
-            .astimezone(request.app.state.settings.zone)
-            .strftime("%d %b %Y")
-        )
-        view["not_given"] = [
-            labels.DETAIL_LABELS[name]
-            for name, _, _ in labels.DETAIL_ORDER
-            if name in prediction.feature_vector and prediction.feature_vector[name] is None
-        ]
-    else:
-        view["model_active"] = (
-            db.scalar(select(ModelVersion.id).where(ModelVersion.state == ModelState.ACTIVE))
-            is not None
-        )
+    view = result_view(db, admission, request.app.state.settings.zone)
     return render(request, "clinical/result.html", current=current, admission=admission, view=view)
 
 
@@ -528,7 +430,7 @@ async def outcome_save(
     now = utcnow()
     if delivered is None:
         errors["delivered_at"] = "Delivered at must look like 05 Oct 2026, 19:40."
-    elif delivered > now + timedelta(minutes=5):
+    elif delivered > now + FUTURE_SLACK:
         errors["delivered_at"] = "Delivered at cannot be in the future."
     elif delivered < admission.admitted_at:
         errors["delivered_at"] = "Delivery cannot be before the admission time."

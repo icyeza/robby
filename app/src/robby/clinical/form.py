@@ -24,6 +24,11 @@ TIME_FORMATS = ("%d %b %Y, %H:%M", "%d %b %Y %H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d
 TIME_SHOWN = "%d %b %Y, %H:%M"
 MAX_PAST = timedelta(days=30)
 FUTURE_SLACK = timedelta(minutes=5)
+# Plausible ranges (inclusive): mmHg for blood pressure, mmol/L for glucose.
+SYSTOLIC = (40, 300)
+DIASTOLIC = (20, 200)
+GLUCOSE = (Decimal("0.5"), Decimal("60"))
+CORRECTION_REASON_MAX = 500
 
 SCREENING_OMISSION = {
     "bp": OmissionField.BLOOD_PRESSURE,
@@ -168,6 +173,166 @@ def _patient(
     return number, name
 
 
+def _admitted_at(
+    values: Mapping[str, str],
+    zone: ZoneInfo,
+    now: datetime,
+    max_past: timedelta | None,
+    errors: dict[str, str],
+) -> datetime | None:
+    text = _value(values, "admitted_at")
+    if not text:
+        errors["admitted_at"] = "Enter when the woman was admitted."
+        return None
+    local = parse_time(text, zone)
+    if local is None:
+        errors["admitted_at"] = "Admitted at must look like 05 Oct 2026, 14:22."
+    elif local > now + FUTURE_SLACK:
+        errors["admitted_at"] = "Admitted at cannot be in the future."
+    elif max_past is not None and local < now - max_past:
+        errors["admitted_at"] = f"Admitted at cannot be more than {max_past.days} days ago."
+    else:
+        return local
+    return None
+
+
+def _reason_of(
+    values: Mapping[str, str], key: str, title: str, errors: dict[str, str]
+) -> str | None:
+    """The reason a screening test was not measured; one must be chosen."""
+    reason = _choice(values, f"{key}_reason", title, labels.REASONS[key], errors)
+    if reason is None and f"{key}_reason" not in errors:
+        errors[f"{key}_reason"] = f"Choose why {title.lower()} was not measured."
+    return reason
+
+
+def _blood_pressure(
+    values: Mapping[str, str], required: bool, errors: dict[str, str]
+) -> tuple[int | None, int | None]:
+    """(systolic, diastolic), both or neither."""
+    s_text, d_text = _value(values, "bp_sys"), _value(values, "bp_dia")
+    if not s_text and not d_text:
+        if required:
+            errors["bp"] = (
+                "Blood pressure is blank. Enter a value, or tick “Not measured” and choose "
+                "a reason."
+            )
+        return None, None
+    if not (INT.fullmatch(s_text) and INT.fullmatch(d_text)):
+        errors["bp"] = "Blood pressure needs both numbers, as whole numbers (for example 128 / 84)."
+        return None, None
+    s, d = int(s_text), int(d_text)
+    (s_low, s_high), (d_low, d_high) = SYSTOLIC, DIASTOLIC
+    if not (s_low <= s <= s_high and d_low <= d <= d_high):
+        errors["bp"] = (
+            f"Blood pressure is outside the possible range ({s_low} to {s_high} "
+            f"over {d_low} to {d_high})."
+        )
+        return None, None
+    if s <= d:
+        errors["bp"] = "Systolic pressure must be higher than diastolic."
+        return None, None
+    return s, d
+
+
+def _proteinuria(values: Mapping[str, str], required: bool, errors: dict[str, str]) -> str | None:
+    protein = _choice(values, "proteinuria", "Proteinuria", labels.PROTEINURIA_OPTIONS, errors)
+    if protein is None and "proteinuria" not in errors and required:
+        errors["proteinuria"] = (
+            "Proteinuria is blank. Choose a result, or tick “Not measured” and choose a reason."
+        )
+    return protein
+
+
+def _glucose(values: Mapping[str, str], required: bool, errors: dict[str, str]) -> Decimal | None:
+    text = _value(values, "glucose")
+    if not text:
+        if required:
+            errors["glucose"] = (
+                "Glucose is blank. Enter a value, or tick “Not measured” and choose a reason."
+            )
+        return None
+    low, high = GLUCOSE
+    if not DECIMAL_1.fullmatch(text) or not low <= Decimal(text) <= high:
+        errors["glucose"] = (
+            f"Glucose must be between {low} and {high} mmol/L, with at most one decimal."
+        )
+        return None
+    return Decimal(text)
+
+
+@dataclass(frozen=True)
+class _Screening:
+    systolic: int | None = None
+    diastolic: int | None = None
+    bp_reason: str | None = None
+    proteinuria: str | None = None
+    protein_reason: str | None = None
+    glucose: Decimal | None = None
+    glucose_reason: str | None = None
+
+
+def _screening(values: Mapping[str, str], required: bool, errors: dict[str, str]) -> _Screening:
+    """Screening (FR2): each of the three needs a value, or "not measured" with a reason."""
+    systolic = diastolic = protein = glucose = None
+    bp_reason = protein_reason = glucose_reason = None
+    if values.get("bp_nm"):
+        bp_reason = _reason_of(values, "bp", "Blood pressure", errors)
+    else:
+        systolic, diastolic = _blood_pressure(values, required, errors)
+    if values.get("protein_nm"):
+        protein_reason = _reason_of(values, "protein", "Proteinuria", errors)
+    else:
+        protein = _proteinuria(values, required, errors)
+    if values.get("glucose_nm"):
+        glucose_reason = _reason_of(values, "glucose", "Glucose", errors)
+    else:
+        glucose = _glucose(values, required, errors)
+    return _Screening(
+        systolic, diastolic, bp_reason, protein, protein_reason, glucose, glucose_reason
+    )
+
+
+def _detail(
+    values: Mapping[str, str], spec: DetailSpec, errors: dict[str, str]
+) -> int | float | str | None:
+    """One optional model input, checked against its schema (None when blank or invalid)."""
+    key = f"d_{spec.name}"
+    raw = _value(values, key)
+    if not raw:
+        return None
+    if spec.kind == "category":
+        if raw not in (spec.levels or ()):
+            errors[key] = f"{spec.label}: choose one of the listed options."
+            return None
+        return raw
+    pattern = INT if spec.kind == "integer" else NUMBER
+    if not pattern.fullmatch(raw):
+        errors[key] = f"{spec.label} must be a number."
+        return None
+    number = float(raw)
+    if (spec.low is not None and number < spec.low) or (
+        spec.high is not None and number > spec.high
+    ):
+        low = "" if spec.low is None else f"{spec.low:g}"
+        high = "" if spec.high is None else f"{spec.high:g}"
+        errors[key] = f"{spec.label} must be between {low or 'any'} and {high or 'any'}."
+        return None
+    return int(number) if spec.kind == "integer" else number
+
+
+def _correction(values: Mapping[str, str], required: bool, errors: dict[str, str]) -> str | None:
+    correction = _value(values, "correction_reason") or None
+    if required:
+        if correction is None:
+            errors["correction_reason"] = "Say why the admission is being corrected."
+        elif len(correction) > CORRECTION_REASON_MAX:
+            errors["correction_reason"] = (
+                f"Keep the reason to {CORRECTION_REASON_MAX} characters or fewer."
+            )
+    return correction
+
+
 def parse(
     values: Mapping[str, str],
     specs: list[DetailSpec],
@@ -182,21 +347,7 @@ def parse(
     """Returns the parsed values (invalid ones as None) and an error per field."""
     errors: dict[str, str] = {}
     patient_number, patient_name = _patient(values, patient_required, errors)
-    admitted_at = None
-    text = _value(values, "admitted_at")
-    if not text:
-        errors["admitted_at"] = "Enter when the woman was admitted."
-    else:
-        local = parse_time(text, zone)
-        if local is None:
-            errors["admitted_at"] = "Admitted at must look like 05 Oct 2026, 14:22."
-        elif local > now + FUTURE_SLACK:
-            errors["admitted_at"] = "Admitted at cannot be in the future."
-        elif max_past is not None and local < now - max_past:
-            errors["admitted_at"] = "Admitted at cannot be more than 30 days ago."
-        else:
-            admitted_at = local
-
+    admitted_at = _admitted_at(values, zone, now, max_past, errors)
     age = _whole(values, "maternal_age", "Maternal age", 10, 60, errors)
     ga = _whole(values, "gestational_age_weeks", "Gestational age", 20, 45, errors)
     parity = _whole(values, "parity", "Parity", 0, 30, errors)
@@ -209,97 +360,13 @@ def parse(
     )
     onset = _choice(values, "onset_of_labour", "Onset of labour", labels.ONSET_OPTIONS, errors)
 
-    # Screening (FR2): each of the three needs a value, or "not measured" with a reason.
-    def reason_of(key: str, title: str) -> str | None:
-        r = _choice(values, f"{key}_reason", title, labels.REASONS[key], errors)
-        if r is None and f"{key}_reason" not in errors:
-            errors[f"{key}_reason"] = f"Choose why {title.lower()} was not measured."
-        return r
-
-    systolic = diastolic = None
-    bp_reason = protein = protein_reason = glucose = glucose_reason = None
-    if values.get("bp_nm"):
-        bp_reason = reason_of("bp", "Blood pressure")
-    else:
-        s_text, d_text = _value(values, "bp_sys"), _value(values, "bp_dia")
-        if not s_text and not d_text:
-            if screening_required:
-                errors["bp"] = (
-                    "Blood pressure is blank. Enter a value, or tick “Not measured” and choose "
-                    "a reason."
-                )
-        elif not (INT.fullmatch(s_text) and INT.fullmatch(d_text)):
-            errors["bp"] = (
-                "Blood pressure needs both numbers, as whole numbers (for example 128 / 84)."
-            )
-        else:
-            s, d = int(s_text), int(d_text)
-            if not (40 <= s <= 300 and 20 <= d <= 200):
-                errors["bp"] = (
-                    "Blood pressure is outside the possible range (40 to 300 over 20 to 200)."
-                )
-            elif s <= d:
-                errors["bp"] = "Systolic pressure must be higher than diastolic."
-            else:
-                systolic, diastolic = s, d
-
-    if values.get("protein_nm"):
-        protein_reason = reason_of("protein", "Proteinuria")
-    else:
-        protein = _choice(values, "proteinuria", "Proteinuria", labels.PROTEINURIA_OPTIONS, errors)
-        if protein is None and "proteinuria" not in errors and screening_required:
-            errors["proteinuria"] = (
-                "Proteinuria is blank. Choose a result, or tick “Not measured” and choose a reason."
-            )
-
-    if values.get("glucose_nm"):
-        glucose_reason = reason_of("glucose", "Glucose")
-    else:
-        g_text = _value(values, "glucose")
-        if not g_text:
-            if screening_required:
-                errors["glucose"] = (
-                    "Glucose is blank. Enter a value, or tick “Not measured” and choose a reason."
-                )
-        elif not DECIMAL_1.fullmatch(g_text) or not Decimal("0.5") <= Decimal(g_text) <= 60:
-            errors["glucose"] = (
-                "Glucose must be between 0.5 and 60 mmol/L, with at most one decimal."
-            )
-        else:
-            glucose = Decimal(g_text)
-
+    screening = _screening(values, screening_required, errors)
     details: dict[str, int | float | str] = {}
     for spec in specs:
-        key = f"d_{spec.name}"
-        raw = _value(values, key)
-        if not raw:
-            continue
-        if spec.kind == "category":
-            if raw not in (spec.levels or ()):
-                errors[key] = f"{spec.label}: choose one of the listed options."
-            else:
-                details[spec.name] = raw
-            continue
-        pattern = INT if spec.kind == "integer" else NUMBER
-        if not pattern.fullmatch(raw):
-            errors[key] = f"{spec.label} must be a number."
-            continue
-        number = float(raw)
-        if (spec.low is not None and number < spec.low) or (
-            spec.high is not None and number > spec.high
-        ):
-            low = "" if spec.low is None else f"{spec.low:g}"
-            high = "" if spec.high is None else f"{spec.high:g}"
-            errors[key] = f"{spec.label} must be between {low or 'any'} and {high or 'any'}."
-            continue
-        details[spec.name] = int(number) if spec.kind == "integer" else number
-
-    correction = _value(values, "correction_reason") or None
-    if reason_required:
-        if correction is None:
-            errors["correction_reason"] = "Say why the admission is being corrected."
-        elif len(correction) > 500:
-            errors["correction_reason"] = "Keep the reason to 500 characters or fewer."
+        value = _detail(values, spec, errors)
+        if value is not None:
+            details[spec.name] = value
+    correction = _correction(values, reason_required, errors)
 
     parsed = Parsed(
         patient_number=patient_number,
@@ -312,13 +379,13 @@ def parse(
         plurality=int(plurality_text) if plurality_text else None,
         presentation=presentation,
         onset=onset,
-        systolic=systolic,
-        diastolic=diastolic,
-        bp_reason=bp_reason,
-        proteinuria=protein,
-        protein_reason=protein_reason,
-        glucose=glucose,
-        glucose_reason=glucose_reason,
+        systolic=screening.systolic,
+        diastolic=screening.diastolic,
+        bp_reason=screening.bp_reason,
+        proteinuria=screening.proteinuria,
+        protein_reason=screening.protein_reason,
+        glucose=screening.glucose,
+        glucose_reason=screening.glucose_reason,
         details=details,
         correction_reason=correction,
     )

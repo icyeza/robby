@@ -1,16 +1,17 @@
-"""Reading an uploaded Excel file of admissions (one row per admission). Every row goes through
-the same form.parse as the web form. By default the file is imported only when every row passes;
-with ``skip_bad`` (the web upload) rows with problems are left out and listed, and the rest are
-imported."""
+"""Reading an uploaded Excel file of admissions (one row per admission). The sheet may be in the
+app's template, an OpenClinic export or the research export (each a SheetLayout, translated into
+the template layout); every row then goes through the same form.parse as the web form. By default
+the file is imported only when every row passes; with ``skip_bad`` (the web upload) rows with
+problems are left out and listed, and the rest are imported."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
-from typing import Any
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
@@ -172,6 +173,121 @@ def read_upload(
     return read_table(table, specs, zone, now, skip_bad=skip_bad, facility_keys=facility_keys)
 
 
+@dataclass(frozen=True)
+class Translated:
+    """A sheet in the template layout, with what its own layout found on the way."""
+
+    table: list[tuple[object, ...]]
+    problems: list[RowProblem]
+    outcomes: dict[int, tuple[str, datetime]] = field(default_factory=dict)
+    other_hospitals: int = 0
+    max_past: timedelta | None = MAX_PAST  # how old an admission time may be
+
+
+class SheetLayout(Protocol):
+    """One spreadsheet layout the import accepts. Each translates its sheet into the template
+    layout, so that every row then goes through the same header check and form.parse."""
+
+    def matches(self, header: Sequence[object], cols: list[Column]) -> bool: ...
+
+    def translate(
+        self, table: list[tuple[object, ...]], cols: list[Column], skip_bad: bool
+    ) -> Translated | ReadResult:
+        """The translated sheet, or the ReadResult refusing the whole file."""
+        ...
+
+
+class TemplateLayout:
+    """The app's own template (and a JSON batch with its column names): nothing to translate."""
+
+    def matches(self, header: Sequence[object], cols: list[Column]) -> bool:
+        return True
+
+    def translate(
+        self, table: list[tuple[object, ...]], cols: list[Column], skip_bad: bool
+    ) -> Translated:
+        return Translated(table, [])
+
+
+class OpenClinicLayout:
+    """An OpenClinic export. Its problems refuse the file unless bad rows are skipped."""
+
+    def matches(self, header: Sequence[object], cols: list[Column]) -> bool:
+        return openclinic.looks_like_openclinic(header, cols)
+
+    def translate(
+        self, table: list[tuple[object, ...]], cols: list[Column], skip_bad: bool
+    ) -> Translated | ReadResult:
+        converted, found = openclinic.convert(table, cols)
+        problems = [RowProblem(*p) for p in found]
+        # No translated sheet at all (required columns missing): refuse the file even when bad
+        # rows are skipped, since there is no row to keep.
+        if problems and (not skip_bad or not converted):
+            return ReadResult([], problems)
+        return Translated(converted, problems)
+
+
+@dataclass(frozen=True)
+class ResearchExportLayout:
+    """The UR-CMHS research export: past deliveries of several hospitals, with their outcomes."""
+
+    facility_keys: frozenset[str]  # the uploader's hospital: its name and model facility key
+
+    def matches(self, header: Sequence[object], cols: list[Column]) -> bool:
+        return research_export.looks_like_research_export(header)
+
+    def translate(
+        self, table: list[tuple[object, ...]], cols: list[Column], skip_bad: bool
+    ) -> Translated | ReadResult:
+        converted, found, outcomes, other = research_export.convert(
+            table, cols, set(self.facility_keys)
+        )
+        problems = [RowProblem(*p) for p in found]
+        if not outcomes and not problems:
+            return _file_problem(
+                "The file has no deliveries of this hospital "
+                f"({other} rows of other hospitals were left out)."
+            )
+        return Translated(converted, problems, outcomes, other, max_past=None)
+
+
+def layouts(facility_keys: set[str] | None = None) -> tuple[SheetLayout, ...]:
+    """The accepted layouts in the order they are tried; the template takes what is left."""
+    return (
+        ResearchExportLayout(frozenset(facility_keys or ())),
+        OpenClinicLayout(),
+        TemplateLayout(),
+    )
+
+
+def _body(table: list[tuple[object, ...]]) -> list[tuple[int, tuple[object, ...]]]:
+    """The non-blank rows under the header, with their Excel row numbers."""
+    return [
+        (n, cells) for n, cells in enumerate(table[1:], start=2) if any(cell_text(c) for c in cells)
+    ]
+
+
+def _parse_rows(
+    body: list[tuple[int, tuple[object, ...]]],
+    cols: list[Column],
+    index: dict[str, int],
+    specs: list[DetailSpec],
+    zone: ZoneInfo,
+    now: datetime,
+    max_past: timedelta | None,
+) -> tuple[list[tuple[int, Parsed]], list[RowProblem]]:
+    """Every row through form.parse, and the problems found in each."""
+    labels = {c.field: c.label for c in cols}
+    rows: list[tuple[int, Parsed]] = []
+    problems: list[RowProblem] = []
+    for n, cells in body:
+        values = row_values(cols, index, cells)
+        parsed, errors = parse(values, specs, zone, now, max_past=max_past)
+        problems += _row_problems(n, values, errors, labels)
+        rows.append((n, parsed))
+    return rows, problems
+
+
 def read_table(
     table: list[tuple[object, ...]],
     specs: list[DetailSpec],
@@ -181,52 +297,27 @@ def read_table(
     skip_bad: bool = False,
     facility_keys: set[str] | None = None,
 ) -> ReadResult:
-    """The header and rows of a sheet (or of a JSON batch), in the template, OpenClinic or
-    research-export layout."""
+    """The header and rows of a sheet (or of a JSON batch), in any of the accepted layouts."""
     if not table:
         return _file_problem("The file has no header row.")
     cols = columns(specs)
-    outcomes: dict[int, tuple[str, datetime]] = {}
-    other = 0
-    max_past = MAX_PAST
-    early: list[RowProblem] = []
-    if research_export.looks_like_research_export(table[0]):
-        table, found, outcomes, other = research_export.convert(table, cols, facility_keys or set())
-        early = [RowProblem(*p) for p in found]
-        max_past = None  # past deliveries
-        if not outcomes and not early:
-            return _file_problem(
-                "The file has no deliveries of this hospital "
-                f"({other} rows of other hospitals were left out)."
-            )
-    elif openclinic.looks_like_openclinic(table[0], cols):
-        table, found = openclinic.convert(table, cols)
-        if found and not skip_bad:
-            return ReadResult([], [RowProblem(*p) for p in found])
-        early = [RowProblem(*p) for p in found]
-    index, problems = header_index(cols, table[0], ignore_unknown=skip_bad)
-    if problems:
-        return ReadResult([], problems)
-    problems = early
-    body = [
-        (n, cells) for n, cells in enumerate(table[1:], start=2) if any(cell_text(c) for c in cells)
-    ]
+    layout = next(lay for lay in layouts(facility_keys) if lay.matches(table[0], cols))
+    sheet = layout.translate(table, cols, skip_bad)
+    if isinstance(sheet, ReadResult):
+        return sheet
+    index, header_problems = header_index(cols, sheet.table[0], ignore_unknown=skip_bad)
+    if header_problems:
+        return ReadResult([], header_problems)
+    body = _body(sheet.table)
     if len(body) > MAX_ROWS:
         return _file_problem(f"At most {MAX_ROWS} rows can be imported at once.")
     if not body:
         return _file_problem("The file has no admissions to import.")
-    labels = {c.field: c.label for c in cols}
-    rows: list[tuple[int, Parsed]] = []
-    bad_rows = {p.row for p in problems}
-    for n, cells in body:
-        values = row_values(cols, index, cells)
-        parsed, errors = parse(values, specs, zone, now, max_past=max_past)
-        found = _row_problems(n, values, errors, labels)
-        problems += found
-        if found:
-            bad_rows.add(n)
-        rows.append((n, parsed))
+    rows, row_problems = _parse_rows(body, cols, index, specs, zone, now, sheet.max_past)
+    problems = sheet.problems + row_problems
+    outcomes, other = sheet.outcomes, sheet.other_hospitals
     if skip_bad:
+        bad_rows = {p.row for p in problems}
         kept = [(n, p) for n, p in rows if n not in bad_rows]
         return ReadResult(kept, problems, {n: outcomes[n] for n, _ in kept if n in outcomes}, other)
     return ReadResult([] if problems else rows, problems, outcomes, other)

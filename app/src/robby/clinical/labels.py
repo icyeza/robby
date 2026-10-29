@@ -1,6 +1,6 @@
 """Words for the clinical pages: Robson group names, condition labels, option lists.
 
-Copy rules (ui-mockups design §7): the readiness signal never sits near "risk", "should" or
+Copy rules: the readiness signal never sits near "risk", "should" or
 "indicated"; the probability always appears under its Robson group."""
 
 from __future__ import annotations

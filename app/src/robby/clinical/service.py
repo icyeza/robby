@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session, aliased
@@ -23,6 +24,7 @@ from robby.clinical.form import Parsed, omissions_of
 from robby.errors import NotAllowed, NotFound
 from robby.facilities.admission_codes import next_admission_code
 from robby.models import (
+    DEFAULT_READINESS_CUT_PERCENT,
     Admission,
     AdmissionSource,
     AppUser,
@@ -65,26 +67,16 @@ def classify_parsed(parsed: Parsed, rule_set: Any) -> tuple[Any, dict[str, Any]]
     return cls.classify_inputs(inputs, rule_set)
 
 
-def save_admission(
+def _admission_row(
     db: Session,
-    runtime: scoring.ModelRuntime,
     user: AppUser,
+    facility: Facility,
     parsed: Parsed,
-    *,
-    supersedes: Admission | None = None,
-    source: AdmissionSource = AdmissionSource.FORM,
-) -> Saved:
-    """Raises cls.NoRuleSetError when no rule set is active. Does not commit.
-
-    The patient number and name go on the admission row only: never into scoring, the
-    classification trace or the event payload."""
-    assert user.facility_id is not None and parsed.admitted_at is not None
-    facility = db.get(Facility, user.facility_id)
-    assert facility is not None
-    rule_row, engine_rules = cls.active_rule_set(db)
-    result, trace = classify_parsed(parsed, engine_rules)
-
-    admission = Admission(
+    supersedes: Admission | None,
+    source: AdmissionSource,
+) -> Admission:
+    assert parsed.admitted_at is not None
+    return Admission(
         id=uuid.uuid4(),
         facility_id=facility.id,
         code=next_admission_code(db, facility),
@@ -108,13 +100,14 @@ def save_admission(
         glucose_mmol=parsed.glucose,
         details=dict(parsed.details),
     )
-    db.add(admission)
-    db.flush()
-    for field, reason in omissions_of(parsed):
-        db.add(ScreeningOmission(admission_id=admission.id, field=field, reason=reason))
-    classification = Classification(
+
+
+def _classification_row(
+    admission: Admission, rule_set_id: Any, result: Any, trace: dict[str, Any]
+) -> Classification:
+    return Classification(
         admission_id=admission.id,
-        rule_set_id=rule_row.id,
+        rule_set_id=rule_set_id,
         status=ClassificationStatus(result.status),
         robson_group=result.group,
         subgroup=result.subgroup,
@@ -123,48 +116,67 @@ def save_admission(
         conflict_fields=list(result.conflict_fields),
         trace=trace,
     )
-    db.add(classification)
-    db.flush()
 
-    prediction = None
-    state = "not_resolved"
+
+@dataclass(frozen=True)
+class _Scoring:
+    prediction: Prediction | None
+    state: str  # as Saved.scoring_state
     model_label: str | None = None
-    if result.status == "resolved":
-        # NFR7: whatever goes wrong here, the admission and its classification are kept.
-        model = runtime.active(db, rule_row.id, engine_rules)
-        if model is None:
-            state = "no_model"
-        else:
-            model_label = model.row.version_label
-            try:
-                with db.begin_nested():
-                    scored = scoring.score(model, parsed, facility)
-                    prediction = Prediction(
-                        admission_id=admission.id,
-                        model_id=scored.model_id,
-                        mode=PredictionMode.ACTIVE,
-                        probability=scored.probability,
-                        feature_vector=scored.feature_vector,
-                    )
-                    db.add(prediction)
-                    db.flush()
-                state = "ok"
-            except Exception as exc:
-                logger.warning("Scoring failed for %s: %s", admission.code, type(exc).__name__)
-                prediction = None
-                state = "failed"
 
-    if result.status == "resolved":
-        _score_shadows(db, runtime, admission, parsed, facility, rule_row.id, engine_rules)
 
+def _score_active(
+    db: Session,
+    runtime: scoring.ModelRuntime,
+    admission: Admission,
+    parsed: Parsed,
+    facility: Facility,
+    rule_set_id: Any,
+    engine_rules: Any,
+) -> _Scoring:
+    """Score a resolved admission with the active model. NFR7: whatever goes wrong here, the
+    admission and its classification are kept (the prediction is in a savepoint)."""
+    model = runtime.active(db, rule_set_id, engine_rules)
+    if model is None:
+        return _Scoring(None, "no_model")
+    label = model.row.version_label
+    try:
+        with db.begin_nested():
+            scored = scoring.score(model, parsed, facility)
+            prediction = Prediction(
+                admission_id=admission.id,
+                model_id=scored.model_id,
+                mode=PredictionMode.ACTIVE,
+                probability=scored.probability,
+                feature_vector=scored.feature_vector,
+            )
+            db.add(prediction)
+            db.flush()
+    except Exception as exc:
+        logger.warning("Scoring failed for %s: %s", admission.code, type(exc).__name__)
+        return _Scoring(None, "failed", label)
+    return _Scoring(prediction, "ok", label)
+
+
+def _saved_payload(
+    admission: Admission,
+    facility: Facility,
+    parsed: Parsed,
+    result: Any,
+    rule_set_label: str,
+    scored: _Scoring,
+    source: AdmissionSource,
+    supersedes: Admission | None,
+) -> dict[str, Any]:
+    """The event payload: codes and the classification, never the patient's number or name."""
     payload: dict[str, Any] = {
         "code": admission.code,
         "facility": facility.code,
         "status": result.status,
         "group": result.group,
-        "rule_set": rule_row.version_label,
-        "scoring": state,
-        "model": model_label,
+        "rule_set": rule_set_label,
+        "scoring": scored.state,
+        "model": scored.model_label,
         "omitted": sorted(f.value for f, _ in omissions_of(parsed)),
     }
     if source is AdmissionSource.IMPORT:
@@ -172,14 +184,52 @@ def save_admission(
     if supersedes is not None:
         payload["supersedes"] = supersedes.code
         payload["reason"] = parsed.correction_reason
+    return payload
+
+
+def save_admission(
+    db: Session,
+    runtime: scoring.ModelRuntime,
+    user: AppUser,
+    parsed: Parsed,
+    *,
+    supersedes: Admission | None = None,
+    source: AdmissionSource = AdmissionSource.FORM,
+) -> Saved:
+    """Raises cls.NoRuleSetError when no rule set is active. Does not commit.
+
+    The patient number and name go on the admission row only: never into scoring, the
+    classification trace or the event payload."""
+    assert user.facility_id is not None and parsed.admitted_at is not None
+    facility = db.get(Facility, user.facility_id)
+    assert facility is not None
+    rule_row, engine_rules = cls.active_rule_set(db)
+    result, trace = classify_parsed(parsed, engine_rules)
+
+    admission = _admission_row(db, user, facility, parsed, supersedes, source)
+    db.add(admission)
+    db.flush()
+    for field, reason in omissions_of(parsed):
+        db.add(ScreeningOmission(admission_id=admission.id, field=field, reason=reason))
+    classification = _classification_row(admission, rule_row.id, result, trace)
+    db.add(classification)
+    db.flush()
+
+    scored = _Scoring(None, "not_resolved")
+    if result.status == "resolved":
+        scored = _score_active(db, runtime, admission, parsed, facility, rule_row.id, engine_rules)
+        _score_shadows(db, runtime, admission, parsed, facility, rule_row.id, engine_rules)
+
     events.append(
         db,
         user,
         "admission.corrected" if supersedes else "admission.created",
         ("admission", admission.id),
-        payload,
+        _saved_payload(
+            admission, facility, parsed, result, rule_row.version_label, scored, source, supersedes
+        ),
     )
-    return Saved(admission, classification, prediction, state)
+    return Saved(admission, classification, scored.prediction, scored.state)
 
 
 def import_admissions(
@@ -212,6 +262,27 @@ def import_admissions(
         },
     )
     return saved
+
+
+def record_import_outcomes(
+    db: Session,
+    user: AppUser,
+    rows: list[tuple[int, Parsed]],
+    saved: list[Saved],
+    outcomes: dict[int, tuple[str, datetime]],
+    zone: ZoneInfo,
+) -> int:
+    """Record the delivery outcome that came with an imported row (the research export holds
+    them, in local time). Does not commit. Returns how many were recorded."""
+    recorded = 0
+    for (n, _), s in zip(rows, saved, strict=True):
+        if n in outcomes:
+            mode, delivered = outcomes[n]
+            record_outcome(
+                db, user, s.admission, DeliveryMode(mode), delivered.replace(tzinfo=zone)
+            )
+            recorded += 1
+    return recorded
 
 
 def _score_shadows(
@@ -257,6 +328,13 @@ def _score_shadows(
 # ---------------------------------------------------------------- reading
 
 
+def facility_of(db: Session, user: AppUser) -> Facility:
+    """The signed-in user's own facility."""
+    facility = db.get(Facility, user.facility_id) if user.facility_id else None
+    assert facility is not None
+    return facility
+
+
 def get_admission(db: Session, user: AppUser, code: str) -> Admission:
     """The facility's own admission, or NotFound (also for another facility's code)."""
     row = db.scalar(
@@ -269,6 +347,11 @@ def get_admission(db: Session, user: AppUser, code: str) -> Admission:
 
 def replacement_of(db: Session, admission: Admission) -> Admission | None:
     return db.scalar(select(Admission).where(Admission.supersedes_id == admission.id))
+
+
+def replaced_admission(db: Session, admission: Admission) -> Admission | None:
+    """The admission this one corrected, if any."""
+    return db.get(Admission, admission.supersedes_id) if admission.supersedes_id else None
 
 
 def chain_outcome(db: Session, admission: Admission) -> DeliveryOutcome | None:
@@ -318,6 +401,19 @@ def activated_at(db: Session, model: ModelVersion) -> datetime:
         .limit(1)
     )
     return at or model.registered_at
+
+
+def has_active_model(db: Session) -> bool:
+    return (
+        db.scalar(select(ModelVersion.id).where(ModelVersion.state == ModelState.ACTIVE))
+        is not None
+    )
+
+
+def readiness_cut_of(db: Session, admission: Admission) -> int:
+    """The readiness cut (percent) of the admission's facility."""
+    facility = db.get(Facility, admission.facility_id)
+    return facility.readiness_cut_percent if facility else DEFAULT_READINESS_CUT_PERCENT
 
 
 def omissions_for(db: Session, admission: Admission) -> list[ScreeningOmission]:
@@ -385,23 +481,49 @@ def find_patients(db: Session, user: AppUser, query: str) -> list[RecentRow]:
     return rows_of(db, admissions)
 
 
+def _groups(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, int | None]:
+    """Robson group by admission, in one query; the latest classification wins, as in
+    classification_of."""
+    return {
+        c.admission_id: c.robson_group
+        for c in db.scalars(
+            select(Classification)
+            .where(Classification.admission_id.in_(ids))
+            .order_by(Classification.created_at)
+        )
+    }
+
+
+def _percents(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Readiness percent by admission, in one query; the latest active prediction wins, as in
+    prediction_of."""
+    return {
+        p.admission_id: percent_of(p.probability)
+        for p in db.scalars(
+            select(Prediction)
+            .where(Prediction.admission_id.in_(ids), Prediction.mode == PredictionMode.ACTIVE)
+            .order_by(Prediction.created_at)
+        )
+    }
+
+
+def summaries_of(
+    db: Session, admissions: list[Admission]
+) -> dict[uuid.UUID, tuple[int | None, int | None]]:
+    """(Robson group, readiness percent) of each admission, in two queries for the whole list."""
+    ids = [a.id for a in admissions]
+    if not ids:
+        return {}
+    groups, percents = _groups(db, ids), _percents(db, ids)
+    return {i: (groups.get(i), percents.get(i)) for i in ids}
+
+
 def rows_of(db: Session, admissions: list[Admission]) -> list[RecentRow]:
     """Each admission with its Robson group, readiness percent, chain outcome and replacement."""
     if not admissions:
         return []
     ids = [a.id for a in admissions]
-    groups = {
-        c.admission_id: c.robson_group
-        for c in db.scalars(select(Classification).where(Classification.admission_id.in_(ids)))
-    }
-    percents = {
-        p.admission_id: percent_of(p.probability)
-        for p in db.scalars(
-            select(Prediction).where(
-                Prediction.admission_id.in_(ids), Prediction.mode == PredictionMode.ACTIVE
-            )
-        )
-    }
+    groups, percents = _groups(db, ids), _percents(db, ids)
     replaced = {
         r.supersedes_id: r.code
         for r in db.scalars(select(Admission).where(Admission.supersedes_id.in_(ids)))

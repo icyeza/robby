@@ -22,6 +22,10 @@ class NoRuleSetError(Exception):
     """No rule set is active: nothing can be classified or saved."""
 
 
+NOTHING_SAVED = "No Robson rule set is active, so nothing can be saved."
+NOTHING_SAVED_ASK_ADMIN = f"{NOTHING_SAVED} Tell your system administrator."
+
+
 def active_rule_set(db: Session) -> tuple[RuleSet, EngineRuleSet]:
     row = db.scalar(select(RuleSet).where(RuleSet.is_active))
     if row is None:
@@ -71,6 +75,7 @@ def stored_trace(result: ClassificationResult, inputs: RobsonInputs) -> dict[str
     }
 
 
+ALL_GROUPS = 10  # every Robson group still possible: nothing decided yet
 DEFAULT_FOOT = "Classification only. The clinician sees the readiness signal once this is saved."
 
 
@@ -146,6 +151,74 @@ def _why(entries: list[dict[str, Any]], name: str, candidates: list[int]) -> str
     return " ".join(parts)
 
 
+def _resolved_panel(
+    view: PanelView,
+    entries: list[dict[str, Any]],
+    inputs: dict[str, Any],
+    group: int,
+    subgroup: str | None,
+) -> None:
+    version = view.rule_set_version
+    view.heading = f"Group {group}" + (f" · subgroup {subgroup}" if subgroup else "")
+    view.rows = _resolved_rows(entries, inputs, group, subgroup)
+    view.group_name = labels.GROUP_NAMES.get(group, "")
+    view.subgroup_name = labels.SUBGROUP_NAMES.get(subgroup or "", "")
+    view.footnote = f"WHO Robson rule set {version}."
+    if not any(e["group"] == group and e["field"] == "onset_of_labour" for e in entries):
+        view.footnote += f" Onset of labour does not affect group {group}."
+
+
+def _conflict_panel(
+    view: PanelView, inputs: dict[str, Any], conflict: list[str], consistency_name: str | None
+) -> None:
+    view.heading = "No group assigned"
+    pairs = [f"{labels.FIELD_NAMES[f].lower()} {_plain(inputs.get(f))}".strip() for f in conflict]
+    view.need_title = "These can't both be true"
+    view.need_value = " and ".join(pairs) if pairs else "The entered values contradict each other"
+    view.need_why = labels.CONSISTENCY_TEXT.get(
+        consistency_name or "nulliparous_with_previous_cs",
+        "Check which value is wrong.",
+    )
+    view.need_fields = list(conflict)
+    view.footnote = f"Consistency check (rule set {view.rule_set_version})."
+    view.foot = view.footnote
+
+
+def _open_panel(
+    view: PanelView,
+    entries: list[dict[str, Any]],
+    inputs: dict[str, Any],
+    cands: list[int],
+    resolving: list[str],
+) -> None:
+    """Several groups still possible: which they are, and the fields that would decide."""
+    nothing_known = len(cands) >= ALL_GROUPS
+    view.heading = "Group " + " or ".join(str(g) for g in cands) if cands else "No group yet"
+    view.rows = [] if nothing_known else _open_rows(entries, inputs, cands)
+    if nothing_known:
+        view.state = "empty"
+        view.heading = "No group yet"
+    view.need_fields = list(resolving)
+    if len(resolving) == 1:
+        view.need_title = "One field decides it"
+        view.need_value = labels.FIELD_NAMES[resolving[0]]
+        view.need_why = _why(entries, resolving[0], cands)
+    elif resolving:
+        view.need_title = "Fields that decide it"
+        view.need_value = ", ".join(labels.FIELD_NAMES[f] for f in resolving)
+    view.footnote = ""
+    onset_matters = any(e["field"] == "onset_of_labour" and e["group"] in cands for e in entries)
+    if (
+        view.state == "partial"
+        and inputs.get("onset_of_labour") is None
+        and cands
+        and not onset_matters
+    ):
+        word = "group" if len(cands) == 1 else "groups"
+        names = " or ".join(str(g) for g in cands)
+        view.foot = f"Onset of labour is not needed here: it does not change {word} {names}."
+
+
 def panel_view(
     *,
     status: str,
@@ -159,62 +232,15 @@ def panel_view(
 ) -> PanelView:
     entries = list((trace or {}).get("entries", []))
     inputs = dict((trace or {}).get("inputs", {}))
-    version = str((trace or {}).get("rule_set_version", ""))
     cands = sorted(candidates)
     view = PanelView(state=status, group=group, subgroup=subgroup, candidates=cands)
-    view.rule_set_version = version
+    view.rule_set_version = str((trace or {}).get("rule_set_version", ""))
     if status == "resolved" and group is not None:
-        view.heading = f"Group {group}" + (f" · subgroup {subgroup}" if subgroup else "")
-        view.rows = _resolved_rows(entries, inputs, group, subgroup)
-        view.group_name = labels.GROUP_NAMES.get(group, "")
-        view.subgroup_name = labels.SUBGROUP_NAMES.get(subgroup or "", "")
-        view.footnote = f"WHO Robson rule set {version}."
-        if not any(e["group"] == group and e["field"] == "onset_of_labour" for e in entries):
-            view.footnote += f" Onset of labour does not affect group {group}."
+        _resolved_panel(view, entries, inputs, group, subgroup)
     elif status == "conflict":
-        view.heading = "No group assigned"
-        pairs = [
-            f"{labels.FIELD_NAMES[f].lower()} {_plain(inputs.get(f))}".strip() for f in conflict
-        ]
-        view.need_title = "These can't both be true"
-        view.need_value = (
-            " and ".join(pairs) if pairs else "The entered values contradict each other"
-        )
-        view.need_why = labels.CONSISTENCY_TEXT.get(
-            consistency_name or "nulliparous_with_previous_cs",
-            "Check which value is wrong.",
-        )
-        view.need_fields = list(conflict)
-        view.footnote = f"Consistency check (rule set {version})."
-        view.foot = view.footnote
+        _conflict_panel(view, inputs, conflict, consistency_name)
     else:
-        view.candidates = cands
-        view.heading = "Group " + " or ".join(str(g) for g in cands) if cands else "No group yet"
-        view.rows = _open_rows(entries, inputs, cands) if len(cands) < 10 else []
-        if len(cands) >= 10:
-            view.state = "empty"
-            view.heading = "No group yet"
-        view.need_fields = list(resolving)
-        if len(resolving) == 1:
-            view.need_title = "One field decides it"
-            view.need_value = labels.FIELD_NAMES[resolving[0]]
-            view.need_why = _why(entries, resolving[0], cands)
-        elif resolving:
-            view.need_title = "Fields that decide it"
-            view.need_value = ", ".join(labels.FIELD_NAMES[f] for f in resolving)
-        view.footnote = ""
-        onset_matters = any(
-            e["field"] == "onset_of_labour" and e["group"] in cands for e in entries
-        )
-        if (
-            view.state == "partial"
-            and inputs.get("onset_of_labour") is None
-            and cands
-            and not onset_matters
-        ):
-            word = "group" if len(cands) == 1 else "groups"
-            names = " or ".join(str(g) for g in cands)
-            view.foot = f"Onset of labour is not needed here: it does not change {word} {names}."
+        _open_panel(view, entries, inputs, cands, resolving)
     return view
 
 

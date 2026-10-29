@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time
 
 from robby.clinical import openclinic
@@ -49,6 +50,9 @@ GA_BAND = "gestational age at time of labor"
 # Used only when the exact week is missing. "35 - 37 Weeks" straddles the 37-week Robson cut, so
 # it is left unknown; the others are on one side of it.
 GA_BANDS = {"less than 34 weeks": 33, "38 - 40 weeks": 39, "over 40 weeks": 41}
+GA_WEEKS = (20, 45)  # plausible completed weeks at delivery; anything else is left unknown
+HEIGHT_CM = (120, 200)
+WEIGHT_KG = (30, 200)
 
 
 def _key(value: object) -> str:
@@ -73,7 +77,8 @@ def _weeks(text: str) -> int | None:
     """Completed weeks from free text such as '39', '39weeks, 2days' or '39+2'."""
     m = re.match(r"\s*(\d{1,2})(?!\d)", text)
     weeks = int(m.group(1)) if m else None
-    return weeks if weeks is not None and 20 <= weeks <= 45 else None
+    low, high = GA_WEEKS
+    return weeks if weeks is not None and low <= weeks <= high else None
 
 
 def _when(day: object, clock: object) -> datetime | None:
@@ -97,97 +102,137 @@ def _when(day: object, clock: object) -> datetime | None:
     return datetime.combine(day, at.replace(second=0, microsecond=0))
 
 
+@dataclass(frozen=True)
+class _Layout:
+    """Where each export column is, and where each template field goes."""
+
+    at: dict[str, int]  # export header (compared lowercase) -> column index
+    position: dict[str, int]  # template field -> output column index
+    labels: dict[str, dict[str, str]]  # template field -> stored value -> label
+    details: set[str]  # the optional model inputs the template has
+
+
+class _Record:
+    """One delivery of the export being written into the template layout."""
+
+    def __init__(self, layout: _Layout, cells: tuple[object, ...]) -> None:
+        self.layout = layout
+        self.cells = cells
+        self.out: list[object] = [None] * len(layout.position)
+
+    def raw(self, name: str) -> object:
+        i = self.layout.at.get(name)
+        return self.cells[i] if i is not None and i < len(self.cells) else None
+
+    def text(self, name: str) -> str:
+        return _key(self.raw(name))
+
+    def put(self, field: str, value: object) -> None:
+        self.out[self.layout.position[field]] = value
+
+    def put_choice(self, field: str, stored: str) -> None:
+        self.put(field, self.layout.labels[field].get(stored, stored))
+
+
+def _robson_inputs(record: _Record) -> None:
+    """Gestational age, previous births, fetuses, presentation and onset, where the export says."""
+    ga = _weeks(record.text(COLUMNS["ga"])) or GA_BANDS.get(record.text(GA_BAND))
+    if ga is not None:
+        record.put("gestational_age_weeks", ga)
+    cs = _count(record.text(COLUMNS["cs"]))
+    vaginal = _count(record.text(COLUMNS["vaginal"]))
+    if cs is not None:
+        record.put("previous_cs_count", cs)
+    if cs is not None and vaginal is not None:
+        record.put("parity", cs + vaginal)
+    multiple = record.text(COLUMNS["multiple"])
+    if multiple in ("yes", "no"):
+        record.put_choice("plurality", "2" if multiple == "yes" else "1")
+    if record.text(COLUMNS["malpresentation"]) == "no":  # "yes" gives no type: left unknown
+        record.put_choice("fetal_presentation", "cephalic")
+    onset = ONSET.get(record.text(COLUMNS["onset"]))
+    if onset:
+        record.put_choice("onset_of_labour", onset)
+
+
+def _body_size(record: _Record) -> None:
+    """Height and weight, when the template asks for them; an implausible value is left out."""
+    for name, field, (low, high) in (
+        ("height", "d_height_cm", HEIGHT_CM),
+        ("weight", "d_weight_kg", WEIGHT_KG),
+    ):
+        text = openclinic._whole_text(record.raw(COLUMNS[name]))
+        try:
+            value = float(text)
+        except ValueError:
+            continue
+        if field in record.layout.details and low <= value <= high:
+            record.put(field, text)
+
+
+def _outcome(record: _Record, when: datetime) -> Outcome | None:
+    mode = record.text(COLUMNS["mode"])
+    if mode == "c-section":
+        return ("cesarean", when)
+    if mode == "vaginal":
+        assisted = record.text(COLUMNS["instrumental"]) == "yes"
+        return ("vaginal_assisted" if assisted else "vaginal_spontaneous", when)
+    return None
+
+
+def _translate(
+    record: _Record, n: int
+) -> tuple[tuple[object, ...], None, Outcome | None] | tuple[None, Problem, None]:
+    """The delivery as a template row and its outcome, or the problem that leaves it out."""
+    upi = str(record.raw(UPI) or "").strip()
+    if not upi:
+        return None, (n, "Patient UPI", "No patient UPI."), None
+    record.put("patient_number", "UR-" + hashlib.sha256(upi.encode()).hexdigest()[:10].upper())
+    record.put("patient_name", NAME)
+    when = _when(record.raw(DELIVERY_DATE), record.raw(DELIVERY_TIME))
+    if when is None:
+        return None, (n, "Date of Delivery", "Not a date."), None
+    record.put("admitted_at", when.strftime("%Y-%m-%d %H:%M"))
+    record.put("maternal_age", openclinic._whole_text(record.raw(COLUMNS["age"])))
+    _robson_inputs(record)
+    _body_size(record)
+    # The export holds no blood pressure, proteinuria or glucose.
+    for reason_field in ("bp_reason", "protein_reason", "glucose_reason"):
+        record.put(reason_field, openclinic.UNMEASURED_REASON)
+    return tuple(record.out), None, _outcome(record, when)
+
+
 def convert(
     table: list[tuple[object, ...]], cols: list[Column], facility_keys: set[str]
 ) -> tuple[list[tuple[object, ...]], list[Problem], dict[int, Outcome], int]:
     """The rows of the uploader's hospital in the template layout, the problems found, the
     outcome of each kept row (by Excel row number) and the number of other hospitals' rows left
     out. Rows of other hospitals become blank rows so row numbers in messages stay right."""
-    header = table[0]
-    at = {_key(h): i for i, h in reversed(list(enumerate(header))) if h is not None}
+    layout = _Layout(
+        at={_key(h): i for i, h in reversed(list(enumerate(table[0]))) if h is not None},
+        position={c.field: i for i, c in enumerate(cols)},
+        labels={c.field: dict(c.options or ()) for c in cols},
+        details={c.field for c in cols if c.field.startswith("d_")},
+    )
     wanted = {_key(k) for k in facility_keys if k}
-    out_header = tuple(c.label for c in cols)
-    position = {c.field: i for i, c in enumerate(cols)}
-    labels = {c.field: dict(c.options or ()) for c in cols}
-    details = {c.field for c in cols if c.field.startswith("d_")}
-    out: list[tuple[object, ...]] = [out_header]
+    blank = tuple(None for _ in cols)
+    out: list[tuple[object, ...]] = [tuple(c.label for c in cols)]
     problems: list[Problem] = []
     outcomes: dict[int, Outcome] = {}
     other = 0
     for n, cells in enumerate(table[1:], start=2):
-
-        def raw(name: str, cells: tuple[object, ...] = cells) -> object:
-            i = at.get(name)
-            return cells[i] if i is not None and i < len(cells) else None
-
-        def text(name: str) -> str:
-            return _key(raw(name))
-
-        blank = tuple(None for _ in out_header)
+        record = _Record(layout, cells)
         if not any(c is not None and str(c).strip() for c in cells):
             out.append(blank)
             continue
-        if text(HOSPITAL) not in wanted:
+        if record.text(HOSPITAL) not in wanted:
             other += 1
             out.append(blank)
             continue
-        row: list[object] = [None] * len(out_header)
-
-        def put(field: str, value: object, row: list[object] = row) -> None:
-            row[position[field]] = value
-
-        def shown(field: str, stored: str) -> str:
-            return labels[field].get(stored, stored)
-
-        upi = str(raw(UPI) or "").strip()
-        if not upi:
-            problems.append((n, "Patient UPI", "No patient UPI."))
-            out.append(blank)
-            continue
-        put("patient_number", "UR-" + hashlib.sha256(upi.encode()).hexdigest()[:10].upper())
-        put("patient_name", NAME)
-        when = _when(raw(DELIVERY_DATE), raw(DELIVERY_TIME))
-        if when is None:
-            problems.append((n, "Date of Delivery", "Not a date."))
-            out.append(blank)
-            continue
-        put("admitted_at", when.strftime("%Y-%m-%d %H:%M"))
-        put("maternal_age", openclinic._whole_text(raw(COLUMNS["age"])))
-        ga = _weeks(text(COLUMNS["ga"])) or GA_BANDS.get(text(GA_BAND))
-        if ga is not None:
-            put("gestational_age_weeks", ga)
-        cs = _count(text(COLUMNS["cs"]))
-        vaginal = _count(text(COLUMNS["vaginal"]))
-        if cs is not None:
-            put("previous_cs_count", cs)
-        if cs is not None and vaginal is not None:
-            put("parity", cs + vaginal)
-        multiple = text(COLUMNS["multiple"])
-        if multiple in ("yes", "no"):
-            put("plurality", shown("plurality", "2" if multiple == "yes" else "1"))
-        if text(COLUMNS["malpresentation"]) == "no":  # "yes" gives no type: left unknown
-            put("fetal_presentation", shown("fetal_presentation", "cephalic"))
-        onset = ONSET.get(text(COLUMNS["onset"]))
-        if onset:
-            put("onset_of_labour", shown("onset_of_labour", onset))
-        for name, field, (low, high) in (
-            ("height", "d_height_cm", (120, 200)),
-            ("weight", "d_weight_kg", (30, 200)),
-        ):
-            try:
-                value = float(openclinic._whole_text(raw(COLUMNS[name])))
-            except ValueError:
-                continue
-            if field in details and low <= value <= high:  # an implausible value is left out
-                put(field, openclinic._whole_text(raw(COLUMNS[name])))
-        # The export holds no blood pressure, proteinuria or glucose.
-        for reason_field in ("bp_reason", "protein_reason", "glucose_reason"):
-            put(reason_field, "Other")
-        mode = text(COLUMNS["mode"])
-        if mode == "c-section":
-            outcomes[n] = ("cesarean", when)
-        elif mode == "vaginal":
-            assisted = text(COLUMNS["instrumental"]) == "yes"
-            outcomes[n] = ("vaginal_assisted" if assisted else "vaginal_spontaneous", when)
-        out.append(tuple(row))
+        row, problem, outcome = _translate(record, n)
+        if problem is not None:
+            problems.append(problem)
+        if outcome is not None:
+            outcomes[n] = outcome
+        out.append(blank if row is None else row)
     return out, problems, outcomes, other

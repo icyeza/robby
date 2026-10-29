@@ -2,18 +2,18 @@
 
 The scorer is loaded once per process and cached by (active model id, rule set id). Each request
 re-reads only the id of the active model (one indexed query), so a promotion needs no restart.
-A model that cannot be loaded is remembered for 30 seconds and never blocks saving."""
+A model that cannot be loaded is remembered for FAILURE_MEMORY_SECONDS and never blocks saving."""
 
 from __future__ import annotations
 
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import robson_serving
 from robson_engine.ruleset import RuleSet as EngineRuleSet
@@ -36,10 +36,30 @@ GA_BANDS = (
 )
 
 
+class Scorer(Protocol):
+    """What the app uses of a loaded model: robson_serving's Scorer, or a stub in tests."""
+
+    @property
+    def schema(self) -> Any: ...  # the feature schema; its optional inputs become form fields
+
+    def build_row(self, admission: Mapping[str, Any]) -> dict[str, Any]: ...
+
+    def model_frame(self, rows: Sequence[Mapping[str, Any]]) -> Any: ...
+
+    def predict(self, frame: Any) -> Sequence[float]: ...
+
+
+class ScorerLoader(Protocol):
+    """Loads a packaged model for one rule set (robson_serving.load by default). Injected so the
+    tests can serve a stub model without an artefact on disk."""
+
+    def __call__(self, path: Path, *, rule_set: EngineRuleSet) -> Scorer: ...
+
+
 @dataclass(frozen=True)
 class ActiveModel:
     row: ModelVersion
-    scorer: Any
+    scorer: Scorer
 
 
 @dataclass(frozen=True)
@@ -83,11 +103,11 @@ def canonical(parsed: Parsed, facility: Facility) -> dict[str, Any]:
 class ModelRuntime:
     """Process-wide cache of the loaded scorer."""
 
-    def __init__(self, artefact_dir: Path, loader: Callable[..., Any] | None = None) -> None:
+    def __init__(self, artefact_dir: Path, loader: ScorerLoader | None = None) -> None:
         self.artefact_dir = artefact_dir
-        self._loader = loader or robson_serving.load
+        self._loader: ScorerLoader = loader or robson_serving.load
         self._lock = threading.Lock()
-        self._scorers: dict[tuple[Any, Any], Any] = {}
+        self._scorers: dict[tuple[Any, Any], Scorer] = {}
         self._failed: dict[tuple[Any, Any], float] = {}
 
     def active(
