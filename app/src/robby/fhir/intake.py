@@ -20,7 +20,7 @@ from robby.clinical import importer, scoring, service
 from robby.clinical.form import DetailSpec, Parsed
 from robby.clinical.xlsx_template import columns
 from robby.fhir.adapter import BundleRead, Issue, Mapped
-from robby.models import Admission, AdmissionSource, AppUser, Facility
+from robby.models import Admission, AdmissionSource, AppUser, Facility, patient_number_index
 
 FIRST_ROW = 2  # the importer numbers rows as a sheet: the header is row 1
 
@@ -101,13 +101,20 @@ def save(
     entry, plus one event for the Bundle. Raises classify.NoRuleSetError when no rule set is
     active. Does not commit: the caller commits once, so the Bundle is saved whole or not at all.
     Returns one outcome per Encounter, in Bundle order."""
-    assert user.facility_id is not None
-    scan = importer.find_duplicates(db, user.facility_id, checked.rows)
-    repeated = {p.row for p in scan.in_file}
+    facility_id = user.facility_id
+    assert facility_id is not None
+    scan = importer.find_duplicates(db, facility_id, checked.rows)
+    # A patient is the same patient by blind index, as find_duplicates compares her; without a
+    # number nothing says two Encounters are the same woman, so neither is a repeat.
+    keys = {
+        n: (patient_number_index(facility_id, p.patient_number), p.admitted_at)
+        for n, p in checked.rows
+        if p.patient_number
+    }
+    repeated = {p.row for p in scan.in_file if p.row in keys}
     first_row: dict[tuple[object, ...], int] = {}
     by_row: dict[int, Outcome] = {}
     for n, parsed in checked.rows:
-        key = (parsed.patient_number, parsed.admitted_at)
         encounter = checked.admissions[n - FIRST_ROW].encounter
         if n in scan.recorded:
             a = scan.recorded[n]
@@ -118,10 +125,11 @@ def save(
             percent = service.percent_of(saved.prediction.probability) if saved.prediction else None
             group = saved.classification.robson_group
             by_row[n] = Outcome(encounter, saved.admission, group, percent, "created")
-        first_row.setdefault(key, n)
-    for n, parsed in checked.rows:
+        if n in keys:
+            first_row.setdefault(keys[n], n)
+    for n, _ in checked.rows:
         if n in repeated:
-            earlier = by_row[first_row[(parsed.patient_number, parsed.admitted_at)]]
+            earlier = by_row[first_row[keys[n]]]
             by_row[n] = Outcome(
                 checked.admissions[n - FIRST_ROW].encounter,
                 earlier.admission,

@@ -166,6 +166,19 @@ def test_an_encounter_repeated_in_the_bundle_is_saved_once(
     assert count(db) == 1
 
 
+def test_a_repeat_is_found_by_blind_index_whatever_the_case_of_the_number(
+    client: TestClient, feed: dict[str, Any], db: Session
+) -> None:
+    when = hours_ago(feed, 2)
+    again = admission("p2", "e2", "fx-1", when)
+    response = post(client, feed, bundle(*admission("p1", "e1", "FX-1", when), *again))
+    assert response.status_code == 201
+    assert [e["response"]["status"] for e in response.json()["entry"]] == ["201 Created", "200 OK"]
+    saved = db.scalars(select(Admission)).one()
+    assert saved.patient_number == "FX-1" and saved.patient_number_index is not None
+    assert post(client, feed, bundle(*again)).json()["entry"][0]["response"]["status"] == "200 OK"
+
+
 def test_a_condition_fills_the_models_input(
     client: TestClient, feed: dict[str, Any], db: Session
 ) -> None:

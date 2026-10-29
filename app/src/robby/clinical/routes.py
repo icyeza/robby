@@ -94,7 +94,7 @@ def _form_page(
     status_code: int = 200,
     fragment: bool = False,
     saved: Admission | None = None,
-    fetch_note: Any = None,
+    fetch_note: object = None,  # robby.fhir.routes.FetchNote
 ) -> Response:
     specs = _specs(request, db)
     settings = request.app.state.settings

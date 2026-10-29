@@ -108,8 +108,10 @@ token's lab technician gives the facility. `Content-Type: application/fhir+json`
 | `415` | another content type |
 | `503` | no active Robson rule set |
 
-All or nothing, like the import API. An admission whose patient number and admission time are
-already recorded for the facility is skipped (status `200 OK`, the existing admission's location),
+All or nothing, like the import API. The patient number and name are stored encrypted like those
+of any admission (same save path, see `robby/crypto.py`). An admission whose patient number
+(compared by blind index, so case and spacing do not matter) and admission time are already
+recorded for the facility is skipped (status `200 OK`, the existing admission's location),
 so a Bundle can be sent twice. Events: `admissions.imported`, `api_import.rejected`,
 `api_import.nothing_new`, with `channel: fhir`; no patient identifier in any payload.
 
