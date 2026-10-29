@@ -1,4 +1,4 @@
-"""Monitoring library (spec §18), consumed by the application's reconciliation job.
+"""Monitoring library, consumed by the application's reconciliation job.
 
 - :func:`reference_distributions` / :func:`feature_drift`: per-feature bucket proportions of
   the training population (written to ``reference_distributions.json``; aggregates only, no
@@ -24,10 +24,15 @@ from typing import Any, NamedTuple
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from sklearn.metrics import roc_auc_score
 
 from robson_serving.features import CATEGORICAL, NUMERIC, is_missing
-from robson_serving.stats import ConvergenceError, clip_probabilities, fit_logistic, logit
+from robson_serving.stats import (
+    ConvergenceError,
+    clip_probabilities,
+    fit_logistic,
+    logit,
+    roc_auc,
+)
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -166,13 +171,12 @@ def _observed_reference(entry: Mapping[str, Any]) -> tuple[list[Mapping[str, Any
     if "missing" in entry:
         return list(entry["buckets"]), float(entry["missing"])
     missing = math.nan
-    buckets = []
+    buckets: list[dict[str, Any]] = []
     for b in entry["buckets"]:
         members = [m for m in b["members"] if m != MISSING_KEY]
-        if len(members) < len(b["members"]):
-            if not members:
-                missing = float(b["proportion"])
-                continue
+        if b["members"] and not members:  # the missing key stood alone in this bucket
+            missing = float(b["proportion"])
+            continue
         buckets.append({"members": members, "proportion": float(b["proportion"])})
     if math.isnan(missing) and not any(MISSING_KEY in b["members"] for b in entry["buckets"]):
         missing = 0.0
@@ -240,10 +244,6 @@ def feature_drift(
     return pd.DataFrame(rows, columns=list(DRIFT_COLUMNS))
 
 
-def _auc(y: FloatArray, p: FloatArray) -> float:
-    return float(roc_auc_score(y, p))
-
-
 def _brier(y: FloatArray, p: FloatArray) -> float:
     return float(np.mean((p - y) ** 2))
 
@@ -293,7 +293,7 @@ def _stratum_row(
     return {
         **row,
         "status": OK,
-        "auc": _safe(_auc, y, p),
+        "auc": _safe(roc_auc, y, p),
         "calibration_in_the_large": _safe(_citl, y, p),
         "calibration_slope": _safe(_slope, y, p),
         "brier": _brier(y, p),
@@ -314,7 +314,7 @@ def rolling_metrics(
     Input columns: ``prob``, ``cs``, ``scored_at`` and each stratum column (default
     ``facility`` and ``robson_group``; a missing level is ``"missing"``). A stratum with fewer
     than ``min_n`` rows or fewer than ``min_events`` in either outcome class is
-    ``"insufficient"`` with NaN metrics (spec §11.4).
+    ``"insufficient"`` with NaN metrics: too few rows or events for a stable estimate.
     """
     recent = _in_window(df, window, now)
     rows = [_stratum_row("all", "all", recent, min_n, min_events)]
@@ -322,9 +322,7 @@ def rolling_metrics(
         levels = recent[column].astype(object).where(recent[column].notna(), MISSING_LEVEL)
         labels = levels.astype(str)
         for level in sorted(labels.unique()):
-            rows.append(
-                _stratum_row(column, level, recent.loc[labels == level], min_n, min_events)
-            )
+            rows.append(_stratum_row(column, level, recent.loc[labels == level], min_n, min_events))
     return pd.DataFrame(rows, columns=list(ROLLING_COLUMNS))
 
 
@@ -357,7 +355,7 @@ def calibration_drift(
 
 
 SHADOW_METRICS: dict[str, Metric] = {
-    "auc": _auc,
+    "auc": roc_auc,
     "brier": _brier,
     "log_loss": _log_loss,
     "calibration_in_the_large": _citl,

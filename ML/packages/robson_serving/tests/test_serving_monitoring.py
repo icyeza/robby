@@ -160,9 +160,7 @@ def test_rolling_metrics_match_a_direct_computation_in_the_window() -> None:
     assert overall["auc"] == pytest.approx(roc_auc_score(y, p))
     assert overall["brier"] == pytest.approx(np.mean((p - y) ** 2))
     assert overall["calibration_slope"] == pytest.approx(fit_logistic(y, logit(p))[1])
-    assert overall["calibration_in_the_large"] == pytest.approx(
-        fit_logistic(y, offset=logit(p))[0]
-    )
+    assert overall["calibration_in_the_large"] == pytest.approx(fit_logistic(y, offset=logit(p))[0])
     assert set(out.loc[out["stratum"] == "facility", "level"]) == {"FAC_A", "FAC_B"}
     assert set(out.loc[out["stratum"] == "robson_group", "level"]) == {"1", "3", "5"}
 

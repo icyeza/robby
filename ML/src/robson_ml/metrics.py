@@ -14,10 +14,9 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import statsmodels.api as sm
-from scipy.stats import rankdata
 from sklearn.metrics import average_precision_score
 
-from robson_serving.stats import clip_probabilities, logit
+from robson_serving.stats import clip_probabilities, logit, roc_auc
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -58,6 +57,9 @@ def _validate(y: npt.ArrayLike, p: npt.ArrayLike) -> tuple[FloatArray, FloatArra
     return y_arr, p_arr
 
 
+# Two fit_logistic exist on purpose: robson_serving.stats has a numpy-only Newton-Raphson
+# (serving must not depend on statsmodels) that raises on separation, where this statsmodels
+# GLM still returns estimates the training-side reports rely on.
 def fit_logistic(
     y: npt.ArrayLike, x: npt.ArrayLike | None = None, offset: npt.ArrayLike | None = None
 ) -> FloatArray:
@@ -79,15 +81,6 @@ def fit_logistic(
     return np.asarray(model.fit().params, dtype=np.float64)
 
 
-def _auc(y: FloatArray, p: FloatArray) -> float:
-    """Mann-Whitney AUC (ties count one half)."""
-    positive = y == 1
-    n_pos = int(positive.sum())
-    n_neg = len(y) - n_pos
-    ranks = rankdata(p)
-    return float((ranks[positive].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
-
-
 def auc_with_ci(
     y: npt.ArrayLike, p: npt.ArrayLike, n_boot: int = AUC_BOOTSTRAP, seed: int = 0
 ) -> AucCI:
@@ -106,10 +99,10 @@ def auc_with_ci(
     boots = np.empty(n_boot)
     for b in range(n_boot):
         rows = np.concatenate([rng.choice(pos, size=len(pos)), rng.choice(neg, size=len(neg))])
-        boots[b] = _auc(y_boot, p_arr[rows])
+        boots[b] = roc_auc(y_boot, p_arr[rows])
     tail = (1 - AUC_CI_LEVEL) / 2 * 100
     low, high = np.percentile(boots, [tail, 100 - tail])
-    return AucCI(auc=_auc(y_arr, p_arr), ci_low=float(low), ci_high=float(high))
+    return AucCI(auc=roc_auc(y_arr, p_arr), ci_low=float(low), ci_high=float(high))
 
 
 def calibration_slope(y: npt.ArrayLike, p: npt.ArrayLike) -> float:

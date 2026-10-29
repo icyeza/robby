@@ -33,6 +33,27 @@ def sigmoid(z: npt.ArrayLike) -> FloatArray:
     return np.asarray(0.5 * (1.0 + np.tanh(0.5 * values)), dtype=np.float64)
 
 
+def roc_auc(y: npt.ArrayLike, p: npt.ArrayLike) -> float:
+    """ROC AUC as the Mann-Whitney statistic on average ranks (ties count one half).
+
+    Equal to scikit-learn's ``roc_auc_score`` and much cheaper inside bootstrap loops. Raises
+    ValueError unless both outcome classes are present.
+    """
+    y_arr = np.asarray(y, dtype=np.float64)
+    p_arr = np.asarray(p, dtype=np.float64)
+    positive = y_arr == 1
+    n_pos = int(positive.sum())
+    n_neg = len(y_arr) - n_pos
+    if n_pos == 0 or n_neg == 0:
+        raise ValueError("AUC needs at least one positive and one negative outcome")
+    _, tie_group, tie_counts = np.unique(p_arr, return_inverse=True, return_counts=True)
+    average_rank = np.cumsum(tie_counts) - (tie_counts - 1) / 2.0
+    ranks = average_rank[tie_group]
+    return float((ranks[positive].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+
+
+# robson_ml.metrics keeps a statsmodels GLM version for training-side reports: serving must not
+# depend on statsmodels, and the two differ on separated or near-separated outcomes.
 def fit_logistic(
     y: npt.ArrayLike, x: npt.ArrayLike | None = None, offset: npt.ArrayLike | None = None
 ) -> FloatArray:
