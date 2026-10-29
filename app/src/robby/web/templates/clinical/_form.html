@@ -45,6 +45,7 @@
             <label for="i-patient_number">Patient number</label>
             <input id="i-patient_number" name="patient_number" type="text" value="{{ values.get('patient_number', '') }}" data-required="patient number" autocomplete="off">
             <div class="help">Hospital patient or file number</div>
+            {% if fhir_pull %}<button class="btn btn-s btn-sm fetch-btn" type="submit" formaction="/admissions/fetch" formnovalidate hx-post="/admissions/fetch" hx-target="#adm-form-wrap" hx-swap="outerHTML">Fetch from hospital system</button>{% endif %}
             {% if errors.get('patient_number') %}<div class="msg">{{ errors['patient_number'] }}</div>{% endif %}
           </div>
           <div class="f{% if errors.get('patient_name') %} conflict{% endif %}" id="f-patient_name">
@@ -53,6 +54,7 @@
             {% if errors.get('patient_name') %}<div class="msg">{{ errors['patient_name'] }}</div>{% endif %}
           </div>
         </div>
+        {% if fetch_note %}{% include "fhir/_fetch_note.html" %}{% endif %}
       </div>
     </section>
 

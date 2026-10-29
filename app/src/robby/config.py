@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     timezone: str = "Africa/Kigali"
     demo: bool = False
     reconcile_interval_minutes: int = Field(default=15, ge=0)
+    # FHIR (FR8). Unset base URL: no "Fetch from hospital system" button (see robby/fhir).
+    fhir_base_url: str | None = None
+    fhir_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    fhir_patient_id_system: str | None = None
 
     @field_validator("database_url")
     @classmethod

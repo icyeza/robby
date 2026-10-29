@@ -94,6 +94,7 @@ def _form_page(
     status_code: int = 200,
     fragment: bool = False,
     saved: Admission | None = None,
+    fetch_note: Any = None,
 ) -> Response:
     specs = _specs(request, db)
     settings = request.app.state.settings
@@ -123,6 +124,9 @@ def _form_page(
         plurality_options=labels.PLURALITY_OPTIONS,
         onset_options=labels.ONSET_OPTIONS,
         proteinuria_options=labels.PROTEINURIA_OPTIONS,
+        # FHIR pull mode (robby/fhir): the "Fetch from hospital system" button and its result.
+        fhir_pull=bool(settings.fhir_base_url),
+        fetch_note=fetch_note,
     )
 
 

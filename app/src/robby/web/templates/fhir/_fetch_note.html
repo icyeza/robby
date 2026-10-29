@@ -1,0 +1,9 @@
+{# After "Fetch from hospital system" (robby/fhir/routes.py): what was filled in, or why nothing was. #}
+{% if fetch_note.ok %}
+<div class="notice fetch-note" role="status" id="fetch-note"><b>✓ {{ fetch_note.message }}</b>
+  {% if fetch_note.unused %}<p>Not filled in, enter these by hand:</p>
+  <ul>{% for line in fetch_note.unused %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% else %}
+<div class="notice warn fetch-note" role="alert" id="fetch-note"><b>Nothing fetched.</b> {{ fetch_note.message }} The form still works as usual.</div>
+{% endif %}
