@@ -62,7 +62,7 @@ if [ ! -f "$ENV_FILE" ]; then
     mkdir -p /etc/robby
     SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
     cat >"$ENV_FILE" <<EOF
-ROBBY_DATABASE_URL=$DB_URL
+ROBBY_DATABASE_URL="$DB_URL"
 ROBBY_SECRET_KEY=$SECRET
 ROBBY_SECURE_COOKIES=true
 ROBBY_DEMO=true
