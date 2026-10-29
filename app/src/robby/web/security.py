@@ -4,10 +4,12 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from starlette.requests import ClientDisconnect
 
 from robby.web.errors import error_page
 
 logger = logging.getLogger("robby")
+CLIENT_CLOSED_REQUEST = 499  # nginx's status for a request the client abandoned
 
 CSP = (
     "default-src 'self'; base-uri 'self'; form-action 'self'; "
@@ -28,6 +30,11 @@ def install_security_headers(app: FastAPI) -> None:
     ) -> Response:
         try:
             response = await call_next(request)
+        except ClientDisconnect:
+            # The browser gave up on the request (htmx drops a live-panel preview when the next
+            # one is sent): nobody is waiting for an answer, and nothing went wrong here.
+            logger.info("Client left during %s %s", request.method, request.url.path)
+            response = Response(status_code=CLIENT_CLOSED_REQUEST)
         except Exception:
             logger.exception("Unhandled error on %s %s", request.method, request.url.path)
             response = error_page(request, 500)

@@ -1,16 +1,19 @@
 """The page shell: layout, security headers, styled error pages, navigation and helpers."""
 
+import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection
+from starlette.requests import ClientDisconnect
 
 from robby.config import Settings
 from robby.models import AppUser, Facility, Role
 from robby.web.nav import NAV, Who, landing_path, nav_for, who_for
-from robby.web.security import CSP
+from robby.web.security import CLIENT_CLOSED_REQUEST, CSP
 from robby.web.templating import format_local
 from tests.webutil import make_test_app
 
@@ -61,6 +64,19 @@ def test_server_errors_are_styled_and_hide_details(app: FastAPI) -> None:
     assert "Something went wrong" in response.text
     assert "secret internals" not in response.text and "Traceback" not in response.text
     assert response.headers["content-security-policy"] == CSP
+
+
+def test_a_client_that_leaves_mid_request_is_not_a_server_error(
+    app: FastAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    def gone() -> None:
+        raise ClientDisconnect()
+
+    app.add_api_route("/gone", gone, methods=["POST"])
+    with TestClient(app) as test_client:
+        response = test_client.post("/gone")
+    assert response.status_code == CLIENT_CLOSED_REQUEST
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
 
 def test_navigation_matches_the_mockup_extension() -> None:
