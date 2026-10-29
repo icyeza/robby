@@ -8,7 +8,8 @@ recording the delivery outcome.
   screening test needs a value or "not measured" with a reason.
 - `importer.py`: Excel and JSON batches. A `SheetLayout` (template, `openclinic.py`,
   `research_export.py`) translates the sheet into the template layout, then every row goes
-  through `form.parse`. `find_duplicates` spots repeated patient number + admission time.
+  through `form.parse`. `find_duplicates` spots repeated patient number + admission time
+  (compared by blind index, `robby.crypto`).
 - `api.py`: `POST /api/v1/admissions/import` for scripts (bearer token, all-or-nothing).
 - `classify.py`: classification against the active rule set (`robson_engine`) and the panel
   view shared by the live form and the result page.

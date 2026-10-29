@@ -6,9 +6,13 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from sqlalchemy import Date, DateTime, MetaData, Text, func, text
+from sqlalchemy import Date, DateTime, Dialect, LargeBinary, MetaData, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, mapped_column
+from sqlalchemy.sql import operators
+from sqlalchemy.types import TypeDecorator
+
+from robby import crypto
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
@@ -24,6 +28,34 @@ UUIDPK = Annotated[
     mapped_column(primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")),
 ]
 CreatedAt = Annotated[datetime, mapped_column(server_default=func.now())]
+
+
+class EncryptedText(TypeDecorator[str]):
+    """Text held as AES-256-GCM ciphertext in a bytea column (robby.crypto); Python sees str.
+    `column` is the associated data, so a value only decrypts in the column it was written to.
+    Each write uses a fresh nonce, so SQL cannot compare values: anything but IS NULL raises."""
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def __init__(self, column: str) -> None:
+        super().__init__()
+        self.column = column
+
+    class comparator_factory(TypeDecorator.Comparator[str]):  # noqa: N801 (SQLAlchemy's name)
+        def operate(self, op: Any, *other: Any, **kwargs: Any) -> Any:
+            if op in (operators.is_, operators.is_not):
+                return super().operate(op, *other, **kwargs)
+            raise TypeError("encrypted column: compare decrypted values in Python instead")
+
+        def reverse_operate(self, op: Any, other: Any, **kwargs: Any) -> Any:
+            raise TypeError("encrypted column: compare decrypted values in Python instead")
+
+    def process_bind_param(self, value: str | None, dialect: Dialect) -> bytes | None:
+        return None if value is None else crypto.active().encrypt(value, self.column)
+
+    def process_result_value(self, value: bytes | None, dialect: Dialect) -> str | None:
+        return None if value is None else crypto.active().decrypt(bytes(value), self.column)
 
 
 class Base(DeclarativeBase):

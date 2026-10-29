@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import (
     ARRAY,
+    CHAR,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -17,12 +18,14 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
-from robby.models.base import UUIDPK, Base, CreatedAt
+from robby import crypto
+from robby.models.base import UUIDPK, Base, CreatedAt, EncryptedText
 from robby.models.enums import (
     AdmissionSource,
     ClassificationStatus,
@@ -44,6 +47,11 @@ class AdmissionCounter(Base):
     created_at: Mapped[CreatedAt]
 
 
+# Associated data of the two encrypted columns (robby.crypto); changing either orphans stored rows.
+PATIENT_NUMBER_COLUMN = "admission.patient_number"
+PATIENT_NAME_COLUMN = "admission.patient_name"
+
+
 class Admission(Base):
     __tablename__ = "admission"
     __table_args__ = (
@@ -57,6 +65,10 @@ class Admission(Base):
             "source = 'fhir' OR (patient_number IS NOT NULL AND patient_name IS NOT NULL)",
             name="entry_has_patient",
         ),
+        CheckConstraint(
+            "(patient_number IS NULL) = (patient_number_index IS NULL)",
+            name="patient_number_indexed",
+        ),
         Index("ix_admission_facility_id_admitted_at", "facility_id", "admitted_at"),
     )
 
@@ -69,9 +81,12 @@ class Admission(Base):
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admission.id"), index=True)
     correction_reason: Mapped[str | None]
     # The hospital's patient or file number and the patient's name. Clinicians see both, the
-    # facility administrator the number only; neither enters scoring or the event log.
-    patient_number: Mapped[str | None]
-    patient_name: Mapped[str | None]
+    # facility administrator the number only; neither enters scoring or the event log. Stored
+    # encrypted (migration 0007); patient_number_index is the blind index that finds a number,
+    # set on insert by _index_patient_number below.
+    patient_number: Mapped[str | None] = mapped_column(EncryptedText(PATIENT_NUMBER_COLUMN))
+    patient_name: Mapped[str | None] = mapped_column(EncryptedText(PATIENT_NAME_COLUMN))
+    patient_number_index: Mapped[str | None] = mapped_column(CHAR(64), index=True)
     parity: Mapped[int | None]
     previous_cs_count: Mapped[int | None]
     plurality: Mapped[int | None]
@@ -87,6 +102,20 @@ class Admission(Base):
         default=dict, server_default=text("'{}'::jsonb")
     )
     created_at: Mapped[CreatedAt]
+
+
+def patient_number_index(facility_id: uuid.UUID, number: str) -> str:
+    """The blind index stored for patient number `number` at facility `facility_id`."""
+    return crypto.active().blind_index(facility_id, number)
+
+
+@event.listens_for(Admission, "before_insert")
+def _index_patient_number(mapper: Mapper[Admission], connection: Any, target: Admission) -> None:
+    """Every insert derives the index from the number, so no caller can forget or forge it."""
+    number = target.patient_number
+    target.patient_number_index = (
+        None if number is None else patient_number_index(target.facility_id, number)
+    )
 
 
 class ScreeningOmission(Base):

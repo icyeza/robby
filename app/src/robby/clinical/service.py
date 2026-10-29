@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, aliased
 
 from robby import events
@@ -39,6 +39,7 @@ from robby.models import (
     Prediction,
     PredictionMode,
     ScreeningOmission,
+    patient_number_index,
 )
 from robby.timeutil import utcnow
 
@@ -447,38 +448,57 @@ def recent(db: Session, user: AppUser, now: datetime | None = None) -> list[Rece
     return rows_of(db, admissions)
 
 
-def _like(text: str) -> str:
-    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+def _search_hits(
+    candidates: list[tuple[uuid.UUID, str | None, str | None]],
+    words: list[str],
+    word_indexes: list[str],
+    whole_index: str,
+) -> list[uuid.UUID]:
+    """Ids, in candidate order, where the whole query is the number, or every word is part of
+    the name (any case) or is the number; at most SEARCH_LIMIT."""
+    folded = [w.casefold() for w in words]
+    hits: list[uuid.UUID] = []
+    for admission_id, name, index in candidates:
+        haystack = (name or "").casefold()
+        if index == whole_index or all(
+            w in haystack or index == wi for w, wi in zip(folded, word_indexes, strict=True)
+        ):
+            hits.append(admission_id)
+            if len(hits) == SEARCH_LIMIT:
+                break
+    return hits
 
 
 def find_patients(db: Session, user: AppUser, query: str) -> list[RecentRow]:
-    """Current admissions of the user's facility whose patient name or number contains `query`
-    (any case), newest first, at most SEARCH_LIMIT. Replaced admissions are left out."""
+    """Current admissions of the user's facility whose patient name contains each word of `query`
+    (any case) or whose patient number is the query or one of its words (whole number, any case
+    and spacing), newest first, at most SEARCH_LIMIT. Replaced admissions are left out.
+
+    Identifiers are encrypted: numbers are compared by blind index, and the names of the
+    facility's current admissions are decrypted here to be searched."""
     words = query.split()
-    if not words:
+    if not words or user.facility_id is None:
         return []
+    facility_id = user.facility_id
     newer = aliased(Admission)
-    statement = select(Admission).where(
-        Admission.facility_id == user.facility_id,
-        ~exists().where(newer.supersedes_id == Admission.id),
-    )
-    for word in words:
-        pattern = _like(word)
-        statement = statement.where(
-            or_(
-                Admission.patient_name.ilike(pattern, escape="\\"),
-                Admission.patient_number.ilike(pattern, escape="\\"),
-            )
+    candidates = db.execute(
+        select(Admission.id, Admission.patient_name, Admission.patient_number_index)
+        .where(
+            Admission.facility_id == facility_id,
+            ~exists().where(newer.supersedes_id == Admission.id),
         )
-    admissions = list(
-        db.scalars(
-            statement.order_by(Admission.admitted_at.desc(), Admission.created_at.desc()).limit(
-                SEARCH_LIMIT
-            )
-        )
+        .order_by(Admission.admitted_at.desc(), Admission.created_at.desc())
+    ).all()
+    hits = _search_hits(
+        [(row[0], row[1], row[2]) for row in candidates],
+        words,
+        [patient_number_index(facility_id, w) for w in words],
+        patient_number_index(facility_id, query),
     )
-    return rows_of(db, admissions)
+    if not hits:
+        return []
+    by_id = {a.id: a for a in db.scalars(select(Admission).where(Admission.id.in_(hits)))}
+    return rows_of(db, [by_id[i] for i in hits])
 
 
 def _groups(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, int | None]:

@@ -37,7 +37,7 @@ synthetic packaged artefact and runs the golden check.
 
 ## Data model
 
-Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0006` in `migrations/versions/`. The diagram shows
+Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0007` in `migrations/versions/`. The diagram shows
 each table's primary key (PK), foreign keys (FK), unique columns (UK) and main business columns,
 not every column. Source: [`docs/diagrams/erd.mmd`](../docs/diagrams/erd.mmd); image:
 [`erd.png`](../docs/diagrams/erd.png).
@@ -88,8 +88,9 @@ erDiagram
         uuid entered_by FK "required unless source is fhir"
         uuid supersedes_id FK "set on a correction"
         text correction_reason "required with supersedes_id"
-        text patient_number "required unless source is fhir"
-        text patient_name "required unless source is fhir"
+        bytea patient_number "encrypted; required unless source is fhir"
+        bytea patient_name "encrypted; required unless source is fhir"
+        char patient_number_index "blind index of the number"
         int parity
         int previous_cs_count
         int plurality
@@ -234,11 +235,13 @@ How to read it:
   `correction_reason`; the original stays as it was. A delivery
   outcome stays on the admission version it was recorded on, and reconciliation follows the
   `supersedes_id` chain to match it to every prediction of that chain.
-- **Patient identifiers live only on `admission`.** `patient_number` and `patient_name` are required
-  for form and Excel-import entries (check `entry_has_patient`; rows saved before migration `0003`
-  are not re-checked). They are never copied into the event log, the feature vector or any export.
-  Lab technicians and clinicians see the name and number, facility administrators the number only,
-  and the other roles neither.
+- **Patient identifiers live only on `admission`, encrypted.** `patient_number` and `patient_name`
+  are required for form and Excel-import entries (check `entry_has_patient`; rows saved before
+  migration `0003` are not re-checked). Both columns hold AES-256-GCM ciphertext, and
+  `patient_number_index` a keyed hash of the number for exact search (see
+  [Encryption at rest](#encryption-at-rest)). They are never copied into the event log, the
+  feature vector or any export. Lab technicians and clinicians see the name and number, facility
+  administrators the number only, and the other roles neither.
 - `event_log.entity_type` / `entity_id` name the row an event is about (an admission, a model, a
   facility) without a foreign key; each entry's `hash` covers the previous entry's `hash`.
 - A partial unique index allows only one `model_version` in state `active` and only one active
@@ -274,7 +277,7 @@ sequenceDiagram
         W->>R: classify the six Robson inputs
         R-->>W: status, group, candidates, trace
         W->>DB: next code from admission_counter
-        W->>DB: INSERT admission (facility from the session, patient number and name)
+        W->>DB: INSERT admission (facility from the session, patient number and name encrypted)
         W->>DB: INSERT screening_omission rows (any not-measured reasons)
         W->>DB: INSERT classification (rule_set_id, status, group, trace)
         opt group resolved
@@ -297,7 +300,7 @@ sequenceDiagram
     Note over L,E: Excel import (facility administrator): POST /admissions/import parses every row.<br/>Rows with a problem are left out and listed, the others go through the same<br/>save_admission (source import) in one transaction, plus one admissions.imported event
 
     C->>W: GET /patients?q=name or number
-    W->>DB: admissions of the user's own facility only
+    W->>DB: admissions of the user's own facility only (number by blind index, name decrypted)
     C->>W: GET /admissions/{code}
     W-->>C: read-only page: Robson group, explanation, readiness signal
     C->>W: POST /admissions/{code}/outcome (mode of delivery)
@@ -319,8 +322,8 @@ the exact feature vector that was scored and the `model_version` that scored it,
 can be reproduced later. The artefact is loaded once per process and checked against its manifest;
 each save only re-reads which model is active, so promoting a model needs no restart. Past
 predictions are read back by admission code, and only within the signed-in user's own facility.
-Patient name and number are stored on the admission but are not model inputs and never reach the
-feature vector or the event log.
+Patient name and number are stored, encrypted, on the admission but are not model inputs and never
+reach the feature vector or the event log.
 
 ## Settings
 
@@ -331,6 +334,7 @@ Environment variables win over the file.
 |---|---|---|
 | `ROBBY_DATABASE_URL` | (required) | `postgresql+psycopg://user:password@host:5432/robby` |
 | `ROBBY_SECRET_KEY` | (required) | At least 32 bytes; signs CSRF tokens. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `ROBBY_FIELD_KEY` | (required) | 32 random bytes, base64url; encrypts patient numbers and names. `uv run robby-admin keys generate`. Never change it on a database that holds patients, and back it up apart from the database ([Encryption at rest](#encryption-at-rest)) |
 | `ROBBY_SECURE_COOKIES` | `true` | `false` only for local development over plain http |
 | `ROBBY_SESSION_IDLE_MINUTES` | `30` | Session ends after this long without a request |
 | `ROBBY_SESSION_ABSOLUTE_HOURS` | `12` | Session ends this long after sign-in regardless |
@@ -378,8 +382,8 @@ and put `postgresql+psycopg://robby:robby-dev-only@localhost:5432/robby` in `ROB
 
 ### Then, for either option
 
-1. Settings: `cp .env.example .env`, then set the two URLs, a fresh `ROBBY_SECRET_KEY` and
-   `ROBBY_SECURE_COOKIES=false`.
+1. Settings: `cp .env.example .env`, then set the two URLs, a fresh `ROBBY_SECRET_KEY`, a
+   `ROBBY_FIELD_KEY` from `uv run robby-admin keys generate` and `ROBBY_SECURE_COOKIES=false`.
 2. Install, migrate, load the rule set, create the first account, run:
    ```bash
    cd app
@@ -406,6 +410,7 @@ git clone <repository> robby && cd robby/app
 uv sync --no-dev
 export ROBBY_DATABASE_URL=postgresql+psycopg://robby:<password>@localhost:5432/robby
 export ROBBY_SECRET_KEY=<48 random url-safe characters>
+export ROBBY_FIELD_KEY=<output of: uv run robby-admin keys generate>   # back it up separately
 uv run robby-admin db upgrade
 uv run robby-admin rules load
 uv run robby-admin create-system-admin --username admin
@@ -420,7 +425,8 @@ The production role does not need `CREATEDB`.
 | Command | What it does |
 |---|---|
 | `uv run robby-admin create-system-admin --username NAME` | Creates a system administrator (the first account); asks for the password twice (at least 10 characters). `--password` skips the prompt, but then the password is visible in the shell history |
-| `uv run robby-admin db upgrade [REVISION]` | `alembic upgrade` (default `head`) against `ROBBY_DATABASE_URL` |
+| `uv run robby-admin db upgrade [REVISION]` | `alembic upgrade` (default `head`) against `ROBBY_DATABASE_URL`; migration `0007` needs `ROBBY_FIELD_KEY` |
+| `uv run robby-admin keys generate` | Prints a new `ROBBY_FIELD_KEY` (for a new installation only) |
 | `uv run robby-admin rules load [--path FILE]` | Validates a rule set YAML (structure and checksum) and makes it the active rule set; refuses changed content under an existing version label |
 | `uv run robby-admin reconcile` | Joins every prediction to the outcome of its admission (following corrections) in `reconciled_outcome`; safe to repeat; logs one `reconciliation.run` event with counts |
 | `uv run robby-admin events verify` | Recomputes the event-log hash chain; exit code 1 if it is broken |
@@ -546,7 +552,40 @@ that allows only the application's own origin, and rendered pages contain no inl
 or event handler (a test enforces it). Access is checked on the server for each role and
 facility, never only by hiding links. Every state change appends an entry to a hash-chained event
 log, and database triggers refuse updates and deletes on that log and on clinical rows, so
-history can be verified with `robby-admin events verify` but not edited.
+history can be verified with `robby-admin events verify` but not edited. Patient numbers and names
+are encrypted in the database (below).
+
+### Encryption at rest
+
+- **What**: `admission.patient_number` and `admission.patient_name`, the only identifiers the
+  database holds. The rest is clinical data without identifiers (the event log, feature vectors
+  and exports never carry them) and is not encrypted by the application; database backups and
+  disks still need their own protection.
+- **How** (`src/robby/crypto.py`): AES-256-GCM. Each value is stored as `bytea`: version byte
+  `0x01`, a random 12-byte nonce, then ciphertext and tag. The column name is the associated
+  data, so a value moved to the other column, altered, or written under another key fails to
+  decrypt instead of reading as something else. The ORM type `EncryptedText` encrypts on write
+  and decrypts on read, so the code works with plain strings; SQL comparisons on these columns
+  raise an error rather than silently matching nothing.
+- **Keys**: one master key, `ROBBY_FIELD_KEY` (32 random bytes, base64url, from
+  `robby-admin keys generate`). HKDF-SHA256 derives two separate subkeys from it, one for
+  encryption and one for the blind index. The key lives only in the environment or `app/.env`,
+  never in the database.
+- **Blind index and search**: `patient_number_index` is HMAC-SHA256 over the facility id and the
+  normalised number (trimmed, upper case, inner spaces collapsed), set on every insert and
+  enforced by check `patient_number_indexed`. The same number at two hospitals gives different
+  indexes, so rows cannot be linked across facilities by it. The trade-off: a number is found
+  only when typed whole (any case), never by a part of it. A name is found by any part of it:
+  the search decrypts the names of the signed-in user's facility's current admissions (a few
+  thousand rows) in the application and matches there. Import duplicate checks compare indexes.
+- **Losing the key loses the identifiers.** Without the key, numbers and names cannot be
+  recovered by anyone, including from backups. Back the key up separately from the database
+  backups (one backup holding both defeats the encryption). There is no key rotation: changing
+  the key of a database that holds patients makes their identifiers unreadable.
+- **Migration `0007`** encrypts the identifiers already stored and drops the plaintext columns.
+  It rewrites existing admission rows, so it disables the `admission_immutable` trigger for that
+  rewrite only and enables it again in the same transaction. It stops before changing anything
+  when `ROBBY_FIELD_KEY` is not set. Its downgrade decrypts back to text with the same key.
 
 ## Troubleshooting
 

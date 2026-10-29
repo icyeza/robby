@@ -282,8 +282,10 @@ def test_the_clinician_finds_a_patient_by_name_or_number(
 
     assert names("uwase") == {"Uwase"}
     assert names("MARIE uwa") == {"Uwase"}  # every word must match, any case, any order
-    assert names("rw-2000") == {"Mukamana"}
-    assert names("RW") == {"Uwase", "Mukamana", "Ingabire"}
+    assert names("rw-2000") == {"Mukamana"}  # the whole number, any case
+    assert names("RW-2000 grace") == {"Mukamana"}  # a number and a name word together
+    assert names("RW") == set()  # numbers are encrypted: no partial number matches
+    assert names("RW-20") == set()
     assert names("_") == {"Ingabire"}  # LIKE wildcards are matched literally
     assert names("%") == {"Ingabire"}
     assert names("Nobody") == set()

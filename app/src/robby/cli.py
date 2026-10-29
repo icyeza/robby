@@ -12,7 +12,7 @@ import typer
 from robson_engine import RuleSetError
 from sqlalchemy.orm import Session
 
-from robby import events
+from robby import crypto, events
 from robby.audit.cli_references import references_app
 from robby.auth import api_tokens
 from robby.config import get_settings
@@ -40,6 +40,8 @@ app.add_typer(references_app, name="references")
 app.add_typer(demo_app, name="demo")
 api_token_app = typer.Typer(no_args_is_help=True)
 app.add_typer(api_token_app, name="api-token")
+keys_app = typer.Typer(no_args_is_help=True)
+app.add_typer(keys_app, name="keys")
 
 
 @db_app.callback()
@@ -57,13 +59,20 @@ def _api_token() -> None:
     """Tokens for automated imports."""
 
 
+@keys_app.callback()
+def _keys() -> None:
+    """The key that encrypts patient identifiers."""
+
+
 @events_app.callback()
 def _events() -> None:
     """The event log."""
 
 
 def open_session() -> Session:
-    return get_sessionmaker(get_settings().database_url)()
+    settings = get_settings()
+    crypto.configure(settings.field_key_bytes)
+    return get_sessionmaker(settings.database_url)()
 
 
 @app.command("create-system-admin")
@@ -95,8 +104,17 @@ def db_upgrade(
     revision: Annotated[str, typer.Argument(help="Target revision.")] = "head",
 ) -> None:
     """Apply database migrations (alembic upgrade)."""
-    upgrade(get_settings().database_url, revision)
+    settings = get_settings()
+    crypto.configure(settings.field_key_bytes)  # migration 0007 encrypts stored identifiers
+    upgrade(settings.database_url, revision)
     typer.echo(f"Database upgraded to {revision}.")
+
+
+@keys_app.command("generate")
+def keys_generate() -> None:
+    """Print a new ROBBY_FIELD_KEY. Only for a new installation: changing the key of a database
+    that holds patients makes their identifiers unreadable."""
+    typer.echo(crypto.generate_key())
 
 
 @rules_app.command("load")

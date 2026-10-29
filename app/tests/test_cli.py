@@ -10,7 +10,7 @@ from sqlalchemy import Connection, select, text
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
-from robby import cli, events
+from robby import cli, crypto, events
 from robby.auth.passwords import verify_password
 from robby.config import Settings
 from robby.models import AppUser, Role, RuleSet
@@ -42,8 +42,16 @@ def rule_set_copy(settings: Settings, tmp_path: Path, old: str, new: str) -> Pat
 def test_help_lists_every_command() -> None:
     result = runner.invoke(cli.app, ["--help"])
     assert result.exit_code == 0
-    for name in ("create-system-admin", "db", "rules", "events"):
+    for name in ("create-system-admin", "db", "rules", "events", "keys"):
         assert name in result.output
+
+
+def test_keys_generate_prints_a_fresh_valid_key() -> None:
+    first, second = (runner.invoke(cli.app, ["keys", "generate"]) for _ in range(2))
+    assert first.exit_code == 0 and second.exit_code == 0
+    keys = [r.output.strip() for r in (first, second)]
+    assert keys[0] != keys[1]
+    assert all(len(crypto.decode_key(k)) == crypto.KEY_BYTES for k in keys)
 
 
 def test_create_system_admin(db: Session) -> None:

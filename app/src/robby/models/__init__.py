@@ -10,6 +10,7 @@ from robby.models.clinical import (
     DeliveryOutcome,
     ReconciledOutcome,
     ScreeningOmission,
+    patient_number_index,
 )
 from robby.models.enums import (
     FACILITY_ROLES,
@@ -64,5 +65,6 @@ __all__ = [
     "RuleSet",
     "ScreeningOmission",
     "UserSession",
+    "patient_number_index",
     "role_label",
 ]

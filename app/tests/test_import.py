@@ -441,3 +441,13 @@ def test_save_admission_marks_only_imports_in_the_event(
     form = {**GOOD, "admitted_at": now_text(settings)}
     assert client.post("/admissions", data={**form, "csrf_token": csrf}).status_code == 303
     assert "source" not in events_of(db, "admission.created")[0].payload
+
+
+def test_a_duplicate_is_found_whatever_the_case_of_the_number(db: Session) -> None:
+    facility = make_facility(db)
+    at = datetime(2026, 10, 18, 9, 30, tzinfo=ZONE)
+    stored = _existing(db, facility, "rw-7", at)
+    rows = read(make_xlsx(HEADER, [good_row("RW-7"), good_row("Rw-7")])).rows
+    scan = find_duplicates(db, facility.id, rows)
+    assert {n: a.code for n, a in scan.recorded.items()} == {2: stored.code, 3: stored.code}
+    assert scan.in_file == []

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from robby import crypto
 from robby.audit.national import router as national_router
 from robby.audit.routes import router as audit_router
 from robby.auth.routes import router as auth_router
@@ -29,6 +30,7 @@ from robby.web.templating import STATIC_DIR, build_templates
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    crypto.configure(settings.field_key_bytes)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

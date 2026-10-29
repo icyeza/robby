@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from robby.crypto import FieldKeyError, decode_key
+
 APP_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = APP_ROOT / ".env"
 DEFAULT_RULE_SET_FILE = "robson_v1.0.yaml"
@@ -29,6 +31,7 @@ class Settings(BaseSettings):
 
     database_url: str
     secret_key: SecretStr
+    field_key: SecretStr
     artefact_dir: Path = Path("artefacts")
     rule_set_path: Path = Field(default_factory=default_rule_set_path)
     session_idle_minutes: int = Field(default=30, ge=1)
@@ -52,6 +55,15 @@ class Settings(BaseSettings):
             raise ValueError("must be at least 32 bytes")
         return value
 
+    @field_validator("field_key")
+    @classmethod
+    def _field_key(cls, value: SecretStr) -> SecretStr:
+        try:
+            decode_key(value.get_secret_value())
+        except FieldKeyError as exc:
+            raise ValueError(str(exc)) from None
+        return value
+
     @field_validator("timezone")
     @classmethod
     def _known_zone(cls, value: str) -> str:
@@ -70,6 +82,11 @@ class Settings(BaseSettings):
     def secret_bytes(self) -> bytes:
         """The secret key as bytes, for HMAC."""
         return self.secret_key.get_secret_value().encode("utf-8")
+
+    @property
+    def field_key_bytes(self) -> bytes:
+        """The 32-byte master key for patient identifiers (robby.crypto)."""
+        return decode_key(self.field_key.get_secret_value())
 
 
 @lru_cache(maxsize=1)

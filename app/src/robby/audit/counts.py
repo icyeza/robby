@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from robby.models import Admission
+
 GroupKey = int | None  # 1..10, or None for the residual
 
 
@@ -146,7 +148,7 @@ def unclassified_births(
         WHERE cls.status IS DISTINCT FROM 'resolved'
         ORDER BY b.admitted_at DESC, b.code
         """
-    )
+    ).columns(patient_number=Admission.__table__.c.patient_number.type)  # decrypted on read
     params = {"lo": lo, "hi": hi, "fid": facility_id}
     return [
         UnclassifiedBirth(code, at, status, tuple(res or ()), tuple(conf or ()), number)

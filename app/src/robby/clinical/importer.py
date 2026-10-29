@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, aliased
 from robby.clinical import openclinic, research_export
 from robby.clinical.form import MAX_PAST, DetailSpec, Parsed, parse
 from robby.clinical.xlsx_template import SHEET, Column, columns
-from robby.models import Admission
+from robby.models import Admission, patient_number_index
 
 MAX_ROWS = 2000
 SCREENING = (("bp", ("bp_sys", "bp_dia")), ("protein", ("proteinuria",)), ("glucose", ("glucose",)))
@@ -334,15 +334,19 @@ def find_duplicates(
 ) -> DuplicateScan:
     """Rows whose patient number and admission time repeat an earlier row of the file (a problem),
     or an admission of this facility that has not been replaced (already recorded: shown with its
-    existing admission, not refused)."""
+    existing admission, not refused). Numbers are compared by blind index (robby.crypto), so
+    case and spacing do not matter."""
     replacement = aliased(Admission)
-    numbers = {p.patient_number for _, p in rows if p.patient_number}
+    indexes = {
+        n: patient_number_index(facility_id, p.patient_number) if p.patient_number else None
+        for n, p in rows
+    }
     stored: dict[tuple[Any, ...], Admission] = {
-        (a.patient_number, a.admitted_at): a
+        (a.patient_number_index, a.admitted_at): a
         for a in db.scalars(
             select(Admission).where(
                 Admission.facility_id == facility_id,
-                Admission.patient_number.in_(numbers),
+                Admission.patient_number_index.in_({i for i in indexes.values() if i}),
                 ~exists().where(replacement.supersedes_id == Admission.id),
             )
         )
@@ -351,7 +355,7 @@ def find_duplicates(
     problems: list[RowProblem] = []
     recorded: dict[int, Admission] = {}
     for n, parsed in rows:
-        key = (parsed.patient_number, parsed.admitted_at)
+        key = (indexes[n], parsed.admitted_at)
         if key in stored:
             recorded[n] = stored[key]
         elif key in seen:

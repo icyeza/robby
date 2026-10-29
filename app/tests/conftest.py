@@ -13,14 +13,24 @@ from fastapi.testclient import TestClient
 from sqlalchemy import URL, Connection, Engine, create_engine
 from sqlalchemy.orm import Session
 
+from robby import crypto
 from robby.config import Settings
 from robby.migrate import upgrade
 from tests.dbutil import bound_session, create_database, drop_database, server_url_from_env
 from tests.webutil import make_test_app
 
+TEST_SECRET = "test-secret-key-that-is-long-enough-0123456789"
+TEST_FIELD_KEY = "dGVzdC1maWVsZC1rZXktMzItYnl0ZXMtZXhhY3RseSE"  # fixed: tests may compare indexes
+
+
+@pytest.fixture(scope="session", autouse=True)
+def field_key() -> crypto.Keyring:
+    """Every test, and the migrations, encrypt identifiers under the fixed test key."""
+    return crypto.configure(crypto.decode_key(TEST_FIELD_KEY))
+
 
 @pytest.fixture(scope="session")
-def database_url() -> Iterator[URL]:
+def database_url(field_key: crypto.Keyring) -> Iterator[URL]:
     url = create_database(server_url_from_env())
     try:
         upgrade(url.render_as_string(hide_password=False))
@@ -55,15 +65,13 @@ def db(connection: Connection) -> Iterator[Session]:
         session.close()
 
 
-TEST_SECRET = "test-secret-key-that-is-long-enough-0123456789"
-
-
 @pytest.fixture
 def settings(database_url: URL) -> Settings:
     return Settings(  # type: ignore[call-arg]
         _env_file=None,
         database_url=database_url.render_as_string(hide_password=False),
         secret_key=TEST_SECRET,
+        field_key=TEST_FIELD_KEY,
         secure_cookies=False,
         session_idle_minutes=30,
         session_absolute_hours=12,
