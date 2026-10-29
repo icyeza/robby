@@ -30,8 +30,6 @@ say "user robby"
 if ! id robby >/dev/null 2>&1; then
     useradd --system --create-home --home-dir "$HOME_DIR" --shell /bin/bash robby
 fi
-mkdir -p "$HOME_DIR/artefacts"
-chown robby:robby "$HOME_DIR/artefacts"
 
 say "uv"
 if [ ! -x "$HOME_DIR/.local/bin/uv" ]; then
@@ -66,7 +64,7 @@ ROBBY_DATABASE_URL="$DB_URL"
 ROBBY_SECRET_KEY=$SECRET
 ROBBY_SECURE_COOKIES=true
 ROBBY_DEMO=true
-ROBBY_ARTEFACT_DIR=$HOME_DIR/artefacts
+ROBBY_ARTEFACT_DIR=$APP/artefacts/demo
 ROBBY_TIMEZONE=Africa/Kigali
 EOF
     chown root:robby "$ENV_FILE"

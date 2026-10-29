@@ -17,12 +17,12 @@ ExecStart=/srv/robby/robby/app/.venv/bin/uvicorn robby.main:create_app --factory
 Restart=on-failure
 RestartSec=5
 
-# Hardening: the service can write only its artefact directory.
+# Hardening: the service can write only the registered-model directory (demo load copies there).
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/robby/artefacts
+ReadWritePaths=/srv/robby/robby/app/artefacts
 MemoryMax=1500M
 
 [Install]
