@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  packages:
+    name: robson_engine and robson_serving (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install both packages into a fresh environment
+        run: |
+          uv venv --python ${{ matrix.python }}
+          uv pip install -e ML/packages/robson_engine -e "ML/packages/robson_serving[xgboost]" pytest scikit-learn
+      - name: Rule engine tests
+        run: .venv/bin/pytest -q ML/packages/robson_engine/tests
+      - name: Serving runtime tests
+        run: .venv/bin/pytest -q ML/packages/robson_serving/tests
+
+  app:
+    name: web application (PostgreSQL 16)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: robby
+          POSTGRES_PASSWORD: robby-ci
+          POSTGRES_DB: robby
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U robby" --health-interval 5s --health-timeout 5s
+          --health-retries 10
+    env:
+      ROBBY_DATABASE_URL: postgresql+psycopg://robby:robby-ci@localhost:5432/robby
+      ROBBY_TEST_DATABASE_URL: postgresql+psycopg://robby:robby-ci@localhost:5432/robby_test
+      ROBBY_SECRET_KEY: ci-only-secret-key-that-is-long-enough-to-pass-validation
+      ROBBY_SECURE_COOKIES: "false"
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+      - name: Types
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -q
+
+  ml:
+    name: ML pipeline and API (synthetic data)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ML
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -q tests
