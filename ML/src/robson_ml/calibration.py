@@ -14,7 +14,7 @@ is installed (pickle resolves the names through this module).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -30,6 +30,9 @@ from robson_serving.calibration import (
     IsotonicCalibrator,
     PlattCalibrator,
 )
+
+if TYPE_CHECKING:  # the model registry imports optuna; only its Protocol is needed here
+    from robson_ml.models.base import ProbabilisticClassifier
 
 __all__ = [
     "BRIER_TIE",
@@ -109,7 +112,7 @@ def _rows(data: Any, idx: npt.NDArray[np.int64]) -> Any:
 
 
 def calibrate(
-    estimator: Any,
+    estimator: ProbabilisticClassifier,
     x: Any,
     y: Any,
     calib_idx: npt.ArrayLike,

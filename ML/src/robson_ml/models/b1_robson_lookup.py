@@ -13,19 +13,24 @@ from typing import Any, Self
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.pipeline import Pipeline
 
 from robson_ml.feature_sets import FeatureSpec
-from robson_ml.models.base import ModelSpec, no_search, pipeline, register, select_columns
+from robson_ml.models.base import (
+    ModelSpec,
+    ProbabilityEstimator,
+    no_search,
+    pipeline,
+    register,
+    select_columns,
+)
 
 ROBSON_PRIOR_STRENGTH = 10.0
 ROBSON_GROUP = "robson_group_no_onset"
 LEGACY_ROBSON_GROUP = "robson_group"
-PREDICT_THRESHOLD = 0.5
 
 
-class RobsonLookup(ClassifierMixin, BaseEstimator):
+class RobsonLookup(ProbabilityEstimator):
     """The CS rate per Robson group in the training rows, smoothed toward the overall rate.
 
     Beta-binomial smoothing: ``rate_g = (events_g + k * overall) / (n_g + k)`` with prior
@@ -67,10 +72,6 @@ class RobsonLookup(ClassifierMixin, BaseEstimator):
             dtype=np.float64,
         )
         return np.column_stack([1 - q, q])
-
-    def predict(self, x: pd.DataFrame) -> npt.NDArray[np.int64]:
-        """Labels at 0.5 (reporting only)."""
-        return (self.predict_proba(x)[:, 1] >= PREDICT_THRESHOLD).astype(np.int64)
 
 
 def build(params: dict[str, Any], fs: FeatureSpec) -> Pipeline:

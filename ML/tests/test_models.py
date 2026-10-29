@@ -10,6 +10,14 @@ from robson_ml.feature_sets import FeatureSpec, ModelData, feature_spec
 from robson_ml.features import load_feature_registry
 from robson_ml.models import MODEL_REGISTRY, b1_robson_lookup, b2_robson_logistic, get_model
 from robson_ml.models.b1_robson_lookup import RobsonLookup
+from robson_ml.models.base import (
+    CLF,
+    ModelPipeline,
+    ProbabilisticClassifier,
+    ProbabilityEstimator,
+)
+from robson_ml.models.ft_transformer import FTTransformerClassifier
+from robson_ml.models.svm import PlattSVC
 from tests.test_feature_sets import model_data
 
 P0 = ("logreg_l2", "xgboost", "mlp")
@@ -120,11 +128,28 @@ def test_models_fit_every_feature_set_and_strategy(data: ModelData, name: str) -
         fs: FeatureSpec = feature_spec(data, fs_name)
         for strategy in strategies:
             model = spec.build(_params(name, strategy), fs)
+            assert isinstance(model, ModelPipeline)
             x = data.x[list(fs.columns)]
-            model.fit(x.iloc[rows], data.y[rows])
+            assert model.fit(x.iloc[rows], data.y[rows]) is model
+            assert isinstance(model.named_steps[CLF], ProbabilisticClassifier)
             p = model.predict_proba(x.iloc[new])[:, 1]
             assert p.shape == (len(new),)
             assert np.isfinite(p).all() and (p >= 0).all() and (p <= 1).all()
+
+
+def test_custom_estimators_share_the_abstract_base() -> None:
+    for cls in (RobsonLookup, PlattSVC, FTTransformerClassifier):
+        assert issubclass(cls, ProbabilityEstimator)
+
+    class Incomplete(ProbabilityEstimator):
+        def fit(self, x: object, y: object) -> "Incomplete":
+            return self
+
+    with pytest.raises(TypeError):
+        Incomplete()  # type: ignore[abstract]
+    toy = pd.DataFrame({"robson_group_no_onset": ["1", "1", "5", "5"]})
+    lookup = RobsonLookup(prior_strength=0.0).fit(toy, [0, 0, 1, 1])
+    assert lookup.predict(toy).tolist() == [0, 0, 1, 1]
 
 
 def test_m0_rejected_for_models_without_native_nan(data: ModelData) -> None:

@@ -1,23 +1,28 @@
 """Model interface, registry and the shared in-Pipeline preprocessing.
 
 Every model is a :class:`ModelSpec` registered in ``MODEL_REGISTRY`` by its own module under
-``robson_ml.models``. ``build(params, feature_spec)`` returns an unfitted Pipeline whose
-first step (``prep``) holds every fitted transformation, so imputers, encoders and scalers
-are fitted inside each fold on training rows only. ``params`` carries the tuned
+``robson_ml.models``. ``build(params, feature_spec)`` returns an unfitted
+:class:`ModelPipeline` (a scikit-learn Pipeline) whose first step (``prep``) holds every
+fitted transformation, so imputers, encoders and scalers are fitted inside each fold on
+training rows only. The harness relies on nothing beyond :class:`ProbabilisticClassifier`
+(``fit`` / ``predict_proba``) and, for early stopping, the two named steps; the zoo's own
+classifiers derive from :class:`ProbabilityEstimator`. ``params`` carries the tuned
 hyperparameters plus two reserved keys set by the harness: ``missing_strategy`` (M0, M1,
 M2) and ``seed``.
 """
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Self
+from typing import Any, Literal, Protocol, Self, runtime_checkable
 
 import numpy as np
+import numpy.typing as npt
 import optuna
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401  (enables the import)
 from sklearn.impute import IterativeImputer, MissingIndicator, SimpleImputer
@@ -25,6 +30,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, SplineTransformer, StandardScaler
 
 from robson_ml.feature_sets import FeatureSpec
+from robson_serving.calibration import PREDICT_THRESHOLD
 
 Family = Literal["baseline", "linear", "glassbox", "tree", "kernel", "neural", "ensemble"]
 Encoding = Literal["onehot", "ordinal", "native"]
@@ -34,6 +40,48 @@ SPLINE_KNOTS = 4
 ITERATIVE_MAX_ITER = 10
 PREP = "prep"
 CLF = "clf"
+
+
+@runtime_checkable
+class ProbabilisticClassifier(Protocol):
+    """The estimator contract the training harness relies on (scikit-learn's).
+
+    ``fit`` returns the fitted estimator itself; ``predict_proba`` gives one column per class
+    in ``classes_`` order, so column 1 is P(CS).
+    """
+
+    def fit(self, x: Any, y: npt.ArrayLike) -> Self: ...
+
+    def predict_proba(self, x: Any) -> npt.NDArray[np.float64]: ...
+
+
+@runtime_checkable
+class ModelPipeline(ProbabilisticClassifier, Protocol):
+    """What :attr:`ModelSpec.build` returns: a :class:`ProbabilisticClassifier` whose
+    ``named_steps`` hold the preprocessing (``prep``) and the final classifier (``clf``), which
+    the harness fits separately when it early-stops boosting."""
+
+    named_steps: Mapping[str, Any]
+
+
+class ProbabilityEstimator(ClassifierMixin, BaseEstimator, ABC):
+    """Base of the zoo's own binary classifiers (B1 lookup, Platt SVM, FT-Transformer).
+
+    Subclasses implement ``fit`` (setting ``classes_``) and ``predict_proba``; ``predict``
+    thresholds P(CS) at ``PREDICT_THRESHOLD`` and is used for reporting only.
+    """
+
+    @abstractmethod
+    def fit(self, x: Any, y: npt.ArrayLike) -> Self:
+        """Fit on the training rows and return ``self``."""
+
+    @abstractmethod
+    def predict_proba(self, x: Any) -> npt.NDArray[np.float64]:
+        """Probabilities of (no CS, CS) per row."""
+
+    def predict(self, x: Any) -> npt.NDArray[np.int64]:
+        """Labels at ``PREDICT_THRESHOLD`` (reporting only)."""
+        return (self.predict_proba(x)[:, 1] >= PREDICT_THRESHOLD).astype(np.int64)
 
 
 @dataclass(frozen=True)
@@ -52,7 +100,7 @@ class ModelSpec:
     handles_nan: bool
     native_categorical: bool
     needs_scaling: bool
-    build: Callable[[dict[str, Any], FeatureSpec], Pipeline]
+    build: Callable[[dict[str, Any], FeatureSpec], ModelPipeline]
     search_space: Callable[[optuna.Trial], dict[str, Any]]
     grid: Mapping[str, Sequence[Any]] | None = None
     early_stopping_rounds: int | None = None

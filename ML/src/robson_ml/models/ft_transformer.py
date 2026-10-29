@@ -20,12 +20,18 @@ import numpy as np
 import numpy.typing as npt
 import optuna
 import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from robson_ml.feature_sets import FeatureSpec
-from robson_ml.models.base import ModelSpec, make_preprocessor, pipeline, register, split_params
+from robson_ml.models.base import (
+    ModelSpec,
+    ProbabilityEstimator,
+    make_preprocessor,
+    pipeline,
+    register,
+    split_params,
+)
 
 if TYPE_CHECKING:  # torch is imported lazily (see _ft_network)
     import torch
@@ -39,7 +45,7 @@ N_THREADS = min(4, os.cpu_count() or 1)
 WIDTHS = (16, 32)  # small token widths: CPU-only training on a slow machine
 
 
-class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
+class FTTransformerClassifier(ProbabilityEstimator):
     """A scikit-learn classifier around :class:`_FTTransformer` (binary outcome)."""
 
     def __init__(
@@ -135,10 +141,6 @@ class FTTransformerClassifier(ClassifierMixin, BaseEstimator):
         with torch.no_grad():
             p = torch.sigmoid(self.model_(x_num, x_cat)).numpy().astype(np.float64)
         return np.column_stack([1 - p, p])
-
-    def predict(self, x: Any) -> npt.NDArray[Any]:
-        """The more probable class."""
-        return (self.predict_proba(x)[:, 1] >= 0.5).astype(int)
 
 
 def search_space(trial: optuna.Trial) -> dict[str, Any]:

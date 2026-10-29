@@ -14,16 +14,22 @@ from typing import Any, Self
 import numpy as np
 import numpy.typing as npt
 import optuna
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC
 
 from robson_ml.feature_sets import FeatureSpec
-from robson_ml.models.base import ModelSpec, make_preprocessor, pipeline, register, split_params
+from robson_ml.models.base import (
+    ModelSpec,
+    ProbabilityEstimator,
+    make_preprocessor,
+    pipeline,
+    register,
+    split_params,
+)
 
 
-class PlattSVC(ClassifierMixin, BaseEstimator):
+class PlattSVC(ProbabilityEstimator):
     """An RBF ``SVC`` whose decision values are mapped to probabilities by a logistic fit."""
 
     def __init__(self, C: float = 1.0, gamma: float | str = "scale", seed: int = 0) -> None:  # noqa: N803
@@ -48,7 +54,7 @@ class PlattSVC(ClassifierMixin, BaseEstimator):
         return np.asarray(self.platt_.predict_proba(self._decision(x)), dtype=np.float64)
 
     def predict(self, x: Any) -> npt.NDArray[Any]:
-        """The more probable class."""
+        """The more probable class (argmax over ``classes_``, the SVM's own labels)."""
         return np.asarray(self.classes_)[self.predict_proba(x).argmax(axis=1)]
 
 
