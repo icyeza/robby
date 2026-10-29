@@ -48,7 +48,7 @@ def demo_load(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo("")
-    typer.echo(f"Admissions saved: {s.admissions} (of which {s.corrections} corrections)")
+    typer.echo(f"Admissions saved: {s.admissions}")
     typer.echo(
         "Classification: "
         + ", ".join(f"{k} {v}" for k, v in sorted(s.status.items()))

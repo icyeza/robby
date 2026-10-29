@@ -10,9 +10,11 @@ synthetic packaged artefact and runs the golden check.
 
 ## What is here
 
-- **Clinical flow**: admission form with a live Robson panel (partial and conflict states) and
-  enforced screening (value or recorded reason), result page with the explanation and readiness
-  signal, recent admissions, delivery outcome, and corrections that supersede rather than edit.
+- **Clinical flow**: the lab technician records each admission on a form with a live Robson panel
+  (partial and conflict states) and enforced screening (value or recorded reason), and sees their
+  recent entries. The clinician finds a patient by name or number (`/patients`), reads the
+  admission on a read-only page with the Robson explanation and readiness signal, and records the
+  delivery outcome. Nothing entered can be edited from the web pages.
 - **Import**: Excel template download and upload for the facility administrator (rows with a
   problem are left out and listed), and token-authenticated automated import for the hospital's
   patient record system (tokens from `robby-admin api-token create`).
@@ -33,7 +35,7 @@ synthetic packaged artefact and runs the golden check.
 
 ## Data model
 
-Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0004` in `migrations/versions/`. The diagram shows
+Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0006` in `migrations/versions/`. The diagram shows
 each table's primary key (PK), foreign keys (FK), unique columns (UK) and main business columns,
 not every column. Source: [`docs/diagrams/erd.mmd`](../docs/diagrams/erd.mmd); image:
 [`erd.png`](../docs/diagrams/erd.png).
@@ -52,7 +54,7 @@ erDiagram
         uuid id PK
         text username UK "lowercase"
         text password_hash "argon2id"
-        enum role "clinician, facility_admin, model_custodian, national_reviewer, system_admin"
+        enum role "clinician, facility_admin, model_custodian, national_reviewer, system_admin, lab_technician"
         uuid facility_id FK "set only for clinician and facility_admin"
         bool active
         int failed_logins
@@ -225,15 +227,16 @@ How to read it:
 - **Clinical rows are insert-only.** `admission`, `screening_omission`, `classification`,
   `prediction`, `delivery_outcome`, `reconciled_outcome` and `event_log` have PostgreSQL triggers
   that reject every `UPDATE`, `DELETE` and `TRUNCATE`.
-- **A correction is a new row.** The corrected admission points at the one it replaces through
-  `supersedes_id` and must give a `correction_reason`; the original stays as it was. A delivery
+- **A correction is a new row.** The web pages no longer offer corrections, but the schema keeps
+  them: a corrected admission points at the one it replaces through `supersedes_id` and must give a
+  `correction_reason`; the original stays as it was. A delivery
   outcome stays on the admission version it was recorded on, and reconciliation follows the
   `supersedes_id` chain to match it to every prediction of that chain.
 - **Patient identifiers live only on `admission`.** `patient_number` and `patient_name` are required
   for form and Excel-import entries (check `entry_has_patient`; rows saved before migration `0003`
   are not re-checked). They are never copied into the event log, the feature vector or any export.
-  Clinicians see the name and number, facility administrators the number only, and the other roles
-  neither.
+  Lab technicians and clinicians see the name and number, facility administrators the number only,
+  and the other roles neither.
 - `event_log.entity_type` / `entity_id` name the row an event is about (an admission, a model, a
   facility) without a foreign key; each entry's `hash` covers the previous entry's `hash`.
 - A partial unique index allows only one `model_version` in state `active` and only one active
@@ -424,14 +427,14 @@ The records go through exactly the same checks as the web upload (all or nothing
 `import` admissions of the token's facility, and a record that was already recorded (same patient
 number and admission time) is skipped, so sending a batch twice is safe.
 
-1. Create a clinician account for the clinic in the Users page, then a token for it:
+1. Create a lab technician account for the clinic in the Users page, then a token for it:
    ```bash
-   uv run robby-admin api-token create --username clinician.muhima --label "OpenClinic feed"
+   uv run robby-admin api-token create --username lab.muhima --label "Lab system feed"
    uv run robby-admin api-token list
    uv run robby-admin api-token revoke <id>
    ```
-   The token (`rbk_...`) is shown once; only its SHA-256 is stored. It acts as that clinician, so
-   it can only ever write to that clinician's facility. Create and revoke are in the event log.
+   The token (`rbk_...`) is shown once; only its SHA-256 is stored. It acts as that lab
+   technician, so it can only ever write to that technician's facility. Create and revoke are in the event log.
 2. Send records to `POST /api/v1/admissions/import` with `Authorization: Bearer <token>`:
    - `Content-Type: application/json`, body `{"rows": [{"Patient ID": "...", ...}]}`;
    - or the `.xlsx` file as the body (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`);
@@ -477,8 +480,8 @@ the ISO week, so an acknowledged alert that is still present reappears the next 
 
 ## Demo mode
 
-A complete, synthetic example (4 demo hospitals, ~700 admissions over 90 days, outcomes, corrections,
-audit and national pages) lives in a SEPARATE database named `<your database>_demo` (for example
+A complete, synthetic example (4 demo hospitals, ~700 admissions over 90 days, outcomes, audit and
+national pages) lives in a SEPARATE database named `<your database>_demo` (for example
 `robby_demo`) on the same server. Clinical rows and the event log cannot be deleted, so demo data is
 never mixed into the real database; the commands refuse any database whose name does not end in `_demo`.
 
@@ -490,8 +493,9 @@ uv run robby-admin demo purge --yes     # drop the demo database
 
 Everything is created through the real services (classification, the packaged model for predictions,
 events and the hash chain). Outcomes are sampled from the model probability with a per-facility offset.
-Sign in with `clinician.da` ... `clinician.dd`, `admin.da` ... `admin.dd`, `custodian`, `reviewer` or
-`sysadmin`; the password for all demo accounts is `demo-password-123`. The reference table in the demo
+Admissions are entered by the demo lab technicians and outcomes recorded by the demo clinicians.
+Sign in with `lab.da` ... `lab.dd`, `clinician.da` ... `clinician.dd`, `admin.da` ... `admin.dd`,
+`reviewer`, or (behind the scenes) `custodian` and `sysadmin`; the password for all demo accounts is `demo-password-123`. The reference table in the demo
 is a labelled placeholder ("DEMO placeholder reference"), not a published source. The model is read from
 `../ML/artefacts/packaged/readiness-v1.0` (override with `--model-dir`); without it, admissions are
 saved without predictions.

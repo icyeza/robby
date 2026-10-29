@@ -89,7 +89,7 @@ def test_facility_admin_creates_only_facility_roles_in_their_own_facility(db: Se
     with pytest.raises(FormErrors) as caught:
         create_user(db, admin, username="mc.new", role="model_custodian")
     assert caught.value.errors == {"role": "You cannot create accounts with this role."}
-    assert creatable_roles(admin) == (Role.CLINICIAN, Role.FACILITY_ADMIN)
+    assert creatable_roles(admin) == (Role.LAB_TECHNICIAN, Role.CLINICIAN, Role.FACILITY_ADMIN)
 
 
 @pytest.mark.parametrize("username", ["ab", "has space", "-starts.with.dash", "x" * 65])

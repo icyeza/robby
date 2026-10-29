@@ -20,6 +20,7 @@ from robby.models import (
     DeliveryOutcome,
     Facility,
     ReferenceSet,
+    Role,
 )
 from tests.dbutil import server_url_from_env
 
@@ -36,19 +37,18 @@ def demo_url() -> Iterator[URL]:
 
 
 def assert_demo_patients(db: Session) -> None:
-    """Every form admission has a number and a name; numbers are unique per facility among
-    original rows, and a correction keeps the number of the row it replaces."""
+    """Every form admission has a number and a name, entered by a lab technician; numbers are
+    unique per facility; outcomes are recorded by clinicians."""
     rows = list(db.scalars(select(Admission).where(Admission.source == AdmissionSource.FORM)))
     assert rows
     assert all(r.patient_number and r.patient_name for r in rows)
-    originals = [(r.facility_id, r.patient_number) for r in rows if r.supersedes_id is None]
-    assert len(originals) == len(set(originals))
-    by_id = {r.id: r for r in rows}
-    corrections = [r for r in rows if r.supersedes_id is not None]
-    assert corrections
-    for r in corrections:
-        assert r.patient_number == by_id[r.supersedes_id].patient_number
-        assert r.patient_name == by_id[r.supersedes_id].patient_name
+    numbers = [(r.facility_id, r.patient_number) for r in rows]
+    assert len(numbers) == len(set(numbers))
+    assert all(r.supersedes_id is None for r in rows)
+    roles = {u.id: u.role for u in db.scalars(select(AppUser))}
+    assert {roles[r.entered_by] for r in rows if r.entered_by} == {Role.LAB_TECHNICIAN}
+    recorders = {roles[o.recorded_by] for o in db.scalars(select(DeliveryOutcome))}
+    assert recorders == {Role.CLINICIAN}
 
 
 def test_demo_load_refusals_and_purge(
@@ -61,12 +61,12 @@ def test_demo_load_refusals_and_purge(
     summary = loader.load_demo(plain, admissions=30, model_dir=None, say=lambda _: None)
     assert summary.events_ok and summary.events_checked > 60
     assert summary.awaiting == 12 and summary.outcomes >= 10
-    assert len(summary.credentials) == 11
+    assert len(summary.credentials) == 15
 
     engine = create_engine(demo_url)
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(Facility)) == 4
-        assert db.scalar(select(func.count()).select_from(AppUser)) == 11
+        assert db.scalar(select(func.count()).select_from(AppUser)) == 15
         assert db.scalar(select(func.count()).select_from(Admission)) == summary.admissions
         assert db.scalar(select(func.count()).select_from(DeliveryOutcome)) == summary.outcomes
         reference = db.scalars(select(ReferenceSet)).one()

@@ -32,7 +32,7 @@ URL = "/api/v1/admissions/import"
 def feed(app: FastAPI, client: TestClient, db: Session, settings: Settings) -> dict[str, Any]:
     load_rule_set_file(db, default_rule_set_path())
     facility = make_facility(db)
-    user = make_user(db, role=Role.CLINICIAN, facility=facility)
+    user = make_user(db, role=Role.LAB_TECHNICIAN, facility=facility)
     make_model_version(db, state=ModelState.ACTIVE)
     token, _ = api_tokens.create(db, None, user.username, "OpenClinic feed")
     db.commit()
@@ -164,18 +164,19 @@ def test_bad_bodies(client: TestClient, feed: dict[str, Any]) -> None:
     )
 
 
-def test_only_clinician_accounts_can_hold_tokens(db: Session) -> None:
+def test_only_lab_technician_accounts_can_hold_tokens(db: Session) -> None:
     facility = make_facility(db)
-    admin = make_user(db, role=Role.FACILITY_ADMIN, facility=facility)
-    with pytest.raises(api_tokens.TokenError):
-        api_tokens.create(db, None, admin.username, "x")
+    for role in (Role.FACILITY_ADMIN, Role.CLINICIAN):
+        other = make_user(db, role=role, facility=facility)
+        with pytest.raises(api_tokens.TokenError):
+            api_tokens.create(db, None, other.username, "x")
     with pytest.raises(api_tokens.TokenError):
         api_tokens.create(db, None, "nobody", "x")
 
 
 def test_the_token_is_stored_hashed_and_creation_is_logged(db: Session) -> None:
     facility = make_facility(db)
-    user = make_user(db, role=Role.CLINICIAN, facility=facility)
+    user = make_user(db, role=Role.LAB_TECHNICIAN, facility=facility)
     token, row = api_tokens.create(db, None, user.username, "feed")
     db.commit()
     assert token.startswith("rbk_") and token not in row.token_hash and len(row.token_hash) == 64

@@ -97,11 +97,18 @@ def test_transition_rules(db: Session) -> None:
 def world(app: FastAPI, client: TestClient, db: Session, settings: Settings) -> dict[str, Any]:
     load_rule_set_file(db, default_rule_set_path())
     facility = make_facility(db)
+    lab = make_user(db, role=Role.LAB_TECHNICIAN, facility=facility)
     clinician = make_user(db, role=Role.CLINICIAN, facility=facility)
     custodian = make_user(db, role=Role.MODEL_CUSTODIAN)
     db.commit()
     app.state.model_runtime = ModelRuntime(Path("unused"), loader=stub_loader)
-    return {"clinician": clinician, "custodian": custodian, "settings": settings, "db": db}
+    return {
+        "lab": lab,
+        "clinician": clinician,
+        "custodian": custodian,
+        "settings": settings,
+        "db": db,
+    }
 
 
 def sign_in(client: TestClient, world: dict[str, Any], who: str) -> str:
@@ -110,7 +117,7 @@ def sign_in(client: TestClient, world: dict[str, Any], who: str) -> str:
 
 
 def admit(client: TestClient, world: dict[str, Any]) -> None:
-    csrf = sign_in(client, world, "clinician")
+    csrf = sign_in(client, world, "lab")
     data = {**GOOD, "admitted_at": now_text(world["settings"]), "csrf_token": csrf}
     assert client.post("/admissions", data=data).status_code == 303
 
@@ -139,6 +146,7 @@ def test_shadow_scoring_and_hot_reload(
     assert preds[shadow.id].mode is PredictionMode.SHADOW
     assert str(preds[shadow.id].probability) == "0.60000"
     assert len(preds) == 2
+    sign_in(client, world, "clinician")
     page = client.get(f"/admissions/{admission.code}")
     assert page.status_code == 200 and "60%" not in page.text  # the shadow result is never shown
 

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Find patient{% endblock %}
+{% block content %}
+<div class="titlebar"><h1>Find patient</h1><span class="meta">{{ who.place }}</span></div>
+
+<form class="search" method="get" action="/patients" role="search">
+  <label for="q">Patient name or number</label>
+  <div class="search-row">
+    <input id="q" name="q" type="search" value="{{ query }}" placeholder="For example Uwase or RW-1042" autocomplete="off" autofocus
+      hx-get="/patients" hx-trigger="input changed delay:300ms, search" hx-target="#patient-results" hx-swap="outerHTML" hx-push-url="true">
+    <button class="btn btn-p" type="submit">Search</button>
+  </div>
+</form>
+
+{% include "clinical/patients_results.html" %}
+{% endblock %}

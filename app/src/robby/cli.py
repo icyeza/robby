@@ -157,8 +157,10 @@ def reconcile_command() -> None:
 
 @api_token_app.command("create")
 def api_token_create(
-    username: Annotated[str, typer.Option("--username", help="The clinician account it acts as.")],
-    label: Annotated[str, typer.Option("--label", help="What it is for, e.g. OpenClinic feed.")],
+    username: Annotated[
+        str, typer.Option("--username", help="The lab technician account it acts as.")
+    ],
+    label: Annotated[str, typer.Option("--label", help="What it is for, e.g. lab system feed.")],
 ) -> None:
     """Create a token for POST /api/v1/admissions/import; it is shown once."""
     with open_session() as db:

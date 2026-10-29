@@ -2,17 +2,17 @@
 {% block title %}Admission {{ admission.code }}{% endblock %}
 {% block content %}
 {% set panel = view.panel %}
-<div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }}</div>
+<div class="crumbs"><a href="/patients">Find patient</a> / {{ admission.patient_name or admission.code }}</div>
 <div class="titlebar">
-  <h1>Admission result</h1>
-  <span class="meta">{{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }} ({{ admission.patient_number }}){% endif %} · Admitted {{ admission.admitted_at | local_dt }}{% if admission.maternal_age %} · Age {{ admission.maternal_age }}{% endif %}{% if admission.gestational_age_weeks %} · {{ admission.gestational_age_weeks | int }} weeks{% endif %}</span>
-  <span class="saved">✓ Saved {{ view.saved_at }}</span>
+  <h1>{{ admission.patient_name or "Admission " ~ admission.code }}</h1>
+  <span class="meta">{% if admission.patient_number %}{{ admission.patient_number }} · {% endif %}{{ admission.code }} · Admitted {{ admission.admitted_at | local_dt }}</span>
+  <span class="readonly-tag">Read only · entered by the lab</span>
 </div>
 {% if view.replaces %}
 <div class="notice warn"><b>Replaces {{ view.replaces.code }}.</b> Reason: {{ admission.correction_reason }} {{ view.replaces.code }} stays on record, marked as replaced.</div>
 {% endif %}
 {% if view.replaced_by %}
-<div class="notice warn"><b>Replaced by <a href="/admissions/{{ view.replaced_by.code }}">{{ view.replaced_by.code }}</a>.</b> This admission stays on record. Use the corrected admission for outcomes and corrections.</div>
+<div class="notice warn"><b>Replaced by <a href="/admissions/{{ view.replaced_by.code }}">{{ view.replaced_by.code }}</a>.</b> This admission stays on record. Use the newer admission for the outcome.</div>
 {% endif %}
 
 <div class="grid-result">
@@ -28,7 +28,6 @@
         {% if panel.state == 'conflict' %}The entered values contradict each other: {{ panel.need_value | lower }}. {{ panel.need_why }}
         {% else %}Not enough was entered to decide the group{% if panel.need_value %}; still needed: {{ panel.need_value | lower }}{% endif %}.
         {% endif %}
-        <div class="resolve"><a class="btn btn-p btn-sm" href="/admissions/{{ admission.code }}/correct">Resolve</a></div>
       </div>
       {% endif %}
       <div class="strip">
@@ -67,7 +66,7 @@
       <div class="frame"><b>This describes what usually happens here. It is not a judgement of what ought to happen.</b> Use it to plan theatre and staff readiness. It is not a recommendation for or against cesarean.</div>
       <dl class="facts">
         <dt>Model</dt><dd>{{ view.model_label }} · active since {{ view.active_since }}</dd>
-        {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given[:4] | join(", ") }}{% if view.not_given | length > 4 %} and {{ view.not_given | length - 4 }} more{% endif %} · <a href="/admissions/{{ admission.code }}/correct">Add them</a></dd>{% endif %}
+        {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given[:4] | join(", ") }}{% if view.not_given | length > 4 %} and {{ view.not_given | length - 4 }} more{% endif %}</dd>{% endif %}
       </dl>
     </div>
   </section>
@@ -77,7 +76,7 @@
     <div class="card-b">
       <div class="unavailable">
         <b>Readiness signal unavailable</b>
-        {% if panel.state != 'resolved' %}A readiness signal is only shown together with a Robson group. Resolve the group first.
+        {% if panel.state != 'resolved' %}A readiness signal is only shown together with a Robson group, and this admission is missing details needed for a group.
         {% elif view.model_active %}The model could not produce a signal for this admission, so only the classification is shown. The Robson group on the left is complete and saved.
         {% else %}No model is active at the moment, so only the classification is shown. The Robson group on the left is complete and saved.{% endif %}
       </div>
@@ -85,6 +84,13 @@
   </section>
   {% endif %}
 </div>
+
+<section class="card spaced">
+  <div class="card-h"><span>Admission details</span></div>
+  <div class="card-b kv3">
+    {% for label, value in view.details %}<div><div class="n-k">{{ label }}</div><div class="n-v{% if not value %} muted{% endif %}">{{ value or "Not recorded" }}</div></div>{% endfor %}
+  </div>
+</section>
 
 <section class="card spaced">
   <div class="card-h"><span>Screening recorded</span></div>
@@ -100,11 +106,8 @@
 {% endif %}
 
 <div class="actions">
-  <a class="btn btn-p" href="/admissions/new">New admission</a>
-  {% if not view.replaced_by %}
-  <a class="btn btn-s" href="/admissions/{{ admission.code }}/correct">Record a correction</a>
-  {% if not view.outcome %}<a class="btn btn-s" href="/admissions/{{ admission.code }}/outcome">Record outcome</a>{% endif %}
-  {% endif %}
+  {% if not view.replaced_by and not view.outcome %}<a class="btn btn-p" href="/admissions/{{ admission.code }}/outcome">Record outcome</a>{% endif %}
+  <a class="btn btn-s" href="/patients">Find another patient</a>
   <a class="btn-g" href="#" data-print>Print</a>
 </div>
 {% endblock %}

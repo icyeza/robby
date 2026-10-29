@@ -11,6 +11,7 @@ from robby.models import AppUser, Role, role_label
 class NavItem:
     label: str
     path: str
+    also: tuple[str, ...] = ()  # other path prefixes that belong to this item
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,11 @@ class Who:
 
 
 NAV: dict[Role, tuple[NavItem, ...]] = {
-    Role.CLINICIAN: (
+    Role.LAB_TECHNICIAN: (
         NavItem("New admission", "/admissions/new"),
-        NavItem("Recent admissions", "/admissions"),
+        NavItem("Recent entries", "/admissions"),
     ),
+    Role.CLINICIAN: (NavItem("Find patient", "/patients", also=("/admissions",)),),
     Role.FACILITY_ADMIN: (
         NavItem("Hospital report", "/audit"),
         NavItem("Users", "/admin/users"),
@@ -57,10 +59,16 @@ def _matches(path: str, item_path: str) -> bool:
     return path == item_path or path.startswith(item_path.rstrip("/") + "/")
 
 
+def _match_length(path: str, item: NavItem) -> int:
+    """Length of the longest of the item's paths that `path` falls under, 0 for none."""
+    return max((len(p) for p in (item.path, *item.also) if _matches(path, p)), default=0)
+
+
 def nav_for(role: Role, current_path: str) -> list[NavLink]:
     items = NAV[role]
-    matching = [item for item in items if _matches(current_path, item.path)]
-    active = max(matching, key=lambda item: len(item.path)) if matching else None
+    lengths = {item.path: _match_length(current_path, item) for item in items}
+    matching = [item for item in items if lengths[item.path]]
+    active = max(matching, key=lambda item: lengths[item.path]) if matching else None
     return [NavLink(item.label, item.path, item is active) for item in items]
 
 

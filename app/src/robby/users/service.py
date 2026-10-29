@@ -1,8 +1,8 @@
 """Accounts: creation with temporary passwords, resets, deactivation, and who may do what.
 
-System administrators manage every account. Facility administrators manage clinician and
-facility-administrator accounts of their own facility only; the facility always comes from the
-acting administrator, never from the request."""
+System administrators manage every account. Facility administrators manage lab technician,
+clinician and facility-administrator accounts of their own facility only; the facility always
+comes from the acting administrator, never from the request."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def creatable_roles(actor: AppUser) -> tuple[Role, ...]:
     if actor.role is Role.SYSTEM_ADMIN:
         return tuple(Role)
     if actor.role is Role.FACILITY_ADMIN:
-        return (Role.CLINICIAN, Role.FACILITY_ADMIN)
+        return (Role.LAB_TECHNICIAN, Role.CLINICIAN, Role.FACILITY_ADMIN)
     return ()
 
 

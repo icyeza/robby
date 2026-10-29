@@ -1,4 +1,4 @@
-"""Cross-browser check of the clinician flow against a running demo instance.
+"""Cross-browser check of the lab technician and clinician flow against a running demo instance.
 
 Usage, from the app folder, with the demo served (``sh scripts/demo.sh``)::
 
@@ -6,13 +6,15 @@ Usage, from the app folder, with the demo served (``sh scripts/demo.sh``)::
 
 For every browser (installed Chrome and Edge, and Playwright's Firefox and WebKit when they have
 been installed with ``playwright install firefox webkit``) at a desktop (1366x768) and a phone
-(390x844) viewport, it signs in as a demo clinician and then:
+(390x844) viewport, it signs in as a demo lab technician and then:
 
 1. opens the admission form and times the page load;
 2. fills the six Robson inputs and checks the live panel resolves to group 5;
 3. checks the save button stays disabled while screening is blank (enforced screening);
-4. fills screening, saves, and checks the result page shows group 5 and the readiness signal;
-5. fails on any console error or Content-Security-Policy violation caused by the app's own
+4. fills screening, saves, and checks the "saved" note names group 5;
+5. signs in as the demo clinician of the same hospital, finds the patient by name, and checks the
+   read-only patient page shows group 5 and the readiness signal;
+6. fails on any console error or Content-Security-Policy violation caused by the app's own
    pages. Two kinds of message are counted separately, not as failures: requests to other
    origins (browser extensions or local filtering software inject these, the app never makes
    them) and WebKit's report that its own built-in ``<select>`` styling is refused by the CSP,
@@ -34,7 +36,8 @@ from pathlib import Path
 from playwright.sync_api import Browser, ConsoleMessage, Error, Page, Playwright, sync_playwright
 
 PASSWORD = "demo-password-123"
-USER = "clinician.da"
+LAB_USER = "lab.da"
+CLINICIAN = "clinician.da"
 VIEWPORTS = {"desktop": (1366, 768), "phone": (390, 844)}
 ROBSON = {
     "maternal_age": "29",
@@ -57,6 +60,15 @@ def launchers(p: Playwright) -> dict[str, object]:
     }
 
 
+def sign_in(page: Page, base: str, username: str) -> None:
+    page.context.clear_cookies()
+    page.goto(f"{base}/login")
+    page.fill('[name="username"]', username)
+    page.fill('[name="password"]', PASSWORD)
+    page.click('button[type="submit"]')
+    page.wait_for_load_state("networkidle")
+
+
 def check(page: Page, base: str, name: str) -> dict[str, str]:
     errors: list[str] = []
     ignored: list[str] = []
@@ -74,18 +86,14 @@ def check(page: Page, base: str, name: str) -> dict[str, str]:
     page.on("console", on_console)
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    page.goto(f"{base}/login")
-    page.fill('[name="username"]', USER)
-    page.fill('[name="password"]', PASSWORD)
-    page.click('button[type="submit"]')
-    page.wait_for_load_state("networkidle")
-
+    sign_in(page, base, LAB_USER)
     t0 = time.perf_counter()
     page.goto(f"{base}/admissions/new", wait_until="load")
     load_ms = (time.perf_counter() - t0) * 1000
 
     page.fill('[name="patient_number"]', f"BC-{uuid.uuid4().hex[:6].upper()}")
-    page.fill('[name="patient_name"]', "Browser Check")
+    patient = f"Browser Check {uuid.uuid4().hex[:4]}"
+    page.fill('[name="patient_name"]', patient)
     for field, value in ROBSON.items():
         page.fill(f'[name="{field}"]', value)
     for field, value in CHOICES.items():
@@ -102,16 +110,34 @@ def check(page: Page, base: str, name: str) -> dict[str, str]:
     page.fill('[name="glucose"]', "5.2")
     page.wait_for_function("!document.querySelector('[data-submit]').disabled", timeout=5_000)
     button.click()
-    page.wait_for_url(f"{base}/admissions/*-*", timeout=15_000)
+    page.wait_for_url(f"{base}/admissions/new?saved=*", timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    note = page.inner_text(".saved-note")
+    code = page.url.rsplit("=", 1)[-1]
+    page.screenshot(path=str(OUT / f"{name}-lab.png"), full_page=True)
+
+    sign_in(page, base, CLINICIAN)
+    page.goto(f"{base}/patients")
+    page.fill("#q", patient)
+    page.wait_for_selector(f'#patient-results a[href="/admissions/{code}"]', timeout=10_000)
+    page.click(f'#patient-results a[href="/admissions/{code}"]')
+    page.wait_for_url(f"{base}/admissions/{code}", timeout=15_000)
     page.wait_for_load_state("networkidle")
     text = page.inner_text("main")
     page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
 
-    ok = live_group == "5" and gated and "5" in text and "cesarean" in text.lower() and not errors
+    ok = (
+        live_group == "5"
+        and gated
+        and "Robson group 5" in note
+        and "Read only" in text
+        and "cesarean" in text.lower()
+        and not errors
+    )
     return {
         "live": f"group {live_group}",
         "gate": "blocked" if gated else "NOT blocked",
-        "saved": page.url.rsplit("/", 1)[-1],
+        "saved": code,
         "load": f"{load_ms:.0f} ms",
         "errors": str(len(errors)) if not errors else "; ".join(errors)[:120],
         "ignored": str(len(ignored)),

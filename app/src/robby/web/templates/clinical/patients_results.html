@@ -1,0 +1,21 @@
+<section class="tablecard" id="patient-results">
+  <div class="tc-h"><h2>{% if query %}{{ rows | length }}{% if rows | length == limit %}+{% endif %} match{{ "" if rows | length == 1 else "es" }} for “{{ query }}”{% else %}Admitted in the last 72 hours{% endif %}</h2></div>
+  <table>
+    <thead><tr><th>Patient</th><th>Admitted</th><th>Robson group</th><th class="r">Readiness signal</th><th>Outcome</th><th></th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr{% if row.replaced_by %} class="replaced"{% endif %}>
+        <td>{% if row.admission.patient_name %}<b>{{ row.admission.patient_name }}</b><br>{% endif %}<span class="muted">{{ row.admission.patient_number or "—" }} · {{ row.admission.code }}</span></td>
+        <td>{{ row.admission.admitted_at | local_dt_short }}</td>
+        <td>{% if row.group %}<span class="gnum">{{ row.group }}</span>{% else %}<span class="muted">Not classified</span>{% endif %}</td>
+        {% if row.percent is not none %}<td class="r num signal-cell">{{ row.percent }} in 100</td>{% else %}<td class="r muted signal-cell">—</td>{% endif %}
+        <td>{% if row.replaced_by %}Replaced by {{ row.replaced_by }}{% elif row.outcome %}<span class="st done">{{ 'Cesarean' if row.outcome.mode.value == 'cesarean' else 'Vaginal' }}</span>{% else %}<span class="st awaiting">Awaiting outcome</span>{% endif %}</td>
+        <td class="r"><a href="/admissions/{{ row.admission.code }}">Open</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">{% if query %}No patient at this facility matches “{{ query }}”. Check the spelling, or search by patient number.{% else %}No admissions in the last 72 hours. Search by name to find an older admission.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="tc-foot">Admission details are entered by the lab and cannot be changed here. Search covers every admission at this facility.</div>
+</section>

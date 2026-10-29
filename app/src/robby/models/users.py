@@ -18,7 +18,8 @@ class AppUser(Base):
     __table_args__ = (
         CheckConstraint("username = lower(username)", name="username_lowercase"),
         CheckConstraint(
-            "(role IN ('clinician', 'facility_admin')) = (facility_id IS NOT NULL)",
+            "(role::text IN ('clinician', 'facility_admin', 'lab_technician'))"
+            " = (facility_id IS NOT NULL)",
             name="facility_matches_role",
         ),
         CheckConstraint("failed_logins >= 0", name="failed_logins_not_negative"),

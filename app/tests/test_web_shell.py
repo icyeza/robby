@@ -66,10 +66,11 @@ def test_server_errors_are_styled_and_hide_details(app: FastAPI) -> None:
 def test_navigation_matches_the_mockup_extension() -> None:
     labels = {role: [(item.label, item.path) for item in items] for role, items in NAV.items()}
     assert labels == {
-        Role.CLINICIAN: [
+        Role.LAB_TECHNICIAN: [
             ("New admission", "/admissions/new"),
-            ("Recent admissions", "/admissions"),
+            ("Recent entries", "/admissions"),
         ],
+        Role.CLINICIAN: [("Find patient", "/patients")],
         Role.FACILITY_ADMIN: [("Hospital report", "/audit"), ("Users", "/admin/users")],
         Role.MODEL_CUSTODIAN: [
             ("Models", "/models"),
@@ -83,7 +84,8 @@ def test_navigation_matches_the_mockup_extension() -> None:
 
 def test_landing_page_per_role() -> None:
     assert {role: landing_path(role) for role in Role} == {
-        Role.CLINICIAN: "/admissions/new",
+        Role.LAB_TECHNICIAN: "/admissions/new",
+        Role.CLINICIAN: "/patients",
         Role.FACILITY_ADMIN: "/audit",
         Role.MODEL_CUSTODIAN: "/models",
         Role.NATIONAL_REVIEWER: "/national",
@@ -96,9 +98,11 @@ def active(role: Role, path: str) -> list[str]:
 
 
 def test_the_active_item_is_the_longest_matching_path() -> None:
-    assert active(Role.CLINICIAN, "/admissions/new") == ["New admission"]
-    assert active(Role.CLINICIAN, "/admissions") == ["Recent admissions"]
-    assert active(Role.CLINICIAN, "/admissions/DA-0001") == ["Recent admissions"]
+    assert active(Role.LAB_TECHNICIAN, "/admissions/new") == ["New admission"]
+    assert active(Role.LAB_TECHNICIAN, "/admissions") == ["Recent entries"]
+    assert active(Role.CLINICIAN, "/patients") == ["Find patient"]
+    assert active(Role.CLINICIAN, "/admissions/DA-0001") == ["Find patient"]
+    assert active(Role.CLINICIAN, "/admissions/DA-0001/outcome") == ["Find patient"]
     assert active(Role.FACILITY_ADMIN, "/audit") == ["Hospital report"]
     assert active(Role.SYSTEM_ADMIN, "/admin/users/123/reset-password") == ["Users"]
     assert active(Role.CLINICIAN, "/account/password") == []

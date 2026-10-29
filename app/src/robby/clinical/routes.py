@@ -1,5 +1,7 @@
-"""Clinician pages: new admission, live Robson panel, result, recent admissions, outcome and
-correction; import from Excel for the facility administrator. The facility always comes from the
+"""Admission pages. The lab technician records admissions (form with a live Robson panel) and sees
+their recent entries; the clinician finds a patient by name or number, reads the admission with
+its Robson group and readiness signal, and records the outcome. Nothing entered can be edited
+here. Import from Excel is for the facility administrator. The facility always comes from the
 signed-in user; another facility's code is a 404."""
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from robby.clinical.form import (
     detail_specs,
     parse,
     parse_time,
-    values_from_admission,
 )
 from robby.errors import NotAllowed, NotFound
 from robby.models import Admission, DeliveryMode, Facility, ModelState, ModelVersion, Role
@@ -36,7 +37,9 @@ from robby.web.errors import error_page, redirect
 from robby.web.render import render
 
 router = APIRouter(prefix="/admissions")
+patients_router = APIRouter(prefix="/patients")
 Clinician = Annotated[CurrentUser, Depends(require(Role.CLINICIAN))]
+LabTechnician = Annotated[CurrentUser, Depends(require(Role.LAB_TECHNICIAN))]
 FacilityAdmin = Annotated[CurrentUser, Depends(require(Role.FACILITY_ADMIN))]
 
 
@@ -88,10 +91,9 @@ def _form_page(
     *,
     values: Mapping[str, str],
     errors: dict[str, str],
-    mode: str,
-    admission: Admission | None = None,
     status_code: int = 200,
     fragment: bool = False,
+    saved: Admission | None = None,
 ) -> Response:
     specs = _specs(request, db)
     settings = request.app.state.settings
@@ -99,17 +101,6 @@ def _form_page(
     details_open = any(k.startswith("d_") and v for k, v in values.items()) or any(
         k.startswith("d_") for k in errors
     )
-    if mode == "correct":
-        assert admission is not None
-        action = f"/admissions/{admission.code}/correct"
-        heading = f"Correct admission {admission.code}"
-        submit_label = "Save correction"
-        ready = f"Saving creates a new code and replaces {admission.code}"
-    else:
-        action = "/admissions"
-        heading = "New admission"
-        submit_label = "Save and show result"
-        ready = "Fill in the screening section to save"
     return render(
         request,
         "clinical/_form.html" if fragment else "clinical/form.html",
@@ -120,12 +111,12 @@ def _form_page(
         specs=specs,
         details_open=details_open,
         panel=_panel_for(parsed, db),
-        mode=mode,
-        admission=admission,
-        action=action,
-        heading=heading,
-        submit_label=submit_label,
-        ready_note=ready,
+        saved=saved,
+        saved_group=service.classification_of(db, saved).robson_group if saved else None,
+        action="/admissions",
+        heading="New admission",
+        submit_label="Save admission",
+        ready_note="Fill in the screening section to save",
         reasons=labels.REASONS,
         field_names=labels.FIELD_NAMES,
         presentation_options=labels.PRESENTATION_OPTIONS,
@@ -140,14 +131,27 @@ def _now_text(request: Request) -> str:
 
 
 @router.get("/new")
-def new_admission(request: Request, db: DbDep, current: Clinician) -> Response:
+def new_admission(request: Request, db: DbDep, current: LabTechnician, saved: str = "") -> Response:
+    just_saved = None
+    if saved:
+        try:
+            just_saved = service.get_admission(db, current.user, saved)
+        except NotFound:
+            just_saved = None
     return _form_page(
-        request, db, current, values={"admitted_at": _now_text(request)}, errors={}, mode="new"
+        request,
+        db,
+        current,
+        values={"admitted_at": _now_text(request)},
+        errors={},
+        saved=just_saved,
     )
 
 
 @router.post("/preview")
-async def preview(request: Request, db: DbDep, current: Clinician, _csrf: CsrfChecked) -> Response:
+async def preview(
+    request: Request, db: DbDep, current: LabTechnician, _csrf: CsrfChecked
+) -> Response:
     values = await form_values(request)
     parsed, _ = parse(
         values,
@@ -166,38 +170,19 @@ async def preview(request: Request, db: DbDep, current: Clinician, _csrf: CsrfCh
     )
 
 
-def _save_response(
-    request: Request,
-    db: Session,
-    current: CurrentUser,
-    values: dict[str, str],
-    *,
-    mode: str,
-    admission: Admission | None,
-    correcting: bool,
+@router.post("")
+async def create_admission(
+    request: Request, db: DbDep, current: LabTechnician, _csrf: CsrfChecked
 ) -> Response:
+    values = await form_values(request)
     settings = request.app.state.settings
-    specs = _specs(request, db)
-    parsed, errors = parse(values, specs, settings.zone, utcnow(), reason_required=correcting)
+    parsed, errors = parse(values, _specs(request, db), settings.zone, utcnow())
     htmx = request.headers.get("HX-Request") == "true"
-    if correcting and not errors:
-        assert admission is not None
-        original, _ = parse(
-            values_from_admission(admission, service.omissions_for(db, admission), settings.zone)
-            | {"correction_reason": parsed.correction_reason or ""},
-            specs,
-            settings.zone,
-            admission.admitted_at + timedelta(days=1),
-        )
-        if original == parsed:
-            errors["_form"] = "Nothing was changed. Change at least one entry, or go back."
     if not errors:
         try:
-            saved = service.save_admission(
-                db, runtime_of(request), current.user, parsed, supersedes=admission
-            )
+            saved = service.save_admission(db, runtime_of(request), current.user, parsed)
             db.commit()
-            return redirect(request, f"/admissions/{saved.admission.code}")
+            return redirect(request, f"/admissions/new?saved={saved.admission.code}")
         except cls.NoRuleSetError:
             db.rollback()
             errors["_form"] = (
@@ -210,21 +195,30 @@ def _save_response(
         current,
         values=values,
         errors=errors,
-        mode=mode,
-        admission=admission,
         status_code=200 if htmx else 400,
         fragment=htmx,
     )
 
 
-@router.post("")
-async def create_admission(
-    request: Request, db: DbDep, current: Clinician, _csrf: CsrfChecked
-) -> Response:
-    values = await form_values(request)
-    return _save_response(
-        request, db, current, values, mode="new", admission=None, correcting=False
-    )
+def _details_view(admission: Admission) -> list[tuple[str, str]]:
+    """The Robson inputs and age as entered, in words; empty text for a value not recorded."""
+
+    def word(options: tuple[tuple[str, str], ...], value: object) -> str:
+        return "" if value is None else dict(options).get(str(value), str(value))
+
+    def number(value: object, unit: str = "") -> str:
+        return "" if value is None else f"{float(str(value)):g}{unit}"
+
+    babies = None if admission.plurality is None else min(admission.plurality, 2)
+    return [
+        ("Age", number(admission.maternal_age, " years")),
+        ("Previous births (parity)", number(admission.parity)),
+        ("Previous cesareans", number(admission.previous_cs_count)),
+        ("Babies", word(labels.PLURALITY_OPTIONS, babies)),
+        ("Presentation", word(labels.PRESENTATION_OPTIONS, admission.fetal_presentation)),
+        ("Gestational age", number(admission.gestational_age_weeks, " weeks")),
+        ("Onset of labour", word(labels.ONSET_OPTIONS, admission.onset_of_labour)),
+    ]
 
 
 def _screening_view(admission: Admission, omissions: list[Any]) -> dict[str, dict[str, str | None]]:
@@ -247,9 +241,29 @@ def _screening_view(admission: Admission, omissions: list[Any]) -> dict[str, dic
 
 
 @router.get("")
-def recent(request: Request, db: DbDep, current: Clinician) -> Response:
+def recent(request: Request, db: DbDep, current: LabTechnician) -> Response:
     return render(
         request, "clinical/recent.html", current=current, rows=service.recent(db, current.user)
+    )
+
+
+@patients_router.get("")
+def find_patient(request: Request, db: DbDep, current: Clinician, q: str = "") -> Response:
+    query = q.strip()[:80]
+    rows = (
+        service.find_patients(db, current.user, query)
+        if query
+        else service.recent(db, current.user)
+    )
+    return render(
+        request,
+        "clinical/patients_results.html"
+        if request.headers.get("HX-Request") == "true"
+        else "clinical/patients.html",
+        current=current,
+        query=query,
+        rows=rows,
+        limit=service.SEARCH_LIMIT,
     )
 
 
@@ -424,6 +438,7 @@ def result(request: Request, code: str, db: DbDep, current: Clinician) -> Respon
         "model_active": False,
         "not_given": [],
     }
+    view["details"] = _details_view(admission)
     if view["outcome"] is not None:
         view["outcome_text"] = dict(labels.DELIVERY_OPTIONS)[view["outcome"].mode.value]
     if predicted is not None:
@@ -464,32 +479,6 @@ def _current_or_conflict(
             message=f"{admission.code} was replaced by {newer.code}. Use {newer.code} instead.",
         )
     return admission, None
-
-
-@router.get("/{code}/correct")
-def correct_form(request: Request, code: str, db: DbDep, current: Clinician) -> Response:
-    admission, conflict = _current_or_conflict(request, db, current, code)
-    if conflict is not None:
-        return conflict
-    values = values_from_admission(
-        admission, service.omissions_for(db, admission), request.app.state.settings.zone
-    )
-    return _form_page(
-        request, db, current, values=values, errors={}, mode="correct", admission=admission
-    )
-
-
-@router.post("/{code}/correct")
-async def correct_save(
-    request: Request, code: str, db: DbDep, current: Clinician, _csrf: CsrfChecked
-) -> Response:
-    admission, conflict = _current_or_conflict(request, db, current, code)
-    if conflict is not None:
-        return conflict
-    values = await form_values(request)
-    return _save_response(
-        request, db, current, values, mode="correct", admission=admission, correcting=True
-    )
 
 
 def _outcome_page(
@@ -548,7 +537,7 @@ async def outcome_save(
         try:
             service.record_outcome(db, current.user, admission, DeliveryMode(mode), delivered)
             db.commit()
-            return redirect(request, "/admissions")
+            return redirect(request, f"/admissions/{admission.code}")
         except NotAllowed as exc:
             db.rollback()
             errors["_form"] = str(exc)

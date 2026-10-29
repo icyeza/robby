@@ -13,9 +13,10 @@ class Role(StrEnum):
     MODEL_CUSTODIAN = "model_custodian"
     NATIONAL_REVIEWER = "national_reviewer"
     SYSTEM_ADMIN = "system_admin"
+    LAB_TECHNICIAN = "lab_technician"  # last: PostgreSQL appended it to user_role (migration 0006)
 
 
-FACILITY_ROLES = frozenset({Role.CLINICIAN, Role.FACILITY_ADMIN})
+FACILITY_ROLES = frozenset({Role.CLINICIAN, Role.FACILITY_ADMIN, Role.LAB_TECHNICIAN})
 
 ROLE_LABELS: dict[Role, str] = {
     Role.CLINICIAN: "Clinician",
@@ -23,6 +24,7 @@ ROLE_LABELS: dict[Role, str] = {
     Role.MODEL_CUSTODIAN: "Model custodian",
     Role.NATIONAL_REVIEWER: "National reviewer",
     Role.SYSTEM_ADMIN: "System administrator",
+    Role.LAB_TECHNICIAN: "Lab technician",
 }
 
 

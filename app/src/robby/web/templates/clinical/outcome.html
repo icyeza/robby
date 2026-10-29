@@ -5,7 +5,7 @@
 {% include "partials/_header.html" %}
 <main class="page narrow">
   {% include "partials/_banner.html" %}
-  <div class="crumbs"><a href="/admissions">Admissions</a> / {{ admission.code }} / Outcome</div>
+  <div class="crumbs"><a href="/patients">Find patient</a> / <a href="/admissions/{{ admission.code }}">{{ admission.patient_name or admission.code }}</a> / Outcome</div>
   <h1>Record outcome</h1>
   <p class="lede">{{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }} ({{ admission.patient_number }}){% endif %} · admitted {{ admission.admitted_at | local_dt }}{% if group %} · Robson group {{ group }}{% endif %}</p>
 
@@ -28,7 +28,7 @@
         </div>
       </div>
       <div class="notice">Outcomes are used to check how well the readiness signal matches what happens. They are not used to assess staff.</div>
-      <div class="actions tight"><button class="btn btn-p" type="submit">Save outcome</button><a class="btn-g" href="/admissions">Cancel</a></div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Save outcome</button><a class="btn-g" href="/admissions/{{ admission.code }}">Cancel</a></div>
     </div>
   </form>
 </main>

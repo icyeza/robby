@@ -436,7 +436,7 @@ def test_save_admission_marks_only_imports_in_the_event(
     client: TestClient, clinic: dict[str, Any], db: Session, settings: Settings
 ) -> None:
     client.cookies.clear()
-    entry = make_user(db, role=Role.CLINICIAN, facility=clinic["facility"])
+    entry = make_user(db, role=Role.LAB_TECHNICIAN, facility=clinic["facility"])
     csrf = csrf_for(settings, sign_in_client(client, db, settings, entry))
     form = {**GOOD, "admitted_at": now_text(settings)}
     assert client.post("/admissions", data={**form, "csrf_token": csrf}).status_code == 303

@@ -28,7 +28,7 @@
     {% endfor %}
     </tbody>
   </table>
-  <div class="tc-foot">Clinician accounts see only their facility's admissions. Deactivated accounts cannot sign in; their records are kept.</div>
+  <div class="tc-foot">Lab technician and clinician accounts see only their facility's admissions. Deactivated accounts cannot sign in; their records are kept.</div>
 </section>
 
 <div class="dialog-backdrop{% if open_dialog %} open{% endif %}" id="add-user">
@@ -41,7 +41,7 @@
         {{ ui.field("username", "Username", form.username, error=errors.username, autocomplete="off") }}
         {{ ui.select_field("role", "Role", roles, form.role or roles[0][0], error=errors.role) }}
         {% if is_system_admin %}
-        {{ ui.select_field("facility_id", "Facility", facilities, form.facility_id, error=errors.facility_id, blank="Not tied to a facility", help="Required for clinicians and facility administrators.") }}
+        {{ ui.select_field("facility_id", "Facility", facilities, form.facility_id, error=errors.facility_id, blank="Not tied to a facility", help="Required for lab technicians, clinicians and facility administrators.") }}
         {% else %}
         <div class="f"><span class="label">Facility</span><div class="fixed">{{ user.facility.name }}</div></div>
         {% endif %}

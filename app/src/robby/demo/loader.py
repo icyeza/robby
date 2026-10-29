@@ -14,9 +14,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from robby import events
 from robby.audit.references import load_reference_set
 from robby.clinical import scoring
-from robby.clinical.form import Parsed
 from robby.clinical.service import record_outcome, save_admission
 from robby.config import APP_ROOT, get_settings
 from robby.db import get_sessionmaker
@@ -144,7 +144,6 @@ class Summary:
     admissions: int = 0
     status: Counter[str] = field(default_factory=Counter)
     outcomes: int = 0
-    corrections: int = 0
     awaiting: int = 0
     scored: int = 0
     cs_by_facility: dict[str, tuple[int, int]] = field(default_factory=dict)
@@ -220,6 +219,7 @@ def _create_accounts(
 
     for f in facilities:
         tag = f.code.lower()
+        add(f"lab.{tag}", Role.LAB_TECHNICIAN, f)
         add(f"clinician.{tag}", Role.CLINICIAN, f)
         add(f"admin.{tag}", Role.FACILITY_ADMIN, f)
     add("custodian", Role.MODEL_CUSTODIAN)
@@ -352,21 +352,25 @@ def _fill(
     times += sorted(now - timedelta(hours=rng.uniform(0.5, 36)) for _ in range(min(12, n)))
     awaiting_from = max(n - 12, 0)
     flawed = set(rng.sample(range(n), max(1, round(n * 0.04)))) if n else set()
-    to_correct = set(rng.sample(range(awaiting_from), min(6, awaiting_from)))
     cs_count: Counter[str] = Counter()
     totals: Counter[str] = Counter()
 
     with factory() as db:
         facilities = list(db.scalars(select(Facility).order_by(Facility.code)))
-        clinicians = {
-            f.id: db.scalars(
-                select(AppUser).where(AppUser.facility_id == f.id, AppUser.role == Role.CLINICIAN)
-            ).one()
-            for f in facilities
-        }
+
+        def staff(role: Role) -> dict[uuid.UUID, AppUser]:
+            return {
+                f.id: db.scalars(
+                    select(AppUser).where(AppUser.facility_id == f.id, AppUser.role == role)
+                ).one()
+                for f in facilities
+            }
+
+        labs, clinicians = staff(Role.LAB_TECHNICIAN), staff(Role.CLINICIAN)
         for i, at in enumerate(times):
             fi = rng.choices(range(len(facilities)), weights=generate.FACILITY_WEIGHTS)[0]
-            facility, user = facilities[fi], clinicians[facilities[fi].id]
+            facility = facilities[fi]
+            entry, clinician = labs[facility.id], clinicians[facility.id]
             issued[facility.code] += 1
             parsed = generate.make_parsed(
                 rng,
@@ -379,16 +383,9 @@ def _fill(
             )
             if i in flawed:
                 parsed = generate.make_flawed(rng, parsed)
-            saved = save_admission(db, runtime, user, parsed)
-            current = saved
+            current = save_admission(db, runtime, entry, parsed)
             summary.admissions += 1
-            summary.status[saved.classification.status.value] += 1
-            if i in to_correct:
-                fixed = _corrected(rng, parsed, saved.classification.status.value)
-                current = save_admission(db, runtime, user, fixed, supersedes=saved.admission)
-                summary.corrections += 1
-                summary.admissions += 1
-                summary.status[current.classification.status.value] += 1
+            summary.status[current.classification.status.value] += 1
             if current.prediction is not None:
                 summary.scored += 1
             if i >= awaiting_from:
@@ -407,7 +404,7 @@ def _fill(
             delivered = min(
                 current.admission.admitted_at + timedelta(hours=hours), now - timedelta(minutes=5)
             )
-            record_outcome(db, user, current.admission, _mode(rng, cesarean), delivered)
+            record_outcome(db, clinician, current.admission, _mode(rng, cesarean), delivered)
             summary.outcomes += 1
             totals[facility.name] += 1
             cs_count[facility.name] += int(cesarean)
@@ -415,20 +412,3 @@ def _fill(
             if (i + 1) % 100 == 0:
                 say(f"  {i + 1} of {n} admissions...")
     summary.cs_by_facility = {k: (cs_count[k], totals[k]) for k in sorted(totals)}
-
-
-def _corrected(rng: random.Random, parsed: Parsed, status: str) -> Parsed:
-    reason = "Corrected after checking the paper record."
-    if parsed.parity == 0 and (parsed.previous_cs_count or 0) > 0:
-        return replace(parsed, parity=1, correction_reason=reason)
-    ga = parsed.ga_weeks or 39
-    if status == "resolved":
-        ga = max(20, min(45, ga + rng.choice((-1, 1))))
-    return replace(
-        parsed,
-        ga_weeks=ga,
-        onset=parsed.onset or "spontaneous",
-        presentation=parsed.presentation or "cephalic",
-        parity=parsed.parity if parsed.parity is not None else 0,
-        correction_reason=reason,
-    )

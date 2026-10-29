@@ -21,6 +21,9 @@ PAGES.append(("/approval-log", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/monitoring", frozenset({Role.MODEL_CUSTODIAN})))
 PAGES.append(("/admin/facilities", frozenset({Role.SYSTEM_ADMIN})))
 PAGES.append(("/admin/users", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})))
+PAGES.append(("/admissions/new", frozenset({Role.LAB_TECHNICIAN})))
+PAGES.append(("/admissions", frozenset({Role.LAB_TECHNICIAN})))
+PAGES.append(("/patients", frozenset({Role.CLINICIAN})))
 PAGES.append(("/admissions/import", frozenset({Role.FACILITY_ADMIN})))
 PAGES.append(("/admissions/import/template.xlsx", frozenset({Role.FACILITY_ADMIN})))
 
@@ -87,6 +90,8 @@ POST_ACTIONS: list[tuple[str, frozenset[Role]]] = [
     ("/admin/users/{user}/deactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
     ("/admin/users/{user}/reactivate", frozenset({Role.SYSTEM_ADMIN, Role.FACILITY_ADMIN})),
     ("/admissions/import", frozenset({Role.FACILITY_ADMIN})),
+    ("/admissions", frozenset({Role.LAB_TECHNICIAN})),
+    ("/admissions/preview", frozenset({Role.LAB_TECHNICIAN})),
 ]
 
 

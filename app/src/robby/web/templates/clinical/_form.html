@@ -1,5 +1,5 @@
 {% import "partials/_macros.html" as ui with context %}
-{# Admission form, used for a new admission and for a correction. #}
+{# Admission form, filled in by the lab technician. #}
 {% macro num(name, label, unit="", help="", decimal=false) -%}
 <div class="f{% if errors.get(name) %} conflict{% endif %}" id="f-{{ name }}">
   <label for="i-{{ name }}">{{ label }}</label>
@@ -37,20 +37,8 @@
     {% if errors.get('_form') %}<div class="errbox top" role="alert"><b>⚠ Not saved.</b> {{ errors['_form'] }}</div>{% endif %}
 
     <div hx-post="/admissions/preview" hx-trigger="change delay:250ms, input delay:600ms" hx-target="#robson-panel" hx-swap="outerHTML">
-    {% if mode == 'correct' %}
     <section class="sec">
-      <div class="sec-b">
-        <div class="f{% if errors.get('correction_reason') %} conflict{% endif %}" id="f-correction_reason">
-          <label for="i-correction_reason">Reason for correction <span class="req">(required)</span></label>
-          <textarea id="i-correction_reason" name="correction_reason" maxlength="500" data-required="reason for correction">{{ values.get('correction_reason', '') }}</textarea>
-          {% if errors.get('correction_reason') %}<div class="msg">{{ errors['correction_reason'] }}</div>{% endif %}
-        </div>
-      </div>
-    </section>
-    {% endif %}
-
-    <section class="sec">
-      <div class="sec-h"><h2>Patient</h2><span class="hint">Shown only to clinicians at this facility</span></div>
+      <div class="sec-h"><h2>Patient</h2><span class="hint">Shown only to staff at this facility</span></div>
       <div class="sec-b">
         <div class="row">
           <div class="f{% if errors.get('patient_number') %} conflict{% endif %}" id="f-patient_number">

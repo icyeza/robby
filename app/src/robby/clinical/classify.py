@@ -71,7 +71,7 @@ def stored_trace(result: ClassificationResult, inputs: RobsonInputs) -> dict[str
     }
 
 
-DEFAULT_FOOT = "Classification only. The readiness signal appears after saving."
+DEFAULT_FOOT = "Classification only. The clinician sees the readiness signal once this is saved."
 
 
 @dataclass

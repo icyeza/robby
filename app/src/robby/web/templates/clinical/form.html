@@ -2,12 +2,11 @@
 {% import "partials/_macros.html" as ui with context %}
 {% block title %}{{ heading }}{% endblock %}
 {% block content %}
-<div class="crumbs"><a href="/admissions">Admissions</a> / {% if mode == 'correct' %}<a href="/admissions/{{ admission.code }}">{{ admission.code }}</a> / Correction{% else %}New{% endif %}</div>
+<div class="crumbs"><a href="/admissions">Recent entries</a> / New</div>
 <h1>{{ heading }}</h1>
-{% if mode == 'correct' %}
-<div class="notice warn"><b>You are correcting {{ admission.code }}.</b> The original stays on record and will be marked as replaced. The corrected admission gets a new code.</div>
-{% else %}
-<p class="lede">Fill in what you have. The Robson group is worked out as you go.</p>
+{% if saved %}
+<div class="notice saved-note" role="status"><b>✓ Saved {{ saved.code }}</b>{% if saved.patient_name %} · {{ saved.patient_name }} ({{ saved.patient_number }}){% endif %} · {% if saved_group %}Robson group {{ saved_group }}{% else %}no Robson group yet (details missing){% endif %}. The clinician can now find this patient by name. The form below is ready for the next patient.</div>
 {% endif %}
+<p class="lede">Fill in what you have. The Robson group is worked out as you go.</p>
 {% include "clinical/_form.html" %}
 {% endblock %}

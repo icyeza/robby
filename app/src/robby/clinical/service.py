@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from robby import events
 from robby.clinical import classify as cls
@@ -42,6 +42,7 @@ from robby.timeutil import utcnow
 
 logger = logging.getLogger("robby")
 RECENT_WINDOW = timedelta(hours=72)
+SEARCH_LIMIT = 50
 
 
 @dataclass
@@ -347,6 +348,45 @@ def recent(db: Session, user: AppUser, now: datetime | None = None) -> list[Rece
             .order_by(Admission.admitted_at.desc(), Admission.created_at.desc())
         )
     )
+    return rows_of(db, admissions)
+
+
+def _like(text: str) -> str:
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def find_patients(db: Session, user: AppUser, query: str) -> list[RecentRow]:
+    """Current admissions of the user's facility whose patient name or number contains `query`
+    (any case), newest first, at most SEARCH_LIMIT. Replaced admissions are left out."""
+    words = query.split()
+    if not words:
+        return []
+    newer = aliased(Admission)
+    statement = select(Admission).where(
+        Admission.facility_id == user.facility_id,
+        ~exists().where(newer.supersedes_id == Admission.id),
+    )
+    for word in words:
+        pattern = _like(word)
+        statement = statement.where(
+            or_(
+                Admission.patient_name.ilike(pattern, escape="\\"),
+                Admission.patient_number.ilike(pattern, escape="\\"),
+            )
+        )
+    admissions = list(
+        db.scalars(
+            statement.order_by(Admission.admitted_at.desc(), Admission.created_at.desc()).limit(
+                SEARCH_LIMIT
+            )
+        )
+    )
+    return rows_of(db, admissions)
+
+
+def rows_of(db: Session, admissions: list[Admission]) -> list[RecentRow]:
+    """Each admission with its Robson group, readiness percent, chain outcome and replacement."""
     if not admissions:
         return []
     ids = [a.id for a in admissions]

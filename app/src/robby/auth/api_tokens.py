@@ -1,5 +1,5 @@
-"""Bearer tokens for automated imports. A token acts as one clinician account: its admissions
-belong to that account's facility, exactly like a clinician's own imports. Only the SHA-256 of a
+"""Bearer tokens for automated imports. A token acts as one lab technician account: its admissions
+belong to that account's facility, exactly like the technician's own entries. Only the SHA-256 of a
 token is stored; the token itself is shown once, when it is created."""
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ class TokenError(Exception):
 
 
 def create(db: Session, actor: AppUser | None, username: str, label: str) -> tuple[str, ApiToken]:
-    """A new token for the clinician account `username`, and the token text (shown once)."""
+    """A new token for the lab technician account `username`, and the token text (shown once)."""
     user = db.scalar(select(AppUser).where(AppUser.username == username.strip().lower()))
     if user is None or not user.active:
         raise TokenError(f"No active account named “{username}”.")
-    if user.role is not Role.CLINICIAN:
-        raise TokenError("A token can only act as a clinician account.")
+    if user.role is not Role.LAB_TECHNICIAN:
+        raise TokenError("A token can only act as a lab technician account.")
     if not label.strip():
-        raise TokenError("Give the token a label, for example “OpenClinic nightly feed”.")
+        raise TokenError("Give the token a label, for example “nightly feed from the lab system”.")
     token = PREFIX + secrets.token_urlsafe(32)
     row = ApiToken(
         user_id=user.id,
@@ -62,7 +62,7 @@ def revoke(db: Session, actor: AppUser | None, token_id: uuid.UUID, now: datetim
 
 
 def authenticate(db: Session, authorization: str | None, now: datetime) -> AppUser | None:
-    """The clinician a `Authorization: Bearer <token>` header stands for, or None."""
+    """The lab technician a `Authorization: Bearer <token>` header stands for, or None."""
     if not authorization or not authorization.lower().startswith("bearer "):
         return None
     token = authorization[7:].strip()
@@ -72,7 +72,7 @@ def authenticate(db: Session, authorization: str | None, now: datetime) -> AppUs
     if row is None or row.revoked_at is not None:
         return None
     user = row.user
-    if not user.active or user.role is not Role.CLINICIAN or user.facility_id is None:
+    if not user.active or user.role is not Role.LAB_TECHNICIAN or user.facility_id is None:
         return None
     if row.last_used_at is None or now - row.last_used_at > TOUCH_EVERY:
         row.last_used_at = now
