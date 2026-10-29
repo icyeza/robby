@@ -8,7 +8,7 @@
 # What it sets up:
 #   user robby, home /srv/robby, the repository in /srv/robby/robby (branch main)
 #   its own PostgreSQL 16 cluster "robby" on 127.0.0.1:5433 (peer authentication for user robby)
-#   /etc/robby/robby.env (settings, a fresh secret key; kept on later runs)
+#   /etc/robby/robby.env (settings, a fresh secret key and field-encryption key; kept on later runs)
 #   the demonstration database robby_demo, filled with synthetic data on the first run
 #   systemd unit robby.service (Uvicorn, 2 workers, 127.0.0.1:8170) and the nginx site
 #   a daily encrypted backup (robby-backup.timer, deploy/backup.sh) once a public key is in
@@ -71,6 +71,12 @@ ROBBY_TIMEZONE=Africa/Kigali
 EOF
     chown root:robby "$ENV_FILE"
     chmod 640 "$ENV_FILE"
+fi
+# The key that encrypts patient numbers and names (added to older installs too). Keep a copy away
+# from the server and from the backups: without it the identifiers cannot be read again.
+if ! grep -q '^ROBBY_FIELD_KEY=' "$ENV_FILE"; then
+    echo "ROBBY_FIELD_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" >>"$ENV_FILE"
+    echo "generated ROBBY_FIELD_KEY in $ENV_FILE: copy it somewhere safe off this server"
 fi
 
 say "Python environment"
