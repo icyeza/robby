@@ -61,6 +61,42 @@ def get_user_in_scope(db: Session, actor: AppUser, user_id: uuid.UUID) -> AppUse
     return user
 
 
+def _check_username(db: Session, name: str, errors: dict[str, str]) -> None:
+    if not USERNAME_PATTERN.fullmatch(name):
+        errors["username"] = (
+            "Use 3 to 64 characters: lowercase letters, digits, dots, dashes or underscores, "
+            "starting with a letter or digit."
+        )
+    elif db.scalar(select(AppUser.id).where(AppUser.username == name)) is not None:
+        errors["username"] = "This username is already taken."
+
+
+def _chosen_role(actor: AppUser | None, role: Role | str, errors: dict[str, str]) -> Role | None:
+    """The role asked for, if it exists (None otherwise). An error too when the actor may not
+    create it."""
+    try:
+        chosen = Role(role)
+    except ValueError:
+        errors["role"] = "Choose a role."
+        return None
+    allowed = creatable_roles(actor) if actor is not None else tuple(Role)
+    if chosen not in allowed:
+        errors["role"] = "You cannot create accounts with this role."
+    return chosen
+
+
+def _facility_for(
+    db: Session, chosen: Role | None, facility_id: uuid.UUID | None, errors: dict[str, str]
+) -> Facility | None:
+    """The active facility a facility role works at (None for the other roles)."""
+    if chosen is None or chosen not in FACILITY_ROLES:
+        return None
+    facility = db.get(Facility, facility_id) if facility_id is not None else None
+    if facility is None or not facility.active:
+        errors["facility_id"] = "Choose the active facility this person works at."
+    return facility
+
+
 def create_user(
     db: Session,
     actor: AppUser | None,
@@ -75,37 +111,15 @@ def create_user(
     generated, returned once, and must be changed at first sign-in."""
     errors: dict[str, str] = {}
     name = username.strip().lower()
-    if not USERNAME_PATTERN.fullmatch(name):
-        errors["username"] = (
-            "Use 3 to 64 characters: lowercase letters, digits, dots, dashes or underscores, "
-            "starting with a letter or digit."
-        )
-    elif db.scalar(select(AppUser.id).where(AppUser.username == name)) is not None:
-        errors["username"] = "This username is already taken."
-
-    chosen: Role | None
-    try:
-        chosen = Role(role)
-    except ValueError:
-        chosen = None
-        errors["role"] = "Choose a role."
-    allowed = creatable_roles(actor) if actor is not None else tuple(Role)
-    if chosen is not None and chosen not in allowed:
-        errors["role"] = "You cannot create accounts with this role."
-
+    _check_username(db, name, errors)
+    chosen = _chosen_role(actor, role, errors)
     if actor is not None and actor.role is Role.FACILITY_ADMIN:
         facility_id = actor.facility_id
-    facility: Facility | None = None
-    if chosen is not None and chosen in FACILITY_ROLES:
-        facility = db.get(Facility, facility_id) if facility_id is not None else None
-        if facility is None or not facility.active:
-            errors["facility_id"] = "Choose the active facility this person works at."
-
+    facility = _facility_for(db, chosen, facility_id, errors)
     if password is not None:
         problem = password_problem(password, username=name)
         if problem is not None:
             errors["password"] = problem
-
     if errors or chosen is None:
         raise FormErrors(errors)
 

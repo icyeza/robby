@@ -27,6 +27,7 @@ from reportlab.platypus import (
 )
 
 from robby.audit import formatting as fmt
+from robby.audit.measures import MIN_BIRTHS_FOR_RATE_FLAG, RATE_FLAG_POINTS, Report
 from robby.audit.plain import in_100
 
 BRAND = colors.HexColor("#7b1e3a")
@@ -173,10 +174,9 @@ def _build(story: list[Any], title: str) -> bytes:
     return out.getvalue()
 
 
-def hospital_pdf(ctx: dict[str, Any], *, demo: bool, zone: Any) -> bytes:
-    report = ctx["report"]
-    name = ctx["facility"].name
-    story = _header(f"{name} · Hospital report", ctx, demo, zone)
+def _hospital_summary(report: Report) -> list[Any]:
+    """The headline sentence and the three tiles."""
+    story: list[Any] = []
     if report.births:
         story.append(
             _p(
@@ -195,28 +195,36 @@ def hospital_pdf(ctx: dict[str, Any], *, demo: bool, zone: Any) -> bytes:
             ]
         )
     )
-    story += _stands_out(ctx["stands_out"])
+    return story
 
-    if ctx["sources"]:
-        rows: list[list[Any]] = [["Group", "Women in this group", "", "Cesareans"]]
-        for s in ctx["sources"]:
-            rows.append(
-                [
-                    _p(f"<b>{s.group}</b>", CELL),
-                    _p(_e(ctx["plain_groups"][s.group]), CELL),
-                    _bar(s.width, 45 * mm),
-                    _p(f"<b>{s.cesareans}</b> · {fmt.pct(s.share)} of all", CELL_R),
-                ]
-            )
-        story.append(
-            KeepTogether(
-                [
-                    _p("Where the cesareans come from", H2),
-                    _table(rows, [14 * mm, WIDTH - 104 * mm, 50 * mm, 40 * mm]),
-                ]
-            )
+
+def _sources_table(ctx: dict[str, Any]) -> list[Any]:
+    """Where the cesareans come from, largest group first (nothing when there are none)."""
+    if not ctx["sources"]:
+        return []
+    rows: list[list[Any]] = [["Group", "Women in this group", "", "Cesareans"]]
+    for s in ctx["sources"]:
+        rows.append(
+            [
+                _p(f"<b>{s.group}</b>", CELL),
+                _p(_e(ctx["plain_groups"][s.group]), CELL),
+                _bar(s.width, 45 * mm),
+                _p(f"<b>{s.cesareans}</b> · {fmt.pct(s.share)} of all", CELL_R),
+            ]
         )
+    return [
+        KeepTogether(
+            [
+                _p("Where the cesareans come from", H2),
+                _table(rows, [14 * mm, WIDTH - 104 * mm, 50 * mm, 40 * mm]),
+            ]
+        )
+    ]
 
+
+def _groups_table(ctx: dict[str, Any]) -> list[Any]:
+    """Each Robson group against the reference, then the births with no group."""
+    report = ctx["report"]
     rows = [["Group", "Women in this group", "Births", "Cesareans", "Compared with the reference"]]
     for r in report.rows:
         v = ctx["verdicts"][r.group]
@@ -244,16 +252,26 @@ def hospital_pdf(ctx: dict[str, Any], *, demo: bool, zone: Any) -> bytes:
             _p("Check the records" if report.unclassified_high else "Counted in the totals", CELL),
         ]
     )
-    story.append(_p("Each Robson group", H2))
-    story.append(_table(rows, [14 * mm, WIDTH - 104 * mm, 16 * mm, 30 * mm, 44 * mm]))
-    story.append(Spacer(1, 4))
-    story.append(
+    return [
+        _p("Each Robson group", H2),
+        _table(rows, [14 * mm, WIDTH - 104 * mm, 16 * mm, 30 * mm, 44 * mm]),
+        Spacer(1, 4),
         _p(
-            '"Higher" or "Lower" means the group\'s cesarean rate differs from the reference by 10 '
-            "or more in 100. Groups with fewer than 10 births are not judged.",
+            '"Higher" or "Lower" means the group\'s cesarean rate differs from the reference by '
+            f"{int(RATE_FLAG_POINTS)} or more in 100. Groups with fewer than "
+            f"{MIN_BIRTHS_FOR_RATE_FLAG} births are not judged.",
             SMALL,
-        )
-    )
+        ),
+    ]
+
+
+def hospital_pdf(ctx: dict[str, Any], *, demo: bool, zone: Any) -> bytes:
+    name = ctx["facility"].name
+    story = _header(f"{name} · Hospital report", ctx, demo, zone)
+    story += _hospital_summary(ctx["report"])
+    story += _stands_out(ctx["stands_out"])
+    story += _sources_table(ctx)
+    story += _groups_table(ctx)
     return _build(story, f"{name} · Hospital report")
 
 

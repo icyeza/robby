@@ -13,11 +13,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
 
 from robby.audit import formatting, pdf, plain
 from robby.audit.counts import birth_counts
 from robby.audit.measures import (
+    MIN_BIRTHS_FOR_RATE_FLAG,
     UNCLASSIFIED_CALLOUT,
     Comparison,
     Report,
@@ -26,10 +26,11 @@ from robby.audit.measures import (
     pct,
 )
 from robby.audit.narrative import FacilityComparison, national_stands_out
-from robby.audit.references import available_references, choose_reference
-from robby.audit.service import parse_period, report_context, today_local
+from robby.audit.references import Reference, available_references, choose_reference
+from robby.audit.service import Period, parse_period, report_context, today_local
 from robby.audit.status import MonthStatus, monthly_status
 from robby.auth.dependencies import CurrentUser, DbDep, require
+from robby.facilities.service import active_facilities
 from robby.models import Facility, Role
 from robby.web.render import render
 
@@ -81,12 +82,12 @@ def _pos(value: Decimal | None, axis: Decimal) -> int | None:
 
 def _lines(
     db: DbDep, request: Request, period_from: str | None, period_to: str | None, ref_id: str | None
-):  # type: ignore[no-untyped-def]
+) -> tuple[Period, list[Reference], Reference | None, list[FacilityLine]]:
     zone = request.app.state.settings.zone
     period = parse_period(period_from, period_to, zone)
     refs = available_references(db)
     reference = choose_reference(refs, ref_id)
-    facilities = list(db.scalars(select(Facility).where(Facility.active).order_by(Facility.name)))
+    facilities = active_facilities(db)
     counts = birth_counts(db, period.start, period.end, zone)
     status = monthly_status(db, [f.id for f in facilities], today_local(zone))
     comps = {f.id: compare_to_expected(counts.get(f.id, {}), reference) for f in facilities}
@@ -103,7 +104,7 @@ def _lines(
         heat = []
         for g in HEAT_GROUPS:
             row = by_group[g]
-            usable = row.rate_diff is not None and row.births >= 10
+            usable = row.rate_diff is not None and row.births >= MIN_BIRTHS_FOR_RATE_FLAG
             heat.append(
                 HeatCell(
                     formatting.signed_whole(row.rate_diff) if usable else "—",
@@ -249,10 +250,6 @@ def overview_csv(
     )
 
 
-def _hospitals(db: DbDep) -> list[Facility]:
-    return list(db.scalars(select(Facility).where(Facility.active).order_by(Facility.name)))
-
-
 @router.get("/hospital")
 def pick_hospital(request: Request, db: DbDep, current: Reviewer, facility: str = "") -> Response:
     """Where the hospital picker submits: on to that hospital's report, keeping the period."""
@@ -300,6 +297,6 @@ def facility_report(
         "audit/report.html",
         current=current,
         readonly=True,
-        hospitals=_hospitals(db),
+        hospitals=active_facilities(db),
         **context,
     )

@@ -2,28 +2,28 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 
-from robby import events
 from robby.audit import export_format, pdf
 from robby.audit.counts import birth_counts
 from robby.audit.service import (
+    EXPORT_MONTHS,
     month_range,
     parse_period,
+    recent_exports,
+    record_export,
     report_context,
     today_local,
     unclassified_reasons,
 )
 from robby.audit.status import complete_months
 from robby.auth.dependencies import CurrentUser, DbDep, require
-from robby.models import ExportRecord, Facility, Role
+from robby.models import Facility, Role
 from robby.web.render import render
 
 router = APIRouter(prefix="/audit")
@@ -52,19 +52,13 @@ def audit_page(
     facility = _facility(db, current)
     context = report_context(db, zone, facility, period, ref)
     today = today_local(zone)
-    recent = db.scalars(
-        select(ExportRecord)
-        .where(ExportRecord.facility_id == facility.id)
-        .order_by(ExportRecord.exported_at.desc())
-        .limit(5)
-    ).all()
     return render(
         request,
         "audit/report.html",
         current=current,
         readonly=False,
-        months=complete_months(today, 12),
-        recent_exports=recent,
+        months=complete_months(today, EXPORT_MONTHS),
+        recent_exports=recent_exports(db, facility.id),
         reasons=unclassified_reasons(db, zone, facility.id, period),
         zone=zone,
         **context,
@@ -96,7 +90,7 @@ def export_csv(request: Request, db: DbDep, current: FacilityAdmin, month: str =
     if not MONTH.match(month):
         raise HTTPException(status_code=400, detail="month must be YYYY-MM")
     first = date(int(month[:4]), int(month[5:]), 1)
-    if first not in complete_months(today_local(zone), 12):
+    if first not in complete_months(today_local(zone), EXPORT_MONTHS):
         raise HTTPException(
             status_code=400, detail="Only the last 12 complete months can be exported."
         )
@@ -104,27 +98,7 @@ def export_csv(request: Request, db: DbDep, current: FacilityAdmin, month: str =
     start, end = month_range(first)
     counts = birth_counts(db, start, end, zone, facility.id).get(facility.id, {})
     body = export_format.render_monthly_csv(facility.code, first, counts)
-    digest = hashlib.sha256(body).hexdigest()
-    record = ExportRecord(
-        facility_id=facility.id,
-        period_month=first,
-        exported_by=current.user.id,
-        file_sha256=digest,
-    )
-    db.add(record)
-    db.flush()
-    events.append(
-        db,
-        current.user,
-        "export.created",
-        entity=("export_record", record.id),
-        payload={
-            "facility_code": facility.code,
-            "period_month": month,
-            "format_version": export_format.EXPORT_FORMAT_VERSION,
-            "sha256": digest,
-        },
-    )
+    record_export(db, current.user, facility, first, body)
     db.commit()
     name = export_format.filename(facility.code, first)
     return Response(

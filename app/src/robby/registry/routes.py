@@ -4,19 +4,18 @@ model-detail.html)."""
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.errors import FormErrors, NotAllowed, NotFound
-from robby.models import AppUser, ModelState, ModelTransition, ModelVersion, Role
+from robby.models import ModelState, ModelVersion, Role
 from robby.monitoring import service as monitoring
+from robby.registry import service
 from robby.registry.evidence import build_evidence, calibration_svg
 from robby.registry.transitions import RULES, actions_for, apply_transition
 from robby.web.csrf import CsrfChecked
@@ -60,40 +59,17 @@ def _month(d: Any) -> str:
     return str(d.strftime("%b %Y"))
 
 
-def _usernames(db: Session, ids: set[uuid.UUID | None]) -> dict[uuid.UUID, str]:
-    wanted = [i for i in ids if i is not None]
-    if not wanted:
-        return {}
-    return {u.id: u.username for u in db.scalars(select(AppUser).where(AppUser.id.in_(wanted)))}
-
-
 def _get(db: Session, label: str) -> ModelVersion:
-    model = db.scalar(select(ModelVersion).where(ModelVersion.version_label == label))
+    model = service.model_by_label(db, label)
     if model is None:
         raise HTTPException(status_code=404)
     return model
 
 
-def _previous_active(db: Session, current: ModelVersion) -> ModelVersion | None:
-    """The model most recently retired from active, if it is still retired."""
-    return db.scalar(
-        select(ModelVersion)
-        .join(ModelTransition, ModelTransition.model_id == ModelVersion.id)
-        .where(
-            ModelTransition.from_state == ModelState.ACTIVE,
-            ModelTransition.to_state == ModelState.RETIRED,
-            ModelVersion.state == ModelState.RETIRED,
-            ModelVersion.id != current.id,
-        )
-        .order_by(ModelTransition.at.desc())
-        .limit(1)
-    )
-
-
 def _dialogs(db: Session, model: ModelVersion) -> tuple[list[DialogSpec], ModelVersion | None]:
     """The dialogs this page can open, and the model an Active page offers to roll back to."""
     label = model.version_label
-    current = db.scalar(select(ModelVersion).where(ModelVersion.state == ModelState.ACTIVE))
+    current = monitoring.active_model(db)
     now_active = current.version_label if current else None
     out: list[DialogSpec] = []
     for action in actions_for(model.state):
@@ -145,13 +121,13 @@ def _dialogs(db: Session, model: ModelVersion) -> tuple[list[DialogSpec], ModelV
                     primary=False,
                 )
             )
-    rollback_to = _previous_active(db, model) if model.state is ModelState.ACTIVE else None
+    rollback_to = service.previous_active(db, model) if model.state is ModelState.ACTIVE else None
     return out, rollback_to
 
 
 @router.get("")
 def models_page(request: Request, db: DbDep, current: Custodian) -> Response:
-    rows = db.scalars(select(ModelVersion).order_by(ModelVersion.registered_at.desc())).all()
+    rows = service.all_models(db)
     display = [
         {
             "label": m.version_label,
@@ -189,12 +165,8 @@ def _detail(
     done: str = "",
 ) -> Response:
     dialogs, rollback_to = _dialogs(db, model)
-    history = db.scalars(
-        select(ModelTransition)
-        .where(ModelTransition.model_id == model.id)
-        .order_by(ModelTransition.at.desc(), ModelTransition.created_at.desc())
-    ).all()
-    names = _usernames(
+    history = service.history_of(db, model)
+    names = service.usernames(
         db,
         {model.registered_by, model.approved_by, *[t.actor_id for t in history]},
     )

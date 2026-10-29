@@ -6,12 +6,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.errors import FormErrors, NotAllowed, NotFound
-from robby.models import ROLE_LABELS, AppUser, Facility, Role
+from robby.facilities.service import active_facilities
+from robby.models import ROLE_LABELS, AppUser, Role
 from robby.timeutil import utcnow
 from robby.users.service import (
     creatable_roles,
@@ -44,10 +44,7 @@ def _list_page(
     is_system_admin = actor.role is Role.SYSTEM_ADMIN
     facilities: list[tuple[str, str]] = []
     if is_system_admin:
-        open_facilities = db.scalars(
-            select(Facility).where(Facility.active).order_by(Facility.name)
-        )
-        facilities = [(str(f.id), f.name) for f in open_facilities]
+        facilities = [(str(f.id), f.name) for f in active_facilities(db)]
     return render(
         request,
         "users/list.html",

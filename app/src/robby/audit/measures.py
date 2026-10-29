@@ -143,7 +143,7 @@ def build_report(counts: Counts, reference: Reference | None, awaiting: int = 0)
     size_axis = Decimal(45) if max(sizes, default=Decimal(0)) <= 45 else Decimal(100)
     rows = [_row(g, counts.get(g, GroupCount()), n, c, reference, size_axis) for g in GROUPS]
     residual = _row(None, counts.get(None, GroupCount()), n, c, None, size_axis)
-    biggest = max(rows, key=lambda r: (r.cesareans, -r.group or 0), default=None)
+    biggest = max(rows, key=lambda r: (r.cesareans, -(r.group or 0)), default=None)
     has_largest = biggest is not None and biggest.cesareans > 0
     return Report(
         births=n,

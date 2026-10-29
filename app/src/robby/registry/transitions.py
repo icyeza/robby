@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -72,21 +73,8 @@ def actions_for(state: ModelState) -> list[str]:
     return [name for name, rule in RULES.items() if state in rule.sources]
 
 
-def apply_transition(
-    db: Session,
-    actor: AppUser,
-    model_id: uuid.UUID,
-    action: str,
-    *,
-    approver_name: str,
-    reason: str,
-) -> ModelVersion:
-    """Does not commit. FormErrors for bad input or a lost race, NotAllowed for a refused move."""
-    if actor.role is not Role.MODEL_CUSTODIAN:
-        raise NotAllowed("Only a model custodian can approve a model change.")
-    rule = RULES.get(action)
-    if rule is None:
-        raise NotAllowed("Unknown action.")
+def _checked_reason(actor: AppUser, approver_name: str, reason: str) -> str:
+    """The trimmed reason; FormErrors unless the approver typed their own username and a reason."""
     errors: dict[str, str] = {}
     if approver_name.strip().lower() != actor.username.lower():
         errors["approver_name"] = "Type your own username to confirm that you are approving this."
@@ -97,7 +85,14 @@ def apply_transition(
         errors["reason"] = f"Keep the reason under {MAX_REASON} characters."
     if errors:
         raise FormErrors(errors)
+    return clean
 
+
+def _locked(
+    db: Session, model_id: uuid.UUID, rule: Rule
+) -> tuple[ModelVersion, ModelVersion | None]:
+    """The model to move and the other active model (if any), both locked for this transaction
+    (in id order, so two concurrent transitions cannot deadlock)."""
     rows = list(
         db.scalars(
             select(ModelVersion)
@@ -115,6 +110,80 @@ def apply_transition(
             f"it cannot be {rule.done} from that state."
         )
     current = next((r for r in rows if r.state is ModelState.ACTIVE and r.id != target.id), None)
+    return target, current
+
+
+def _retire_current(
+    db: Session,
+    actor: AppUser,
+    current: ModelVersion,
+    target: ModelVersion,
+    action: str,
+    reason: str,
+    now: datetime,
+) -> None:
+    """Demote the active model that `target` replaces; flushed before the promotion."""
+    prefix = "Replaced by" if action == "promote" else "Rolled back to"
+    db.execute(
+        update(ModelVersion).where(ModelVersion.id == current.id).values(state=ModelState.RETIRED)
+    )
+    db.add(
+        ModelTransition(
+            model_id=current.id,
+            from_state=ModelState.ACTIVE,
+            to_state=ModelState.RETIRED,
+            actor_id=actor.id,
+            reason=f"{prefix} {target.version_label}: {reason}",
+            at=now,
+        )
+    )
+    db.flush()
+
+
+def _move(
+    db: Session,
+    actor: AppUser,
+    target: ModelVersion,
+    from_state: ModelState,
+    rule: Rule,
+    reason: str,
+    now: datetime,
+) -> None:
+    """Set the target's new state (with the approval, for shadow and active) and record it."""
+    values: dict[str, object] = {"state": rule.target}
+    if rule.target in (ModelState.SHADOW, ModelState.ACTIVE):
+        values.update(approved_by=actor.id, approved_at=now)
+    db.execute(update(ModelVersion).where(ModelVersion.id == target.id).values(**values))
+    db.add(
+        ModelTransition(
+            model_id=target.id,
+            from_state=from_state,
+            to_state=rule.target,
+            actor_id=actor.id,
+            reason=reason,
+            at=now,
+        )
+    )
+    db.flush()
+
+
+def apply_transition(
+    db: Session,
+    actor: AppUser,
+    model_id: uuid.UUID,
+    action: str,
+    *,
+    approver_name: str,
+    reason: str,
+) -> ModelVersion:
+    """Does not commit. FormErrors for bad input or a lost race, NotAllowed for a refused move."""
+    if actor.role is not Role.MODEL_CUSTODIAN:
+        raise NotAllowed("Only a model custodian can approve a model change.")
+    rule = RULES.get(action)
+    if rule is None:
+        raise NotAllowed("Unknown action.")
+    clean = _checked_reason(actor, approver_name, reason)
+    target, current = _locked(db, model_id, rule)
     from_state = target.state
     now = utcnow()
     replaced: str | None = None
@@ -122,38 +191,8 @@ def apply_transition(
         with db.begin_nested():
             if rule.target is ModelState.ACTIVE and current is not None:
                 replaced = current.version_label
-                prefix = "Replaced by" if action == "promote" else "Rolled back to"
-                db.execute(
-                    update(ModelVersion)
-                    .where(ModelVersion.id == current.id)
-                    .values(state=ModelState.RETIRED)
-                )
-                db.add(
-                    ModelTransition(
-                        model_id=current.id,
-                        from_state=ModelState.ACTIVE,
-                        to_state=ModelState.RETIRED,
-                        actor_id=actor.id,
-                        reason=f"{prefix} {target.version_label}: {clean}",
-                        at=now,
-                    )
-                )
-                db.flush()
-            values: dict[str, object] = {"state": rule.target}
-            if rule.target in (ModelState.SHADOW, ModelState.ACTIVE):
-                values.update(approved_by=actor.id, approved_at=now)
-            db.execute(update(ModelVersion).where(ModelVersion.id == target.id).values(**values))
-            db.add(
-                ModelTransition(
-                    model_id=target.id,
-                    from_state=from_state,
-                    to_state=rule.target,
-                    actor_id=actor.id,
-                    reason=clean,
-                    at=now,
-                )
-            )
-            db.flush()
+                _retire_current(db, actor, current, target, action, clean, now)
+            _move(db, actor, target, from_state, rule, clean, now)
     except IntegrityError as exc:
         raise FormErrors(
             {"form": "Another change was made at the same time. Reload the page and try again."}

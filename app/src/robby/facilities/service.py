@@ -28,6 +28,11 @@ def _squash(value: str) -> str:
     return " ".join(value.split())
 
 
+def active_facilities(db: Session) -> list[Facility]:
+    """The facilities taking part now, by name."""
+    return list(db.scalars(select(Facility).where(Facility.active).order_by(Facility.name)))
+
+
 def list_facilities(db: Session) -> list[FacilityRow]:
     facilities = list(db.scalars(select(Facility).order_by(Facility.name)))
     people = db.execute(

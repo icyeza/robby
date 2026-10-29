@@ -1,18 +1,23 @@
 """Page-level assembly shared by the facility and national routes (aggregates only; the
-facility-only `unclassified_reasons` reads unclassified births but returns counts)."""
+facility-only `unclassified_reasons` reads unclassified births but returns counts), and the
+record kept of each monthly export."""
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from robby.audit import formatting, plain
+from robby import events
+from robby.audit import export_format, formatting, plain
 from robby.audit.counts import (
     UnclassifiedBirth,
     awaiting_outcome,
@@ -22,7 +27,10 @@ from robby.audit.counts import (
 from robby.audit.measures import GROUP_DEFINITIONS, build_report
 from robby.audit.narrative import facility_stands_out
 from robby.audit.references import Reference, available_references, choose_reference
-from robby.models import Facility
+from robby.models import AppUser, ExportRecord, Facility
+
+EXPORT_MONTHS = 12  # the last complete months a facility can see and export
+RECENT_EXPORTS = 5  # exports listed on the report page
 
 FIELD_LABELS = {
     "parity": "parity",
@@ -128,3 +136,40 @@ def reason_labels(row: UnclassifiedBirth) -> list[str]:
 def month_range(month: date) -> tuple[date, date]:
     nxt = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     return month, nxt - timedelta(days=1)
+
+
+def recent_exports(db: Session, facility_id: uuid.UUID) -> Sequence[ExportRecord]:
+    """The facility's latest exports, newest first."""
+    return db.scalars(
+        select(ExportRecord)
+        .where(ExportRecord.facility_id == facility_id)
+        .order_by(ExportRecord.exported_at.desc())
+        .limit(RECENT_EXPORTS)
+    ).all()
+
+
+def record_export(
+    db: Session, actor: AppUser, facility: Facility, month: date, body: bytes
+) -> None:
+    """Keep the hash of an exported monthly file, and log it. Does not commit."""
+    digest = hashlib.sha256(body).hexdigest()
+    record = ExportRecord(
+        facility_id=facility.id,
+        period_month=month,
+        exported_by=actor.id,
+        file_sha256=digest,
+    )
+    db.add(record)
+    db.flush()
+    events.append(
+        db,
+        actor,
+        "export.created",
+        entity=("export_record", record.id),
+        payload={
+            "facility_code": facility.code,
+            "period_month": month.strftime("%Y-%m"),
+            "format_version": export_format.EXPORT_FORMAT_VERSION,
+            "sha256": digest,
+        },
+    )

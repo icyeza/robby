@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-import pandas as pd  # type: ignore[import-untyped]
+import pandas as pd
 from robson_serving.monitoring import MIN_EVENTS, MIN_N, rolling_metrics, shadow_compare
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -185,19 +185,41 @@ def _strata(pairs: pd.DataFrame, column: str, now: datetime) -> list[StratumRow]
     return rows
 
 
+NOT_COMPARED = {
+    ModelState.CANDIDATE: "A candidate does not score admissions yet.",
+    ModelState.ACTIVE: "This is the active model. Shadow versions are compared against it; its "
+    "own performance over time belongs on the Monitoring page.",
+    ModelState.RETIRED: "A retired model is no longer compared.",
+}
+
+
+def _metric_rows(table: pd.DataFrame) -> list[MetricRow]:
+    """The shadow_compare metrics shown on the page, in the order of LABELS."""
+    metrics = [
+        MetricRow(
+            str(r["metric"]),
+            LABELS[str(r["metric"])],
+            r["candidate"],
+            r["active"],
+            r["difference"],
+            r["ci_low"],
+            r["ci_high"],
+        )
+        for _, r in table.iterrows()
+        if r["metric"] in LABELS
+    ]
+    order = list(LABELS)
+    metrics.sort(key=lambda m: order.index(m.key))
+    return metrics
+
+
 def build_evidence(
     db: Session, model: ModelVersion, now: datetime | None = None, resamples: int | None = None
 ) -> Evidence:
-    if model.state is ModelState.CANDIDATE:
-        return Evidence("not_applicable", "A candidate does not score admissions yet.")
-    if model.state is ModelState.ACTIVE:
-        return Evidence(
-            "not_applicable",
-            "This is the active model. Shadow versions are compared against it; its own "
-            "performance over time belongs on the Monitoring page.",
-        )
-    if model.state is ModelState.RETIRED:
-        return Evidence("not_applicable", "A retired model is no longer compared.")
+    """Shadow model against the active one on the same reconciled admissions of the last
+    WINDOW_DAYS days, once there are enough outcomes; cached per day and sample size."""
+    if model.state in NOT_COMPARED:
+        return Evidence("not_applicable", NOT_COMPARED[model.state])
     now = now or utcnow()
     active = db.execute(
         text("SELECT id, version_label FROM model_version WHERE state = 'active'")
@@ -228,28 +250,12 @@ def build_evidence(
     cached = _cache.get(key)
     if cached is not None:
         return cached
-    table = shadow_compare(pairs, n_boot=boots, seed=SEED)
-    metrics = [
-        MetricRow(
-            str(r["metric"]),
-            LABELS[str(r["metric"])],
-            r["candidate"],
-            r["active"],
-            r["difference"],
-            r["ci_low"],
-            r["ci_high"],
-        )
-        for _, r in table.iterrows()
-        if r["metric"] in LABELS
-    ]
-    order = list(LABELS)
-    metrics.sort(key=lambda m: order.index(m.key))
     result = Evidence(
         "ready",
         n=n,
         active_label=active.version_label,
         period=f"{pairs['scored_at'].min():%d %b} – {pairs['scored_at'].max():%d %b %Y}",
-        metrics=metrics,
+        metrics=_metric_rows(shadow_compare(pairs, n_boot=boots, seed=SEED)),
         facilities=_strata(pairs, "facility", now),
         groups=_strata(pairs, "robson_group", now),
         candidate_bins=_bins(pairs["cs"], pairs["p_candidate"]),

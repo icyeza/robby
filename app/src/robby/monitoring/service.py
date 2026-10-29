@@ -33,17 +33,21 @@ from robby.timeutil import utcnow
 
 ACK_EVENT = "monitoring.alert_acknowledged"
 SCORED_DAYS = 30
+SCORED_TILE = f"Admissions scored ({SCORED_DAYS} days)"
 CALIBRATION_DAYS = 28
+CALIBRATION_WINDOW = f"{CALIBRATION_DAYS}D"  # a pandas offset alias, as rolling_metrics takes
 CALIBRATION_ALERT = 0.05
 CITL_LIMIT = 0.10
 OUTCOME_LIMIT = 0.70
 OUTCOME_GRACE = timedelta(hours=72)  # a woman admitted today has no outcome yet, by design
+GRACE_DAYS = OUTCOME_GRACE.days
 OUTCOME_MIN = 20
 DRIFT_MIN = stats.MIN_N
 DRIFT_LIMIT = stats.PSI_THRESHOLD
 DRIFT_AXIS = 0.4
 DRIFT_SHOWN = 10
 DRIFT_ALERTS_EACH = 3  # more flagged inputs than this are raised as one summary alert
+DRIFT_NAMED = 3  # inputs named in that summary alert
 MINUS = "−"  # noqa: RUF001
 
 FEATURE_LABELS = {
@@ -137,7 +141,8 @@ class Monitoring:
 @lru_cache(maxsize=8)
 def _reference(path: str) -> dict[str, Any] | None:
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        data: dict[str, Any] = json.loads(Path(path).read_text(encoding="utf-8"))
+        return data
     except (OSError, ValueError):
         return None
 
@@ -221,66 +226,66 @@ def _pct(value: float) -> str:
     return f"{value * 100:.0f}%"
 
 
-def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = None) -> Monitoring:
-    now = now or utcnow()
-    model = active_model(db)
-    result = Monitoring(model)
-    if model is None:
-        result.tiles = [
-            Tile("Admissions scored (30 days)", "—", "No active model"),
-            Tile("Outcomes recorded", "—", "No active model"),
-            Tile("Calibration-in-the-large", "—", f"limit ±{CITL_LIMIT:.2f}"),
-            Tile("Open alerts", "0", "No active model"),
-        ]
-        return result
+@dataclass(frozen=True)
+class _Week:
+    """The ISO week an alert is raised in: part of its key, so an acknowledgement lasts a week."""
 
-    frame = _frame(db, model, now - timedelta(days=SCORED_DAYS))
-    stamp = pd.Timestamp(now)
+    bucket: str
+    since: date
+
+    def alert(self, key: str, text: str) -> Alert:
+        return Alert(f"{key}:{self.bucket}", text, self.since)
+
+
+def _outcome_alerts(aged: pd.DataFrame, week: _Week) -> list[Alert]:
+    """Facilities recording outcomes for too few of the admissions old enough to have one."""
     alerts: list[Alert] = []
-    bucket, since = week_bucket(now.date())
-
-    # ---- outcomes recorded (only predictions old enough to expect an outcome)
-    aged = frame[pd.to_datetime(frame["scored_at"]) <= stamp - OUTCOME_GRACE]
-    scored = len(frame)
-    recorded = int(aged["cs"].notna().sum())
-    fraction = recorded / len(aged) if len(aged) else None
     for code, part in aged.groupby("facility"):
         if len(part) < OUTCOME_MIN:
             continue
         share = float(part["cs"].notna().mean())
         if share < OUTCOME_LIMIT:
             alerts.append(
-                Alert(
-                    f"outcomes:{code}:{bucket}",
+                week.alert(
+                    f"outcomes:{code}",
                     f"{part['facility_name'].iloc[0]}: outcomes recorded for {_pct(share)} of "
-                    f"admissions made 3 or more days ago (limit {_pct(OUTCOME_LIMIT)}).",
-                    since,
+                    f"admissions made {GRACE_DAYS} or more days ago "
+                    f"(limit {_pct(OUTCOME_LIMIT)}).",
                 )
             )
+    return alerts
 
-    # ---- calibration
-    done = frame[frame["cs"].notna()].copy()
-    window = f"{CALIBRATION_DAYS}D"
-    metrics = stats.rolling_metrics(done, window, now=stamp, strata=("facility",))
+
+def _citl_tile(metrics: pd.DataFrame) -> Tile:
+    """Calibration-in-the-large over all facilities, once there are enough outcomes."""
     overall = metrics[metrics["stratum"] == "all"].iloc[0]
-    citl_tile = Tile("Calibration-in-the-large", "—", "Not enough outcomes yet")
-    if overall["status"] == stats.OK and not math.isnan(overall["calibration_in_the_large"]):
-        citl = float(overall["calibration_in_the_large"])
-        over = abs(citl) > CITL_LIMIT
-        citl_tile = Tile(
-            "Calibration-in-the-large",
-            signed(citl),
-            f"above limit ±{CITL_LIMIT:.2f}" if over else f"limit ±{CITL_LIMIT:.2f}",
-            over,
-        )
+    if overall["status"] != stats.OK or math.isnan(overall["calibration_in_the_large"]):
+        return Tile("Calibration-in-the-large", "—", "Not enough outcomes yet")
+    citl = float(overall["calibration_in_the_large"])
+    over = abs(citl) > CITL_LIMIT
+    return Tile(
+        "Calibration-in-the-large",
+        signed(citl),
+        f"above limit ±{CITL_LIMIT:.2f}" if over else f"limit ±{CITL_LIMIT:.2f}",
+        over,
+    )
+
+
+def _facility_calibration(
+    frame: pd.DataFrame, done: pd.DataFrame, metrics: pd.DataFrame, stamp: pd.Timestamp, week: _Week
+) -> tuple[list[FacilityRow], list[Alert]]:
+    """Observed against predicted cesarean rate per facility (sorted by name), and an alert for
+    each facility whose difference is past CALIBRATION_ALERT."""
+    rows: list[FacilityRow] = []
+    alerts: list[Alert] = []
     names = dict(zip(frame["facility"], frame["facility_name"], strict=True))
     for _, m in metrics[metrics["stratum"] == "facility"].iterrows():
         code = str(m["level"])
-        d = stats.calibration_drift(done[done["facility"] == code], window, now=stamp)
+        d = stats.calibration_drift(done[done["facility"] == code], CALIBRATION_WINDOW, now=stamp)
         enough = m["status"] == stats.OK
         flagged = bool(enough and abs(d.difference) > CALIBRATION_ALERT)
         diff = None if not d.n else d.observed_rate - d.mean_probability
-        result.facilities.append(
+        rows.append(
             FacilityRow(
                 names.get(code, code),
                 d.n,
@@ -294,112 +299,183 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
         if flagged and diff is not None:
             direction = "above" if diff > 0 else "below"
             alerts.append(
-                Alert(
-                    f"calibration:{code}:{bucket}",
+                week.alert(
+                    f"calibration:{code}",
                     f"{names.get(code, code)}: observed cesarean rate has been "
                     f"{abs(diff) * 100:.0f} points {direction} predicted over the last "
                     f"{CALIBRATION_DAYS} days.",
-                    since,
                 )
             )
-    result.facilities.sort(key=lambda r: r.name)
+    rows.sort(key=lambda r: r.name)
+    return rows, alerts
 
-    # ---- input drift
+
+def _drift_table(frame: pd.DataFrame, reference: dict[str, Any]) -> pd.DataFrame:
+    """PSI and missing-rate shift per recorded input against the training data, largest first."""
+    features = pd.DataFrame(list(frame["features"]))
+    # an input never recorded in the recent window is not collected here: not a shift
+    features = features.loc[:, features.notna().any(axis=0)]
+    table = stats.feature_drift(features, reference)
+    return table[table["n"] > 0].sort_values("psi", ascending=False)
+
+
+def _drift_alerts(table: pd.DataFrame, week: _Week) -> list[Alert]:
+    """One alert per shifted input, or one summary alert when more than DRIFT_ALERTS_EACH."""
+    flagged = table[table["flagged"]]
+    if len(flagged) > DRIFT_ALERTS_EACH:
+        top = ", ".join(feature_label(f).lower() for f in flagged["feature"].head(DRIFT_NAMED))
+        return [
+            week.alert(
+                "drift:summary",
+                f"Input drift: {len(flagged)} inputs have shifted past the limit "
+                f"{DRIFT_LIMIT:.2f} (largest: {top}). See the table below.",
+            )
+        ]
+    return [
+        week.alert(
+            f"drift:{name}",
+            f"Input drift: {feature_label(name).lower()} distribution has "
+            f"shifted (PSI {psi:.2f}, limit {DRIFT_LIMIT:.2f}).",
+        )
+        for name, psi in zip(flagged["feature"], flagged["psi"].astype(float), strict=True)
+    ]
+
+
+def _missing_alerts(table: pd.DataFrame, week: _Week) -> list[Alert]:
+    """Inputs recorded less often than in the training data. Only a drop is an alert: values
+    recorded more often (e.g. required on the form) are an improvement, not a problem."""
+    shifted = table[table["missing_flagged"] & (table["missing_shift"] > 0)]
+    head = shifted.head(DRIFT_ALERTS_EACH)
+    alerts = [
+        week.alert(
+            f"missing:{name}",
+            f"Input recording: {feature_label(name).lower()} is recorded "
+            f"less often than in the training data ({abs(shift) * 100:.0f} points).",
+        )
+        for name, shift in zip(head["feature"], head["missing_shift"].astype(float), strict=True)
+    ]
+    if len(shifted) > DRIFT_ALERTS_EACH:
+        alerts.append(
+            week.alert(
+                "missing:summary",
+                f"Input recording: {len(shifted)} inputs are recorded at a different rate "
+                "than in the training data.",
+            )
+        )
+    return alerts
+
+
+def _drift_rows(table: pd.DataFrame, flagged: int) -> list[DriftRow]:
+    """The table on the page: the DRIFT_SHOWN largest shifts, and every flagged one."""
+    head = table.head(max(DRIFT_SHOWN, flagged))
+    return [
+        DriftRow(
+            name,
+            feature_label(name),
+            psi,
+            min(100, round(psi / DRIFT_AXIS * 100)),
+            bool(is_flagged),
+        )
+        for name, psi, is_flagged in zip(
+            head["feature"], head["psi"].astype(float), head["flagged"], strict=True
+        )
+    ]
+
+
+def _input_drift(
+    result: Monitoring,
+    model: ModelVersion,
+    frame: pd.DataFrame,
+    artefact_dir: Path | None,
+    week: _Week,
+) -> list[Alert]:
+    """Fill the drift part of `result`; returns the drift and missing-rate alerts."""
     path = Path(model.artefact_path)
     if not path.is_absolute() and artefact_dir is not None:
         path = artefact_dir / path
     reference = _reference(str(path / "reference_distributions.json"))
     if reference is None:
         result.drift_note = "The reference distributions of the active model could not be read."
-    elif len(frame) < DRIFT_MIN:
+        return []
+    if len(frame) < DRIFT_MIN:
         result.drift_note = (
             f"Not enough data yet: {len(frame)} admissions scored in the last {SCORED_DAYS} "
             f"days; at least {DRIFT_MIN} are needed to compare inputs with the training data."
         )
-    else:
-        features = pd.DataFrame(list(frame["features"]))
-        # an input never recorded in the recent window is not collected here: not a shift
-        features = features.loc[:, features.notna().any(axis=0)]
-        table = stats.feature_drift(features, reference)
-        table = table[table["n"] > 0].sort_values("psi", ascending=False)
-        result.drift_total = len(table)
-        result.drift_flagged = int(table["flagged"].sum())
-        flagged = table[table["flagged"]]
-        if 0 < len(flagged) <= DRIFT_ALERTS_EACH:
-            for r in flagged.itertuples():
-                alerts.append(
-                    Alert(
-                        f"drift:{r.feature}:{bucket}",
-                        f"Input drift: {feature_label(r.feature).lower()} distribution has "
-                        f"shifted (PSI {float(r.psi):.2f}, limit {DRIFT_LIMIT:.2f}).",
-                        since,
-                    )
-                )
-        elif len(flagged) > DRIFT_ALERTS_EACH:
-            top = ", ".join(feature_label(f).lower() for f in flagged["feature"].head(3))
-            alerts.append(
-                Alert(
-                    f"drift:summary:{bucket}",
-                    f"Input drift: {len(flagged)} inputs have shifted past the limit "
-                    f"{DRIFT_LIMIT:.2f} (largest: {top}). See the table below.",
-                    since,
-                )
-            )
-        # only a drop in recording is an alert: values recorded more often than in the
-        # training data (e.g. required on the form) are an improvement, not a problem
-        shifted = table[table["missing_flagged"] & (table["missing_shift"] > 0)]
-        for r in shifted.head(DRIFT_ALERTS_EACH).itertuples():
-            direction = "less"
-            alerts.append(
-                Alert(
-                    f"missing:{r.feature}:{bucket}",
-                    f"Input recording: {feature_label(r.feature).lower()} is recorded "
-                    f"{direction} often than in the training data "
-                    f"({abs(float(r.missing_shift)) * 100:.0f} points).",
-                    since,
-                )
-            )
-        if len(shifted) > DRIFT_ALERTS_EACH:
-            alerts.append(
-                Alert(
-                    f"missing:summary:{bucket}",
-                    f"Input recording: {len(shifted)} inputs are recorded at a different rate "
-                    "than in the training data.",
-                    since,
-                )
-            )
-        for r in table.head(max(DRIFT_SHOWN, result.drift_flagged)).itertuples():
-            result.drift.append(
-                DriftRow(
-                    r.feature,
-                    feature_label(r.feature),
-                    float(r.psi),
-                    min(100, round(float(r.psi) / DRIFT_AXIS * 100)),
-                    bool(r.flagged),
-                )
-            )
+        return []
+    table = _drift_table(frame, reference)
+    result.drift_total = len(table)
+    result.drift_flagged = int(table["flagged"].sum())
+    result.drift = _drift_rows(table, result.drift_flagged)
+    return _drift_alerts(table, week) + _missing_alerts(table, week)
 
+
+def _with_acknowledgements(db: Session, alerts: list[Alert]) -> list[Alert]:
+    """The alerts with who acknowledged them, open ones first."""
     acked = _acknowledgements(db, [a.key for a in alerts])
     for a in alerts:
         if a.key in acked:
             a.acknowledged_by, a.acknowledged_on = acked[a.key]
-    alerts.sort(key=lambda a: (a.acknowledged, a.key))
-    result.alerts = alerts
-    open_count = result.open_alerts
-    result.tiles = [
-        Tile("Admissions scored (30 days)", f"{scored:,}", "All facilities"),
+    return sorted(alerts, key=lambda a: (a.acknowledged, a.key))
+
+
+def _no_model_tiles() -> list[Tile]:
+    return [
+        Tile(SCORED_TILE, "—", "No active model"),
+        Tile("Outcomes recorded", "—", "No active model"),
+        Tile("Calibration-in-the-large", "—", f"limit ±{CITL_LIMIT:.2f}"),
+        Tile("Open alerts", "0", "No active model"),
+    ]
+
+
+def _tiles(
+    scored: int, recorded: int, fraction: float | None, citl: Tile, open_count: int
+) -> list[Tile]:
+    return [
+        Tile(SCORED_TILE, f"{scored:,}", "All facilities"),
         Tile(
             "Outcomes recorded",
             f"{recorded:,}",
             "No admissions old enough yet"
             if fraction is None
-            else f"{_pct(fraction)} of those admitted 3+ days ago",
+            else f"{_pct(fraction)} of those admitted {GRACE_DAYS}+ days ago",
         ),
-        citl_tile,
+        citl,
         Tile(
             "Open alerts", str(open_count), "Waiting to be acknowledged" if open_count else "None"
         ),
     ]
+
+
+def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = None) -> Monitoring:
+    """The monitoring page of the active model over the last SCORED_DAYS days: outcome
+    recording, calibration (overall and per facility), input drift, and the alerts they raise."""
+    now = now or utcnow()
+    model = active_model(db)
+    result = Monitoring(model)
+    if model is None:
+        result.tiles = _no_model_tiles()
+        return result
+
+    frame = _frame(db, model, now - timedelta(days=SCORED_DAYS))
+    stamp = pd.Timestamp(now)
+    week = _Week(*week_bucket(now.date()))
+
+    # only predictions old enough to expect an outcome count towards outcome recording
+    aged = frame[pd.to_datetime(frame["scored_at"]) <= stamp - OUTCOME_GRACE]
+    recorded = int(aged["cs"].notna().sum())
+    fraction = recorded / len(aged) if len(aged) else None
+    alerts = _outcome_alerts(aged, week)
+
+    done = frame[frame["cs"].notna()].copy()
+    metrics = stats.rolling_metrics(done, CALIBRATION_WINDOW, now=stamp, strata=("facility",))
+    citl_tile = _citl_tile(metrics)
+    result.facilities, calibration_alerts = _facility_calibration(frame, done, metrics, stamp, week)
+    alerts += calibration_alerts
+    alerts += _input_drift(result, model, frame, artefact_dir, week)
+
+    result.alerts = _with_acknowledgements(db, alerts)
+    result.tiles = _tiles(len(frame), recorded, fraction, citl_tile, result.open_alerts)
     return result
 
 

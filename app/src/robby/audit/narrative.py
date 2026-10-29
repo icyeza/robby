@@ -40,54 +40,59 @@ def _group(g: int) -> str:
     return f"Group {g} ({SHORT_GROUPS[g]})"
 
 
-def facility_stands_out(report: Report) -> list[Item]:
-    if report.births == 0:
-        return [("No births with a recorded outcome in this period.", "")]
-    items: list[Item] = []
+def _largest_source(report: Report) -> list[Item]:
+    """The group most cesareans come from (none when there are no cesareans)."""
     sources = sorted(
         (r for r in report.rows if r.cesareans and r.group),
         key=lambda r: (-r.cesareans, r.group or 0),
     )
-    if sources:
-        top = sources[0]
-        assert top.group is not None
-        items.append(
-            (
-                f"Most cesareans come from {_group(top.group)}:",
-                f" {top.cesareans} of the {report.cesareans} cesareans ({top.share_of_cs_pct}%).",
-            )
+    if not sources:
+        return []
+    top = sources[0]
+    assert top.group is not None
+    return [
+        (
+            f"Most cesareans come from {_group(top.group)}:",
+            f" {top.cesareans} of the {report.cesareans} cesareans ({top.share_of_cs_pct}%).",
         )
+    ]
+
+
+def _against_reference(report: Report) -> list[Item]:
+    """Groups with a higher rate than the reference, and groups larger than in it."""
     if report.reference is None:
+        return [("No reference set loaded,", " so the groups are not compared with anything.")]
+    items: list[Item] = []
+    higher = [r for r in report.rows if group_verdict(r).css == "high"]
+    higher.sort(key=lambda r: -r.cesareans)
+    for r in higher[:MOST_GROUPS_NAMED]:
+        assert r.group is not None
         items.append(
             (
-                "No reference set loaded,",
-                " so the groups are not compared with anything.",
+                f"{_group(r.group)} has more cesareans than the reference:",
+                f" {r.cesareans} of {r.births} women, {in_100(r.rate_pct)}, against "
+                f"{in_100(r.ref_rate)} in the reference.",
             )
         )
-    else:
-        higher = [r for r in report.rows if group_verdict(r).css == "high"]
-        higher.sort(key=lambda r: -r.cesareans)
-        for r in higher[:MOST_GROUPS_NAMED]:
-            assert r.group is not None
-            items.append(
-                (
-                    f"{_group(r.group)} has more cesareans than the reference:",
-                    f" {r.cesareans} of {r.births} women, {in_100(r.rate_pct)}, against "
-                    f"{in_100(r.ref_rate)} in the reference.",
-                )
+    larger = [r.group for r in report.rows if r.larger_group and r.group]
+    if larger:
+        names = _names([str(g) for g in larger])
+        items.append(
+            (
+                f"More women than usual are in group{'s' if len(larger) > 1 else ''} {names}.",
+                " A group that is larger than in the reference adds cesareans even when its "
+                "own rate is ordinary.",
             )
-        larger = [r.group for r in report.rows if r.larger_group and r.group]
-        if larger:
-            names = _names([str(g) for g in larger])
-            items.append(
-                (
-                    f"More women than usual are in group{'s' if len(larger) > 1 else ''} {names}.",
-                    " A group that is larger than in the reference adds cesareans even when its "
-                    "own rate is ordinary.",
-                )
-            )
-        if not higher and not larger:
-            items.append(("Every group is close to the reference.", ""))
+        )
+    if not higher and not larger:
+        items.append(("Every group is close to the reference.", ""))
+    return items
+
+
+def facility_stands_out(report: Report) -> list[Item]:
+    if report.births == 0:
+        return [("No births with a recorded outcome in this period.", "")]
+    items = _largest_source(report) + _against_reference(report)
     if report.unclassified_high:
         items.append(
             (
