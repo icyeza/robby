@@ -52,25 +52,36 @@
   {% endif %}
 </section>
 
-<section class="tablecard">
-  <div class="tc-h"><h2>Calibration by facility (last 28 days)</h2></div>
-  {% if m.facilities %}
+{% macro stratum_table(rows, first, empty) %}
+  {% if rows %}
   <table>
-    <thead><tr><th>Facility</th><th class="r">Admissions with outcome</th><th class="r">Observed</th><th class="r">Mean predicted</th><th class="r">Difference</th></tr></thead>
+    <thead><tr><th>{{ first }}</th><th class="r">Admissions with outcome</th><th class="r">Observed</th><th class="r">Mean predicted</th><th class="r">Difference</th><th class="r">AUC</th></tr></thead>
     <tbody>
-    {% for f in m.facilities %}
+    {% for f in rows %}
       <tr><td><b>{{ f.name }}</b></td><td class="r num">{{ f.n }}</td>
         {% if f.n %}
         <td class="r num">{{ '%.0f' % (f.observed * 100) }}%</td><td class="r num">{{ '%.0f' % (f.predicted * 100) }}%</td>
         <td class="r num">{% if f.diff_pts > 0 %}+{% elif f.diff_pts < 0 %}−{% endif %}{{ f.diff_pts | abs }} pts {% if f.flagged %}<span class="chip warn">⚠</span>{% elif not f.enough %}<span class="chip">Too few to judge</span>{% endif %}</td>
-        {% else %}<td class="r muted" colspan="3">Not enough data</td>{% endif %}
+        <td class="r num">{% if f.auc is not none %}{{ '%.2f' % f.auc }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        {% else %}<td class="r muted" colspan="4">Not enough data</td>{% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="empty">Not enough data yet: no admissions with a recorded outcome in the last 28 days.</div>
+  <div class="empty">{{ empty }}</div>
   {% endif %}
-  <div class="tc-foot">Observed: share of these admissions that ended in a cesarean. Mean predicted: the model's average predicted probability for the same admissions. Difference in percentage points. A facility is judged only with at least 50 outcomes and 10 of each kind. Outcomes count once they are reconciled with their predictions (every few minutes).</div>
+{% endmacro %}
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Calibration by facility (last 28 days)</h2></div>
+  {{ stratum_table(m.facilities, "Facility", "Not enough data yet: no admissions with a recorded outcome in the last 28 days.") }}
+  <div class="tc-foot">Observed: share of these admissions that ended in a cesarean. Mean predicted: the model's average predicted probability for the same admissions. Difference in percentage points. AUC: how well the signal ranks the women who had a cesarean above those who did not (0.5 is chance). A facility is judged only with at least 50 outcomes and 10 of each kind. Outcomes count once they are reconciled with their predictions (every few minutes).</div>
+</section>
+
+<section class="tablecard">
+  <div class="tc-h"><h2>Calibration by Robson group (last 28 days)</h2></div>
+  {{ stratum_table(m.groups, "Robson group", "Not enough data yet: no admissions with a recorded outcome in the last 28 days.") }}
+  <div class="tc-foot">The same figures within each Robson group, all facilities together. Within a group the cesarean rate varies less, so the AUC is lower than overall; a group is judged only with at least 50 outcomes and 10 of each kind.</div>
 </section>
 {% endblock %}

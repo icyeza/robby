@@ -147,6 +147,40 @@ def _calibration_world(db: Session) -> tuple[Facility, ModelVersion]:
     return facility, model
 
 
+def test_discrimination_and_calibration_per_robson_group(
+    client: TestClient, db: Session, settings: Settings
+) -> None:
+    facility = make_facility(db, name="Facility G")
+    user = make_user(db, role=Role.CLINICIAN, facility=facility)
+    rules, model = make_rule_set(db), make_model_version(db, state=ModelState.ACTIVE)
+    for i in range(60):  # group 5: the signal ranks every cesarean above every vaginal birth
+        cesarean = i % 2 == 0
+        add_admission(
+            db, facility, rules, model, group=5, hours_ago=96,
+            probability="0.80000" if cesarean else "0.10000",
+            outcome=DeliveryMode.CESAREAN if cesarean else DeliveryMode.VAGINAL_SPONTANEOUS,
+            recorded_by=user.id,
+        )  # fmt: skip
+    for _ in range(5):  # group 1: too few outcomes to judge
+        add_admission(
+            db, facility, rules, model, group=1, hours_ago=96,
+            outcome=DeliveryMode.VAGINAL_SPONTANEOUS, recorded_by=user.id,
+        )  # fmt: skip
+    reconcile(db)
+
+    data = service.build(db)
+    assert [g.name for g in data.groups] == ["Group 1", "Group 5"]
+    one, five = data.groups
+    assert five.n == 60 and five.enough and five.auc == 1.0
+    assert one.n == 5 and not one.enough and one.auc is None
+    assert data.facilities[0].auc is not None
+
+    custodian = make_user(db, role=Role.MODEL_CUSTODIAN)
+    sign_in_client(client, db, settings, custodian)
+    page = client.get("/monitoring").text
+    assert "Calibration by Robson group" in page and "Group 5" in page and "1.00" in page
+
+
 def test_calibration_alert_and_acknowledgement(
     client: TestClient, db: Session, settings: Settings
 ) -> None:

@@ -1,4 +1,4 @@
-"""Contract with robson_serving (spec 8.4): a packaged artefact loads and passes its golden check.
+"""Contract with robson_serving: a packaged artefact loads in the app and passes its golden check.
 
 The artefact is built from robson_serving's own synthetic helpers (no real data). Those helpers
 live in ML/packages/robson_serving/tests/conftest.py, which is not an installed package, so the

@@ -112,6 +112,7 @@ class FacilityRow:
     diff_pts: int | None
     flagged: bool
     enough: bool
+    auc: float | None = None  # discrimination over the window, when there are enough outcomes
 
 
 @dataclass
@@ -132,6 +133,7 @@ class Monitoring:
     drift_total: int = 0
     drift_flagged: int = 0
     facilities: list[FacilityRow] = field(default_factory=list)
+    groups: list[FacilityRow] = field(default_factory=list)  # the same, per Robson group
 
     @property
     def open_alerts(self) -> int:
@@ -271,6 +273,49 @@ def _citl_tile(metrics: pd.DataFrame) -> Tile:
     )
 
 
+def _auc(m: pd.Series) -> float | None:
+    """The stratum's AUC when it had enough outcomes of each kind, else None."""
+    if m["status"] != stats.OK or math.isnan(m["auc"]):
+        return None
+    return float(m["auc"])
+
+
+def _stratum_row(name: str, rows: pd.DataFrame, m: pd.Series, stamp: pd.Timestamp) -> FacilityRow:
+    """Observed against predicted cesarean rate, and AUC, for one facility or Robson group."""
+    d = stats.calibration_drift(rows, CALIBRATION_WINDOW, now=stamp)
+    enough = bool(m["status"] == stats.OK)
+    diff = None if not d.n else d.observed_rate - d.mean_probability
+    return FacilityRow(
+        name,
+        d.n,
+        d.observed_rate if d.n else None,
+        d.mean_probability if d.n else None,
+        None if diff is None else round(diff * 100),
+        bool(enough and diff is not None and abs(diff) > CALIBRATION_ALERT),
+        enough,
+        _auc(m),
+    )
+
+
+def group_label(group: float | None) -> str | None:
+    """A Robson group as the stratum label ("1" to "10"); None when the admission has none (the
+    column holds floats, NaN for none, once pandas has seen a missing group)."""
+    return None if group is None or math.isnan(group) else str(int(group))
+
+
+def _group_calibration(
+    done: pd.DataFrame, metrics: pd.DataFrame, stamp: pd.Timestamp
+) -> list[FacilityRow]:
+    """The calibration table per Robson group, in group order, unclassified admissions last."""
+    rows = []
+    for _, m in metrics[metrics["stratum"] == "robson_group"].iterrows():
+        level = str(m["level"])
+        subset = done[done["robson_group"].fillna(stats.MISSING_LEVEL) == level]
+        name = "No group" if level == stats.MISSING_LEVEL else f"Group {level}"
+        rows.append(_stratum_row(name, subset, m, stamp))
+    return sorted(rows, key=lambda r: (not r.name.startswith("Group "), len(r.name), r.name))
+
+
 def _facility_calibration(
     frame: pd.DataFrame, done: pd.DataFrame, metrics: pd.DataFrame, stamp: pd.Timestamp, week: _Week
 ) -> tuple[list[FacilityRow], list[Alert]]:
@@ -281,29 +326,15 @@ def _facility_calibration(
     names = dict(zip(frame["facility"], frame["facility_name"], strict=True))
     for _, m in metrics[metrics["stratum"] == "facility"].iterrows():
         code = str(m["level"])
-        d = stats.calibration_drift(done[done["facility"] == code], CALIBRATION_WINDOW, now=stamp)
-        enough = m["status"] == stats.OK
-        flagged = bool(enough and abs(d.difference) > CALIBRATION_ALERT)
-        diff = None if not d.n else d.observed_rate - d.mean_probability
-        rows.append(
-            FacilityRow(
-                names.get(code, code),
-                d.n,
-                d.observed_rate if d.n else None,
-                d.mean_probability if d.n else None,
-                None if diff is None else round(diff * 100),
-                flagged,
-                bool(enough),
-            )
-        )
-        if flagged and diff is not None:
-            direction = "above" if diff > 0 else "below"
+        row = _stratum_row(names.get(code, code), done[done["facility"] == code], m, stamp)
+        rows.append(row)
+        if row.flagged and row.diff_pts is not None:
+            direction = "above" if row.diff_pts > 0 else "below"
             alerts.append(
                 week.alert(
                     f"calibration:{code}",
-                    f"{names.get(code, code)}: observed cesarean rate has been "
-                    f"{abs(diff) * 100:.0f} points {direction} predicted over the last "
-                    f"{CALIBRATION_DAYS} days.",
+                    f"{row.name}: observed cesarean rate has been {abs(row.diff_pts)} points "
+                    f"{direction} predicted over the last {CALIBRATION_DAYS} days.",
                 )
             )
     rows.sort(key=lambda r: r.name)
@@ -449,7 +480,8 @@ def _tiles(
 
 def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = None) -> Monitoring:
     """The monitoring page of the active model over the last SCORED_DAYS days: outcome
-    recording, calibration (overall and per facility), input drift, and the alerts they raise."""
+    recording, discrimination and calibration (overall, per facility and per Robson group),
+    input drift, and the alerts they raise."""
     now = now or utcnow()
     model = active_model(db)
     result = Monitoring(model)
@@ -468,9 +500,13 @@ def build(db: Session, now: datetime | None = None, artefact_dir: Path | None = 
     alerts = _outcome_alerts(aged, week)
 
     done = frame[frame["cs"].notna()].copy()
-    metrics = stats.rolling_metrics(done, CALIBRATION_WINDOW, now=stamp, strata=("facility",))
+    done["robson_group"] = done["robson_group"].map(group_label)
+    metrics = stats.rolling_metrics(
+        done, CALIBRATION_WINDOW, now=stamp, strata=("facility", "robson_group")
+    )
     citl_tile = _citl_tile(metrics)
     result.facilities, calibration_alerts = _facility_calibration(frame, done, metrics, stamp, week)
+    result.groups = _group_calibration(done, metrics, stamp)
     alerts += calibration_alerts
     alerts += _input_drift(result, model, frame, artefact_dir, week)
 
