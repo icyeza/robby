@@ -1,0 +1,22 @@
+# Stand-in hospital FHIR server for the demonstration instance only (app/scripts/fhir_standin):
+# invented patients, so "Fetch from hospital system" can be shown. A real install points
+# ROBBY_FHIR_BASE_URL at the hospital's FHIR server instead and does not run this unit.
+[Unit]
+Description=Robby demonstration: stand-in hospital FHIR server
+After=network.target
+
+[Service]
+Type=simple
+User=robby
+Group=robby
+WorkingDirectory=/srv/robby/robby/app
+ExecStart=/srv/robby/robby/app/.venv/bin/uvicorn --app-dir scripts/fhir_standin server:app \
+    --host 127.0.0.1 --port 8172
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@
 #
 #   sudo sh deploy/install.sh            # from a clone, or:
 #   curl -LsSf https://raw.githubusercontent.com/icyeza/robby/main/deploy/install.sh | sudo sh
+#   ROBBY_KEEP_CHECKOUT=1 sudo sh deploy/install.sh   # install the checkout as it is, without fetching
 #
 # What it sets up:
 #   user robby, home /srv/robby, the repository in /srv/robby/robby (branch main)
@@ -40,7 +41,9 @@ fi
 UV="$HOME_DIR/.local/bin/uv"
 
 say "repository"
-if [ -d "$SRC/.git" ]; then
+if [ -d "$SRC/.git" ] && [ "${ROBBY_KEEP_CHECKOUT:-}" = 1 ]; then
+    : # the checkout was updated by hand (e.g. from a git bundle): install what is there
+elif [ -d "$SRC/.git" ]; then
     as_robby "git -C $SRC fetch --quiet origin main && git -C $SRC reset --quiet --hard origin/main"
 else
     as_robby "git clone --quiet --branch main $REPO_URL $SRC"
@@ -95,6 +98,13 @@ if [ "$(sudo -u robby psql -h /var/run/postgresql -p "$PG_PORT" -d "$DB" -tAc \
 else
     as_robby "$ADMIN db upgrade"
 fi
+
+say "stand-in hospital FHIR server (demonstration only)"
+install -m 644 "$SRC/deploy/robby-fhir-standin.service" /etc/systemd/system/robby-fhir-standin.service
+systemctl daemon-reload
+systemctl enable robby-fhir-standin >/dev/null
+systemctl restart robby-fhir-standin
+grep -q '^ROBBY_FHIR_BASE_URL=' "$ENV_FILE" || echo "ROBBY_FHIR_BASE_URL=http://127.0.0.1:8172" >>"$ENV_FILE"
 
 say "systemd unit"
 install -m 644 "$SRC/deploy/robby.service" /etc/systemd/system/robby.service
