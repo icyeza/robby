@@ -1,0 +1,13 @@
+{# Searchable hospital picker for national reviewers; opens that hospital's report. #}
+<form class="picker" method="get" action="/national/hospital">
+  <input type="hidden" name="from" value="{{ period.start.isoformat() }}">
+  <input type="hidden" name="to" value="{{ period.end.isoformat() }}">
+  <label for="pick-hospital">{{ picker_label | default("Look at one hospital") }}</label>
+  <div class="picker-row">
+    <select id="pick-hospital" name="facility" data-searchable data-submit-on-pick>
+      {% if not facility is defined %}<option value="">Choose a hospital</option>{% endif %}
+      {% for h in hospitals %}<option value="{{ h.id }}"{% if facility is defined and h.id == facility.id %} selected{% endif %}>{{ h.name }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-s btn-sm" type="submit">Open</button>
+  </div>
+</form>

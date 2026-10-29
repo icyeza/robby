@@ -91,3 +91,12 @@ form.inline{display:inline}
 .search label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
 .search-row{display:flex;gap:10px;max-width:620px}
 .search-row input{flex:1;font-size:16px;padding:10px 12px}
+
+/* ---------- searchable dropdown (select[data-searchable], app.js) ---------- */
+.combo{position:relative;min-width:220px}
+.combo input{width:100%;height:40px;padding:0 34px 0 12px;font:inherit;font-size:14px;border:1px solid var(--field);border-radius:var(--radius);background:var(--white) url("/static/search.svg") no-repeat right 10px center}
+.combo input:focus{outline:2px solid var(--brand);outline-offset:1px}
+.combo-list{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow-y:auto;margin:0;padding:4px 0;list-style:none;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.combo-list li{padding:8px 12px;font-size:14px;cursor:pointer}
+.combo-list li[aria-selected="true"]{background:var(--brand-tint);color:var(--brand)}
+.combo-list li.combo-none{color:var(--ink-3);cursor:default}

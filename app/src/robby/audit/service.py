@@ -1,7 +1,10 @@
-"""Page-level assembly shared by the facility and national routes (aggregates only)."""
+"""Page-level assembly shared by the facility and national routes (aggregates only; the
+facility-only `unclassified_reasons` reads unclassified births but returns counts)."""
 
 from __future__ import annotations
 
+import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -9,11 +12,12 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from robby.audit import formatting
+from robby.audit import formatting, plain
 from robby.audit.counts import (
     UnclassifiedBirth,
     awaiting_outcome,
     birth_counts,
+    unclassified_births,
 )
 from robby.audit.measures import GROUP_DEFINITIONS, build_report
 from robby.audit.narrative import facility_stands_out
@@ -85,6 +89,11 @@ def report_context(
     return {
         "facility": facility,
         "period": period,
+        "presets": plain.period_presets(today_local(zone), period.start, period.end),
+        "plain_groups": plain.PLAIN_GROUPS,
+        "verdicts": {r.group: plain.group_verdict(r) for r in report.rows},
+        "sources": plain.cesarean_sources(report),
+        "in_100": plain.in_100,
         "refs": refs,
         "ref_options": [(r.id, r.label) for r in refs],
         "reference": reference,
@@ -93,6 +102,16 @@ def report_context(
         "definitions": GROUP_DEFINITIONS,
         "fmt": formatting,
     }
+
+
+def unclassified_reasons(
+    db: Session, zone: ZoneInfo, facility_id: uuid.UUID, period: Period, top: int = 3
+) -> list[tuple[str, int]]:
+    """The commonest reasons births of one facility have no Robson group, with counts."""
+    tally: Counter[str] = Counter()
+    for row in unclassified_births(db, period.start, period.end, zone, facility_id):
+        tally.update(reason_labels(row))
+    return tally.most_common(top)
 
 
 def reason_labels(row: UnclassifiedBirth) -> list[str]:

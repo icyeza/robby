@@ -178,9 +178,115 @@
     connection();
   }
 
+  /* <select data-searchable> becomes a box you type in to filter the list (WAI-ARIA combobox).
+     The select stays in the form, hidden, and carries the value; without JavaScript it is a
+     plain select. data-submit-on-pick submits the form as soon as an option is picked. */
+  var comboCount = 0;
+  function searchable(select) {
+    var n = ++comboCount;
+    var options = Array.prototype.map.call(select.options, function (o) {
+      return { value: o.value, text: o.text };
+    }).filter(function (o) { return o.value !== ''; });
+    var wrap = document.createElement('div');
+    wrap.className = 'combo';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.id = select.id ? select.id + '-search' : 'combo-' + n;
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', 'combo-list-' + n);
+    input.setAttribute('autocomplete', 'off');
+    input.placeholder = 'Type to search';
+    var list = document.createElement('ul');
+    list.id = 'combo-list-' + n;
+    list.className = 'combo-list';
+    list.setAttribute('role', 'listbox');
+    list.hidden = true;
+    wrap.appendChild(input);
+    wrap.appendChild(list);
+    select.parentNode.insertBefore(wrap, select);
+    select.hidden = true;
+    var label = select.id ? document.querySelector('label[for="' + select.id + '"]') : null;
+    if (label) label.setAttribute('for', input.id);
+    var shown = [];
+    var active = -1;
+
+    function selectedText() {
+      var o = select.options[select.selectedIndex];
+      return o && o.value !== '' ? o.text : '';
+    }
+    function setActive(i) {
+      active = i;
+      Array.prototype.forEach.call(list.children, function (li, k) {
+        li.setAttribute('aria-selected', k === i ? 'true' : 'false');
+        if (k === i && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+      });
+      if (i >= 0 && list.children[i]) input.setAttribute('aria-activedescendant', list.children[i].id);
+      else input.removeAttribute('aria-activedescendant');
+    }
+    function render(filter) {
+      var words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+      shown = options.filter(function (o) {
+        var t = o.text.toLowerCase();
+        return words.every(function (w) { return t.indexOf(w) !== -1; });
+      });
+      while (list.firstChild) list.removeChild(list.firstChild);
+      shown.forEach(function (o, k) {
+        var li = document.createElement('li');
+        li.id = list.id + '-' + k;
+        li.setAttribute('role', 'option');
+        li.textContent = o.text;
+        list.appendChild(li);
+      });
+      if (!shown.length) {
+        var none = document.createElement('li');
+        none.className = 'combo-none';
+        none.textContent = 'No match';
+        list.appendChild(none);
+      }
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      setActive(shown.length ? 0 : -1);
+    }
+    function close() {
+      list.hidden = true;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+    function pick(k) {
+      var o = shown[k];
+      if (!o) return;
+      select.value = o.value;
+      input.value = o.text;
+      close();
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      if (select.hasAttribute('data-submit-on-pick') && select.form) {
+        if (select.form.requestSubmit) select.form.requestSubmit(); else select.form.submit();
+      }
+    }
+    input.value = selectedText();
+    input.addEventListener('focus', function () { input.select(); render(''); });
+    input.addEventListener('input', function () { render(input.value); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (list.hidden) render(''); else setActive(Math.min(active + 1, shown.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
+      else if (e.key === 'Enter') { if (!list.hidden && active >= 0) { e.preventDefault(); pick(active); } }
+      else if (e.key === 'Escape') { input.value = selectedText(); close(); }
+    });
+    list.addEventListener('mousedown', function (e) {
+      var li = e.target.closest ? e.target.closest('li[role=option]') : null;
+      if (!li) return;
+      e.preventDefault();
+      pick(Array.prototype.indexOf.call(list.children, li));
+    });
+    input.addEventListener('blur', function () { input.value = selectedText(); close(); });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     csrfHeader();
     dialogs();
     admissionForm();
+    Array.prototype.forEach.call(document.querySelectorAll('select[data-searchable]'), searchable);
   });
 })();

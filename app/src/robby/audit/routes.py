@@ -19,6 +19,7 @@ from robby.audit.service import (
     parse_period,
     report_context,
     today_local,
+    unclassified_reasons,
 )
 from robby.audit.status import complete_months
 from robby.auth.dependencies import CurrentUser, DbDep, require
@@ -64,6 +65,7 @@ def audit_page(
         readonly=False,
         months=complete_months(today, 12),
         recent_exports=recent,
+        reasons=unclassified_reasons(db, zone, facility.id, period),
         zone=zone,
         **context,
     )

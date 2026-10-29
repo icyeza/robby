@@ -12,7 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
 from robby.audit import formatting
@@ -141,6 +141,8 @@ def overview(request: Request, db: DbDep, current: Reviewer, ref: str | None = N
                 line.report.births,
                 line.comparison.ratio,
                 line.report.unclassified_pct,
+                line.comparison.observed,
+                line.comparison.expected,
             )
             for line in lines
             if line.report.births
@@ -214,6 +216,25 @@ def overview_csv(
     )
 
 
+def _hospitals(db: DbDep) -> list[Facility]:
+    return list(db.scalars(select(Facility).where(Facility.active).order_by(Facility.name)))
+
+
+@router.get("/hospital")
+def pick_hospital(request: Request, db: DbDep, current: Reviewer, facility: str = "") -> Response:
+    """Where the hospital picker submits: on to that hospital's report, keeping the period."""
+    try:
+        chosen = db.get(Facility, uuid.UUID(facility))
+    except ValueError:
+        chosen = None
+    q = request.query_params
+    if chosen is None:
+        return RedirectResponse(f"/national?from={q.get('from', '')}&to={q.get('to', '')}", 303)
+    return RedirectResponse(
+        f"/national/facilities/{chosen.id}?from={q.get('from', '')}&to={q.get('to', '')}", 303
+    )
+
+
 @router.get("/facilities/{facility_id}")
 def facility_report(
     facility_id: uuid.UUID, request: Request, db: DbDep, current: Reviewer, ref: str | None = None
@@ -224,4 +245,11 @@ def facility_report(
     zone = request.app.state.settings.zone
     period = parse_period(request.query_params.get("from"), request.query_params.get("to"), zone)
     context = report_context(db, zone, facility, period, ref)
-    return render(request, "audit/report.html", current=current, readonly=True, **context)
+    return render(
+        request,
+        "audit/report.html",
+        current=current,
+        readonly=True,
+        hospitals=_hospitals(db),
+        **context,
+    )

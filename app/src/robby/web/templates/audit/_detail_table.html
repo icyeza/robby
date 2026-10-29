@@ -1,0 +1,24 @@
+{# The full WHO-style table, inside "Show detailed figures" on the hospital report. #}
+<div class="tc-h">
+    <h2>All figures by Robson group</h2>
+    <div class="lg"><span><i class="sw"></i>This facility</span>{% if reference %}<span><i class="tk"></i>Reference ({{ reference.name }})</span>{% endif %}</div>
+  </div>
+  <table class="wide">
+    <thead><tr><th>Group</th><th></th><th>Group size · % of births</th><th>Cesarean rate in group</th><th class="r">Share of all cesareans</th><th class="r">Absolute contribution</th><th>Reading</th></tr></thead>
+    <tbody>
+    {% for r in report.rows %}
+      <tr><td><span class="gnum">{{ r.group }}</span></td><td class="gdef">{{ definitions[r.group] }}</td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(r.size_pct) }}{% if r.ref_size is not none %}; reference: {{ r.ref_size }}%{% endif %}"><div class="fill w{{ r.size_w or 0 }}"></div>{% if r.size_t is not none %}<div class="ref t{{ r.size_t }}"></div>{% endif %}</div><span class="num">{{ fmt.pct(r.size_pct) }}</span><span class="diff">{{ fmt.signed(r.size_diff) }}</span></div></td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(r.rate_pct) }}{% if r.ref_rate is not none %}; reference: {{ r.ref_rate }}%{% endif %}"><div class="fill w{{ r.rate_w or 0 }}"></div>{% if r.rate_t is not none %}<div class="ref t{{ r.rate_t }}"></div>{% endif %}</div><span class="num">{{ fmt.pct(r.rate_pct) }}</span><span class="diff">{{ fmt.signed(r.rate_diff) }}</span></div></td>
+        <td class="r num">{{ fmt.pct(r.share_of_cs_pct) }}</td><td class="r num">{{ fmt.pct(r.contribution_pct) }}</td>
+        <td>{% if r.larger_group %}<span class="flag size">▲ Larger group</span>{% endif %}{% if r.larger_group and r.higher_rate %}<br>{% endif %}{% if r.higher_rate %}<span class="flag rate">▲ Higher rate</span>{% endif %}{% if not (r.larger_group or r.higher_rate) %}{% if reference %}<span class="muted">{% if r.births == 0 %}No births{% else %}Close to reference{% endif %}</span>{% else %}<span class="muted">—</span>{% endif %}{% endif %}</td></tr>
+    {% endfor %}
+    {% set u = report.residual %}
+      <tr class="unc" id="unc"><td><span class="gnum">Unclassified</span></td><td class="gdef">Missing or conflicting Robson fields</td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(u.size_pct) }}; no reference"><div class="fill w{{ u.size_w or 0 }}"></div></div><span class="num">{{ fmt.pct(u.size_pct) }}</span><span class="diff">no ref.</span></div></td>
+        <td><div class="cell"><div class="bar" title="This facility: {{ fmt.pct(u.rate_pct) }}; no reference"><div class="fill w{{ u.rate_w or 0 }}"></div></div><span class="num">{{ fmt.pct(u.rate_pct) }}</span><span class="diff">no ref.</span></div></td>
+        <td class="r num">{{ fmt.pct(u.share_of_cs_pct) }}</td><td class="r num">{{ fmt.pct(u.contribution_pct) }}</td>
+        <td>{% if report.unclassified_high %}<span class="chip warn">⚠ Check data quality</span>{% else %}<span class="muted">Counted, not dropped</span>{% endif %}</td></tr>
+    </tbody>
+  </table>
+  <div class="tc-foot">Group size: the facility's share of births in the group; the black tick is the reference share (axis 0–45%, or 0–100% when a share is larger). Cesarean rate: cesareans ÷ births in the group (axis 0–100%). Share of all cesareans: the group's cesareans ÷ all cesareans. Absolute contribution: the group's cesareans ÷ all births. Flags: group size at least 3 points above the reference, or rate at least 10 points above (rates are not flagged below 10 births in a group). Births are current admissions with a recorded delivery outcome in the period. Unclassified records are counted and never dropped.</div>

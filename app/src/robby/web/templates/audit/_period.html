@@ -1,0 +1,19 @@
+{# Period shortcuts and custom dates for the hospital report and the national overview. #}
+{% set refq = ("&ref=" ~ reference.id) if reference and refs | length > 1 else "" %}
+{% set custom = not (presets | selectattr("active") | list) %}
+<div class="period">
+  <span class="period-label">Period</span>
+  {% for p in presets %}<a class="pill{% if p.active %} on{% endif %}"{% if p.active %} aria-current="true"{% endif %} href="{{ request.url.path }}?from={{ p.start.isoformat() }}&amp;to={{ p.end.isoformat() }}{{ refq }}">{{ p.label }}</a>{% endfor %}
+  <details class="custom"{% if custom %} open{% endif %}>
+    <summary class="pill{% if custom %} on{% endif %}">Choose dates</summary>
+    <form method="get" action="{{ request.url.path }}">
+      <div class="f"><label for="from">From</label><input id="from" name="from" type="date" value="{{ period.start.isoformat() }}"></div>
+      <div class="f"><label for="to">To</label><input id="to" name="to" type="date" value="{{ period.end.isoformat() }}"></div>
+      {% if refs | length > 1 %}
+      <div class="f"><label for="ref">Compare with</label><select id="ref" name="ref" data-searchable>{% for r in refs %}<option value="{{ r.id }}"{% if reference and r.id == reference.id %} selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></div>
+      {% endif %}
+      <button class="btn btn-s btn-sm" type="submit">Show</button>
+    </form>
+  </details>
+</div>
+<p class="period-now">Showing {{ fmt.day(period.start) }} to {{ fmt.day(period.end) }}{% if reference %} · compared with <span title="{{ reference.citation }} · {{ reference.population }}">{{ reference.name }}</span>{% endif %}</p>
