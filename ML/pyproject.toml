@@ -59,6 +59,7 @@ no_implicit_optional = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 mypy_path = "src:packages/robson_engine/src:packages/robson_serving/src"
+files = ["src", "api", "packages/robson_engine/src", "packages/robson_serving/src"]
 
 [[tool.mypy.overrides]]
 module = ["pandera.*", "openpyxl.*", "sklearn.*", "scipy.*", "pyarrow.*", "statsmodels.*", "shap.*", "joblib.*"]

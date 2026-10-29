@@ -1,8 +1,9 @@
-"""The packaged artefact directory (spec §17.1): file names, manifest, integrity checks, writing.
+"""The packaged artefact directory: file names, manifest, integrity checks, writing.
 
 A packaged artefact holds ``model.joblib`` (pickling ``robson_serving`` classes and sklearn
-only), ``feature_schema.json``, ``manifest.json`` (spec §17.3 fields plus the serving ones),
-``reference_distributions.json``, ``golden_inputs.parquet`` and ``golden_outputs.json``.
+only), ``feature_schema.json``, ``manifest.json`` (provenance and evaluation fields plus the
+serving ones), ``reference_distributions.json``, ``golden_inputs.parquet`` and
+``golden_outputs.json``.
 :func:`check_manifest` refuses an artefact whose model file does not match its hash, whose
 runtime libraries differ from the installed ones in major.minor, or that was packaged for
 another major version of robson_serving.
@@ -41,7 +42,7 @@ ARTEFACT_FILES = (
 MANIFEST_FORMAT = 1
 CORE_LIBRARIES = ("numpy", "pandas", "scikit-learn", "joblib")
 FORBIDDEN_PICKLE_MODULE = b"robson_ml"
-# Spec §17.3 fields plus the serving-side ones; every manifest must hold all of them.
+# Provenance and evaluation fields plus the serving-side ones; every manifest must hold all of them.
 MANIFEST_FIELDS = (
     "manifest_format",
     "version_label",
@@ -73,7 +74,7 @@ WRITER_FIELDS = frozenset(
 _VERSION = re.compile(r"^(\d+)\.(\d+)")
 
 
-class IncompatibleArtefact(RuntimeError):  # noqa: N818  (name fixed by the spec, §8.2)
+class IncompatibleArtefact(RuntimeError):  # noqa: N818  (public name the application catches)
     """The artefact cannot be served here: missing or altered files, or different libraries."""
 
 

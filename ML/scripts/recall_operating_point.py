@@ -53,7 +53,9 @@ def evaluate(oof: pd.DataFrame, target: float) -> list[dict[str, object]]:
     return rows
 
 
-def row(target: float, scope: str, cuts: list[float], y, p, cut: float = None) -> dict[str, object]:
+def row(
+    target: float, scope: str, cuts: list[float], y, p, cut: float | None = None
+) -> dict[str, object]:
     m = threshold_metrics(y, p, cut if cut is not None else cuts[0])
     return {
         "target recall": target,

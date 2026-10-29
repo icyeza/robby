@@ -230,7 +230,7 @@ def packaged_dir(
     fitted: tuple[CalibratedModel, pd.DataFrame],
     schema: FeatureSchema,
 ) -> Path:
-    """A complete synthetic packaged artefact (all six §17.1 files)."""
+    """A complete synthetic packaged artefact (all six files of the packaged directory)."""
     model, x = fitted
     out = tmp_path_factory.mktemp("packaged") / "synthetic-v0"
     write_artefact(out, model, schema, manifest_fields(schema), reference_distributions(x, KINDS))

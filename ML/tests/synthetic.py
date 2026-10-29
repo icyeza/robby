@@ -30,6 +30,9 @@ SYNTHETIC_GROUP_CS_RATE = {
     10: 0.40,
 }
 UNRESOLVED_CS_RATE = 0.45
+# np.where with a missing branch: a 0-d object array broadcasts None as the scalar would (and
+# matches numpy's stubs, which take array-likes only).
+NONE = np.array(None, dtype=object)
 HYPERTENSION_RATE = 0.06
 HYPERTENSION_LOGIT_SHIFT = 0.6
 ROBSON_INPUT_MISSING_RATE = {
@@ -134,7 +137,7 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
     prelabour_type = np.where(
         onset == "prelabour_cs",
         np.where(rng.random(n) < planned_share, "planned", "emergency"),
-        None,
+        NONE,
     )
     hypertensive = rng.random(n) < HYPERTENSION_RATE
     pe_recorded = np.select(
@@ -171,12 +174,12 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
     anthropometry_missing = rng.random(n) < 0.5
     df["height_cm"] = _mask(df["height_cm"], anthropometry_missing)
     df["weight_kg"] = _mask(df["weight_kg"], anthropometry_missing)
-    for column, rate in ROBSON_INPUT_MISSING_RATE.items():
-        df[column] = _mask(df[column], rng.random(n) < rate)
+    for column, missing_rate in ROBSON_INPUT_MISSING_RATE.items():
+        df[column] = _mask(df[column], rng.random(n) < missing_rate)
 
     classified = classify_frame(df, load_rule_set())
-    rate = classified["robson_group"].astype(object).map(SYNTHETIC_GROUP_CS_RATE).astype(float)
-    rate = rate.fillna(UNRESOLVED_CS_RATE).to_numpy()
+    group_rate = classified["robson_group"].astype(object).map(SYNTHETIC_GROUP_CS_RATE)
+    rate = group_rate.astype(float).fillna(UNRESOLVED_CS_RATE).to_numpy()
     logit = (
         np.log(rate / (1 - rate))
         + pd.Series(facility).map(FACILITY_LOGIT_SHIFT).to_numpy()
@@ -194,14 +197,14 @@ def make_admissions(n: int = 2000, seed: int = 20260923) -> pd.DataFrame:
         p=list(IN_LABOUR_CS_TYPE_SHARE.values()),
     )
     cs_type = np.where(onset == "prelabour_cs", prelabour_type, in_labour_type)
-    cs_type = np.where((cs == 1) & (cs_type != ""), cs_type, None)
+    cs_type = np.where((cs == 1) & (cs_type != ""), cs_type, NONE)
     df["prelabour_cs_type"] = pd.Series(cs_type, dtype=object)
     mode = np.where(
         cs == 1,
         "cesarean",
         np.where(rng.random(n) < 0.93, "spontaneous_vaginal", "instrumental_vaginal"),
     )
-    indication = np.where(cs == 1, rng.choice(INDICATIONS, size=n), None)
+    indication = np.where(cs == 1, rng.choice(INDICATIONS, size=n), NONE)
     outcome_missing = rng.random(n) < OUTCOME_MISSING_RATE
     df["mode_of_delivery"] = _mask(pd.Series(mode, dtype=object), outcome_missing)
     df["cs"] = _mask(pd.Series(pd.array(cs, dtype="Int64")), outcome_missing)

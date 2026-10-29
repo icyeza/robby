@@ -94,9 +94,7 @@ def test_a_precise_presentation_is_coarsened_when_the_model_only_knows_non_cepha
         ("facility_id", "FAC_Z", "not a level"),
     ],
 )
-def test_violations_name_the_field_never_the_value(
-    field: str, value: object, problem: str
-) -> None:
+def test_violations_name_the_field_never_the_value(field: str, value: object, problem: str) -> None:
     with pytest.raises(SchemaError) as info:
         normalise_admission({field: value}, SCHEMA)
     assert info.value.field == field

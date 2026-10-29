@@ -1,15 +1,15 @@
-"""Packaging a deployment artefact for serving (spec §17): ``robson-ml package``.
+"""Packaging a deployment artefact for serving: ``robson-ml package``.
 
 Reads ``artefacts/<version_label>/`` (``model.joblib`` and ``fit_summary.json`` from
-:func:`robson_ml.deploy.fit_deployment`) and writes the §17.1 directory through
+:func:`robson_ml.deploy.fit_deployment`) and writes the packaged directory through
 :mod:`robson_serving`: the model re-dumped so its pickle references robson_serving and sklearn
 only (the classes resolve to robson_serving through the re-export in robson_ml.calibration),
 ``feature_schema.json`` (from the fitted pipeline and the feature registry),
-``manifest.json`` (§17.3), ``reference_distributions.json`` (bucket proportions of the
-training population, no bucket under 5 rows), 200 synthetic golden admissions and their
-probabilities. It also checks, on the training population, that the serving path rebuilds the
-training feature frame and probabilities exactly (:func:`parity_report`: counts and a maximum
-difference only, never a row).
+``manifest.json`` (provenance, evaluation and serving fields), ``reference_distributions.json``
+(bucket proportions of the training population, no bucket under 5 rows), 200 synthetic golden
+admissions and their probabilities. It also checks, on the training population, that the
+serving path rebuilds the training feature frame and probabilities exactly
+(:func:`parity_report`: counts and a maximum difference only, never a row).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ from robson_serving.schema import (
 )
 
 Range = tuple[float | None, float | None]
-# Allowed ranges of canonical inputs (spec §5; the same bounds the canonical schema checks).
+# Allowed ranges of canonical inputs (the same bounds the canonical schema checks).
 CANONICAL_RANGES: dict[str, Range] = {
     "gestational_age_weeks": GA_RANGE,
     "ga_band_lower": GA_RANGE,

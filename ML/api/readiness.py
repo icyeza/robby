@@ -71,10 +71,12 @@ class ReadinessModel:
 
     @property
     def version(self) -> str:
+        """The model's version label from its fit summary (``unknown`` when absent)."""
         return str(self.summary.get("version_label", "unknown"))
 
     @property
     def features(self) -> list[str]:
+        """The feature columns the model was fitted on, in training order."""
         return list(self.summary["features"])
 
 

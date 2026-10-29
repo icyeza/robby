@@ -1,4 +1,4 @@
-"""Contract test (spec §17.4): the artefact reproduces its golden outputs to 1e-9, also in a
+"""Contract test: the artefact reproduces its golden outputs to 1e-9, also in a
 process where the training stack cannot be imported. The application runs the same check by
 calling robson_serving.contract.check_golden on a registered artefact."""
 

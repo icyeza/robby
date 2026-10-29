@@ -1,4 +1,4 @@
-"""Golden inputs and outputs (spec §17.4) and the contract check.
+"""Golden inputs and outputs and the contract check.
 
 ``golden_inputs.parquet`` holds ``GOLDEN_N`` synthetic canonical admissions drawn from the
 feature schema with a fixed seed (never real records): each input is missing with probability

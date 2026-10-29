@@ -111,7 +111,9 @@ def synthetic_grid(seed: int) -> list[ExperimentConfig]:
     feature sets, two onset-coded sensitivity runs, the additional families on FS1/M1 under
     S1 and S4, and two complete-case runs. The FT-Transformer is left out (slow on CPU)."""
 
-    def config(model: str, fs: str, strategy: str, split: str, population: str = "P_pred"):
+    def config(
+        model: str, fs: str, strategy: str, split: str, population: str = "P_pred"
+    ) -> ExperimentConfig:
         return ExperimentConfig(
             model, fs, strategy, split, population, SYNTHETIC_TRIALS, seed, SYNTHETIC_BOOT
         )

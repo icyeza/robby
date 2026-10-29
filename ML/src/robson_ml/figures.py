@@ -9,6 +9,7 @@ their marker. Nothing here selects a backend, so figures display inline in a not
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -479,7 +480,7 @@ def confusion_grid(
                 if isinstance(raw, str):
                     text, color = raw, INK
                 else:
-                    text = f"{int(raw)}\n{100 * shares[i, j]:.0f}%"
+                    text = f"{int(cast(float, raw))}\n{100 * shares[i, j]:.0f}%"  # a count
                     color = "white" if shares[i, j] > 0.55 else INK
                 ax.text(j, i, text, ha="center", va="center", fontsize=9, color=color)
         ax.set_xticks([0, 1], ["vaginal", "CS"])

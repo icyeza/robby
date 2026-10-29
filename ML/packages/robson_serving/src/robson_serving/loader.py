@@ -1,4 +1,4 @@
-"""Loading a packaged readiness model and scoring canonical admissions (spec §17.2).
+"""Loading a packaged readiness model and scoring canonical admissions.
 
 ``scorer = load(path)`` validates the manifest (required fields, artefact hash, robson_serving
 major version, runtime library major.minor), the rule set version and the feature schema, then

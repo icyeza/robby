@@ -532,7 +532,7 @@ def package(
     artefact_dir: Path,
     out: Annotated[Path, typer.Option("--out", help="Directory to write the packaged artefact")],
 ) -> None:
-    """Package a fit-deploy artefact for serving (spec §17.1) into ``--out``.
+    """Package a fit-deploy artefact for serving into ``--out``.
 
     Rebuilds the artefact's population from the project data and refuses unless the data and
     the feature registry hash to the values in its fit summary. Writes model.joblib (re-dumped
