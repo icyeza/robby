@@ -319,7 +319,7 @@ dropped silently.
 | NFR4 Traceability | Stored outputs re-derivable from stored inputs and versions | Completed | [`test_rederivation.py`](app/tests/test_rederivation.py) recomputes every stored classification and prediction exactly |
 | NFR5 Data integrity | No update in place; tamper-evident history | Completed | Database triggers refuse UPDATE/DELETE on clinical rows; hash-chained event log (`robby-admin events verify`). Corrections stay in the schema, but the web pages no longer offer them |
 | NFR6 Security and privacy | HTTPS, RBAC, encrypted data and backups | Completed | Patient number and name encrypted at rest with AES-256-GCM, plus a blind index for search ([`crypto.py`](app/src/robby/crypto.py)); daily [backups](deploy/backup.sh) encrypted with age to a key kept off the server, restore tested, off-site copy pulled and verified; argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports |
-| NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
+| NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([screenshot](docs/screenshots/fetch-timeout.png), [`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
 | NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
 | NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
@@ -347,7 +347,8 @@ Every screen of the running application is in [`docs/screenshots/`](docs/screens
 | ![Hospital report](docs/screenshots/hospital-report.png) | ![Monitoring](docs/screenshots/monitoring.png) |
 
 The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the save](docs/screenshots/form-resolved-screening-blank.png),
-[saved](docs/screenshots/form-saved.png), [recent entries](docs/screenshots/recent-entries.png),
+[saved](docs/screenshots/form-saved.png), [fetched from the hospital system (FHIR)](docs/screenshots/fetch-from-hospital.png),
+[hospital system not answering](docs/screenshots/fetch-timeout.png), [recent entries](docs/screenshots/recent-entries.png),
 [find a patient](docs/screenshots/find-patient.png), [record the outcome](docs/screenshots/record-outcome.png),
 [Excel import](docs/screenshots/excel-import.png), [users](docs/screenshots/users.png),
 [models](docs/screenshots/models.png), [model detail](docs/screenshots/model-detail.png),
@@ -357,7 +358,7 @@ The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the sav
 
 ## Testing strategies
 
-There are 1,317 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 429
+There are 1,425 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 537
 application. All run on synthetic data; the real records never enter a test.
 
 - `cd ML && uv run pytest` runs the ML tests.
@@ -397,7 +398,7 @@ PostgreSQL 16, and lint and type checks.
   - audit arithmetic against hand-computed values;
   - registry transitions, reconciliation and monitoring;
   - a check that no page contains inline script or style.
-- **Results.** 429 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
+- **Results.** 537 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
   The skip is a placeholder check with nothing left to check.
 - **Improvements made.** The re-derivation test (NFR4) and the Robson-group monitoring test (FR12)
   were added after this review. An OpenClinic file with missing columns used to crash the upload

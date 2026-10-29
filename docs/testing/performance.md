@@ -1,6 +1,6 @@
 # Performance and compatibility measurements
 
-Measured on 29 October 2026 against commit `e90e34a`; the operating-system runs against `89ddb1d` (packages) and `f6dc28d` (app).
+Measured on 29 October 2026 against commit `e90e34a`; the operating-system runs against `89ddb1d` (packages) and `21ba9e7` (app).
 
 ## Server performance (requirement NFR1)
 
@@ -91,7 +91,7 @@ repeated over HTTPS once the public address is live.
 
 | Environment | Suite | Result |
 |---|---|---|
-| Windows 11 (laptop), Python 3.11, PostgreSQL 16 | app | 429 passed, 1 skipped |
-| Ubuntu 24.04 (server), Python 3.11, PostgreSQL 16 | app | 429 passed, 1 skipped |
+| Windows 11 (laptop), Python 3.11, PostgreSQL 16 | app | 537 passed, 1 skipped |
+| Ubuntu 24.04 (server), Python 3.11, PostgreSQL 16 | app | 537 passed, 1 skipped |
 | Ubuntu 24.04, Python 3.11, 3.12 and 3.13 | `robson_engine`, `robson_serving` | 130 and 107 passed on each |
 | Windows 11, Python 3.11 | `robson_engine`, `robson_serving`, ML pipeline | 130, 107 and 651 passed |
