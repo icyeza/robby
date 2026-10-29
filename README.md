@@ -1,55 +1,177 @@
 # Robson Readiness
 
-**Automated Robson Ten-Group Classification and Cesarean Readiness System for Rwandan maternity units**
+**Automated Robson Ten-Group classification and cesarean readiness system for Rwandan maternity units**
 
-Repository: <https://github.com/icyeza/robby>
-Video demo: <https://vimeo.com/1233169400>
+| | |
+|---|---|
+| Live demonstration | <https://robby.example.org>: synthetic data, accounts under [Try it](#try-it) |
+| Walkthrough video | *link to be added* |
+| Technical report (PDF) | *link to be added* |
+| Repository | <https://github.com/icyeza/robby> |
 
-## Description
+## Overview
 
-At admission to a maternity ward, the system:
+At admission to a maternity ward, the system does six things:
 
-1. **Classifies** the woman into one of the WHO Robson Ten Groups automatically, from six admission
-   fields (parity, previous cesareans, number of fetuses, presentation, gestational age, onset of
-   labour). When fields are missing it lists the groups still possible and the field that would
-   decide; when fields contradict each other it names them. Every result comes with the rules it
-   checked.
-2. **Enforces screening**: blood pressure, proteinuria and glucose must be entered, or a reason for
-   not measuring them recorded.
+1. **Classifies** the woman into one of the WHO Robson Ten Groups from six admission fields: parity,
+   previous cesareans, number of fetuses, presentation, gestational age and onset of labour.
+   - The group is shown live while the form is filled in.
+   - When fields are missing, it lists the groups still possible and the field that would decide.
+   - When fields contradict each other, it names them.
+   - Every result shows the rules that were checked.
+2. **Enforces screening**: blood pressure, proteinuria and glucose must each have a value or a
+   recorded reason for not being measured, before anything is saved.
 3. **Estimates readiness**: a calibrated probability that the birth ends in a cesarean *under current
-   practice*, an operational signal for theatre planning. It is never a recommendation for or
-   against a cesarean.
-4. **Audits facilities**: Robson group sizes, CS rates and contributions per facility, compared with
-   reference populations and adjusted for case-mix.
-5. **Bulk import from Excel**: a clinician can download a template, fill in one row per admission
-   and upload it. Every row is checked with the same rules as the form; if any row fails, nothing is
-   saved. If all rows pass, each one is classified and scored exactly like a form entry.
-6. **Patient number and name (role-restricted)**: each admission records the hospital patient
-   number and name. Clinicians at the facility see both, the facility administrator sees the number
-   only, and no other role sees either.
+   practice*. It is an operational signal for planning theatre and staff, never a recommendation for
+   or against a cesarean.
+4. **Closes the loop**: the clinician records the mode of delivery, and every prediction is joined
+   to its outcome. The model custodian then sees discrimination, calibration and input drift per
+   facility and per Robson group. A new model goes from *candidate* to *shadow* to *active*, and
+   each step needs a named approver and a reason.
+5. **Audits facilities**: each hospital gets a Robson report with group sizes, cesarean rates and
+   each group's contribution, compared with a reference population. The report also comes as a PDF,
+   and a monthly CSV export goes to the national system. The national reviewer sees aggregates
+   across hospitals.
+6. **Imports** admissions from Excel (facility administrator) or from the hospital's record system
+   through a token-authenticated API. Both go through the same checks as the form.
 
-The model was trained on 5,520 de-identified delivery records from four hospitals in and around Kigali
-(Muhima, Masaka, Kibagabaga, La Croix du Sud; November 2023 to March 2024), shared under a data-sharing
-agreement. The data are **not** in this repository.
+### Roles
 
-### Results so far
+| Role | Does | Patient data visible |
+|---|---|---|
+| Lab technician | Enters admissions on the form; sees their recent entries | Name and number, own facility |
+| Clinician | Finds a patient, reads the classification and readiness signal, records the outcome | Name and number, own facility |
+| Facility administrator | Hospital report, PDF, monthly export, Excel import, facility users | Patient number only, own facility |
+| National reviewer | National overview across facilities | Aggregates only |
+| Model custodian | Model registry and promotion, monitoring, approval log | None |
+| System administrator | Facilities and users | None |
+
+### Results
+
+The model was trained on 5,520 de-identified delivery records from four hospitals in and around
+Kigali (Muhima, Masaka, Kibagabaga and La Croix du Sud), covering November 2023 to March 2024. The
+records were shared under a data-sharing agreement and are **not** in this repository.
 
 | | |
 |---|---|
 | Robson classification | 94.4% of records resolve to exactly one group; no record is contradictory |
 | Selected model | L2 logistic regression (feature set FS2, iterative imputation), chosen by a rule committed before training |
-| Discrimination on an unseen hospital | mean AUC **0.752** (0.71-0.82 across the four hospitals), vs 0.730 for the Robson-group lookup alone |
-| Calibration | slope **0.99** (target 0.8-1.2) |
+| Discrimination on an unseen hospital | mean AUC **0.752** (0.71–0.82 across the four hospitals); the Robson-group lookup alone reaches 0.730 |
+| Calibration | slope **0.99** (target 0.8–1.2) |
 | Later time period | AUC 0.772 (Robson lookup: 0.725) |
-| Model families compared | 8, from a single decision tree to an FT-Transformer: all between 0.71 and 0.75 AUC |
+| Model families compared | 8, from a single decision tree to an FT-Transformer, all between 0.71 and 0.75 AUC |
+
+## Try it
+
+The live demonstration runs on synthetic admissions only, with a banner on every page saying so.
+Four demo hospitals each have their own accounts (`da` to `dd`), and the password for every account
+is `demo-password-123`.
+
+| Sign in as | To see |
+|---|---|
+| `lab.da` | The admission form: the live Robson group, partial and conflict states, blocked screening |
+| `clinician.da` | Find a patient, the result page with the readiness signal, record an outcome |
+| `admin.da` | The hospital report, the PDF, the monthly export and Excel import |
+| `reviewer` | The national overview |
+| `custodian` | Models, promotion, the approval log and monitoring |
+| `sysadmin` | Facilities and users |
+
+## Technical requirements
+
+| | Version | Used for |
+|---|---|---|
+| Python | 3.11 (installed by uv; the shared packages also pass on 3.12 and 3.13) | Everything |
+| [uv](https://docs.astral.sh/uv/) | 0.8 or later | Environments; every dependency is pinned in `uv.lock` |
+| PostgreSQL | 16 | The web application's database |
+| FastAPI / Uvicorn | 0.143 / 0.54 | Web application and the ML API |
+| SQLAlchemy / Alembic / psycopg | 2.1 / 1.20 / 3.3 | Database access and migrations |
+| Jinja2 + htmx | 3.1 + 2.0.4 (vendored) | Server-rendered pages; the live Robson panel |
+| scikit-learn / pandas / NumPy | 1.9 / 2.3 / 2.4 | Model and features (shared by training and serving) |
+| XGBoost / PyTorch / statsmodels | 3.2 / 2.14 / 0.15 | Training and comparison only (`ML/`); never installed with the app |
+| MLflow / Optuna / SHAP | 3.16 / 5.0 / 0.51 | Experiment tracking, tuning, explanations (`ML/`) |
+| argon2-cffi, openpyxl, ReportLab | 25.1, 3.1, 5.1 | Password hashing, Excel import, PDF reports |
+| Playwright | 1.x, via `uv run --with playwright` | Cross-browser and screenshot scripts (optional) |
+
+**Operating systems:** developed on Windows 11, and deployed and tested on Ubuntu 24.04.
+
+**Hardware:** the server needs at least one CPU core and 1 GB of RAM for the application, plus
+PostgreSQL. With half a core, saving an admission goes over the 500 ms target; see
+[Performance](#performance-and-resources). Clients need only a current browser. The pages work at
+phone width.
+
+## Setup
+
+Prerequisites: [Git](https://git-scm.com/) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+The web application also needs PostgreSQL 16.
+
+**ML workspace** (notebooks, training code, tests, API):
+
+```bash
+git clone https://github.com/icyeza/robby.git
+cd robby/ML
+uv sync                       # creates .venv with every dependency pinned in uv.lock
+uv run pytest                 # test suite (runs on synthetic data)
+uv run uvicorn api.main:app   # API with Swagger UI at http://127.0.0.1:8000/docs
+```
+
+Endpoints: `GET /health`, `GET /model`, `POST /classify` (Robson group with explanation), and
+`POST /admissions/assess` (screening check, Robson group and readiness probability).
+
+- **Model.** The API loads the packaged model committed in
+  `ML/artefacts/packaged/readiness-v1.0/`. It contains coefficients, the feature schema, training
+  marginal distributions with no bucket under 10 people, and synthetic golden test cases; it holds
+  no patient record. The API checks the model against the hash in its manifest.
+- **Notebooks.** Open `ML/notebooks/*.ipynb` in Jupyter (`uv run jupyter lab notebooks/`). The
+  committed copies contain the outputs from the real data. Without the private dataset, re-running
+  them uses synthetic data automatically.
+
+**Web application.** Full instructions for Windows and Linux, the settings, demo mode and the tests
+are in [`app/README.md`](app/README.md). In short:
+
+```bash
+cd robby/app
+cp .env.example .env          # set ROBBY_DATABASE_URL, ROBBY_SECRET_KEY, ROBBY_SECURE_COOKIES=false
+uv sync
+uv run robby-admin db upgrade
+uv run robby-admin rules load
+uv run robby-admin create-system-admin --username admin
+uv run uvicorn robby.main:create_app --factory --reload   # http://127.0.0.1:8000
+```
+
+For the same example data as the live demonstration, run `uv run robby-admin demo load` and then
+`sh scripts/demo.sh` (http://127.0.0.1:8100).
+
+## Deployment
+
+The live demonstration runs on an Ubuntu 24.04 server, installed by
+[`deploy/install.sh`](deploy/install.sh). The script is safe to run again: a later run updates the
+code, the environment and the schema. It sets up:
+
+- a `robby` system user;
+- its own PostgreSQL 16 cluster on 127.0.0.1:5433 with peer authentication (so no database password);
+- Uvicorn with two workers under systemd ([`deploy/robby.service`](deploy/robby.service), hardened
+  with a read-only system and a memory cap);
+- nginx as the TLS-terminating reverse proxy ([`deploy/nginx-robby.conf`](deploy/nginx-robby.conf),
+  with certificates from certbot).
+
+```
+browser ──HTTPS──> nginx ──> Uvicorn workers (systemd): FastAPI app
+                                ├── Robson rule engine (versioned rule set)
+                                ├── readiness model (joblib, loaded in-process, hash-checked)
+                                └── audit, registry, monitoring, background reconciliation
+                                              │
+                                              ▼
+                                   PostgreSQL 16 (append-only clinical rows, hash-chained event log)
+```
+
+There is one service and no containers: recovery means `uv sync` and restarting one unit, which a
+hospital IT officer can do. If the model cannot be loaded, the Robson classification still works.
+If the network drops, the form says so and keeps what was entered.
 
 ## End-to-end system
 
-From the hospital data to the clinician's screen and back. Source:
-[`docs/diagrams/end-to-end.mmd`](docs/diagrams/end-to-end.mmd); image:
-[`end-to-end.png`](docs/diagrams/end-to-end.png). The database is in
-[`app/README.md`](app/README.md#data-model) (ERD), and how a single prediction is made is in
-[`app/README.md`](app/README.md#how-a-prediction-is-made) (sequence diagram).
+Source: [`docs/diagrams/end-to-end.mmd`](docs/diagrams/end-to-end.mmd). The database (ERD) and how a
+single prediction is made (sequence diagram) are in [`app/README.md`](app/README.md#data-model).
 
 ```mermaid
 flowchart LR
@@ -82,11 +204,11 @@ flowchart LR
         CAND -->|approval + reason| SHAD -->|approval + reason| ACT
     end
 
-    subgraph USE["5. Clinical use (clinician)"]
-        FORM["admission form<br/>or Excel import"]
+    subgraph USE["5. Clinical use (lab technician, clinician)"]
+        FORM["lab technician: admission form<br/>facility admin: Excel import"]
         CLS["Robson group<br/>active rule set"]
         SCORE["readiness probability<br/>stored with its feature vector"]
-        SHOW["result page<br/>group, explanation, signal"]
+        SHOW["clinician: patient page<br/>group, explanation, signal"]
         FORM --> CLS --> SCORE --> SHOW
     end
 
@@ -97,7 +219,7 @@ flowchart LR
     end
 
     subgraph MON["7. Monitoring (model custodian)"]
-        ALERT["calibration and input-drift alerts<br/>/monitoring"]
+        ALERT["AUC, calibration and input-drift alerts<br/>per facility and Robson group"]
     end
 
     subgraph AUD["8. Audit"]
@@ -123,265 +245,238 @@ flowchart LR
     class FHIR future
 ```
 
-1. **Data.** The KoboToolbox xlsx export from the four hospitals, shared under the data-sharing
-   agreement, is read and mapped onto canonical admission fields by `robson-ml ingest` (identifiers
-   hashed), classified into Robson groups with `robson_engine`, and turned into features with a
-   leakage audit.
-2. **Training and selection.** Eight model families plus baselines are trained and evaluated
-   leave-one-hospital-out (and on a later time period), every run is logged to MLflow, and the model
-   is chosen by a selection rule committed before training.
-3. **Packaging.** `robson-ml fit-deploy` fits the chosen model and `robson-ml package` builds the
-   artefact: manifest, model, feature schema, training distributions and golden test cases.
-4. **Registry.** The app registers the artefact as a *candidate*; the model custodian moves it to
-   *shadow* (scored, never shown) and then *active*, each step with a named approver and a reason.
-5. **Clinical use.** An admission from the form or from an Excel import is classified with the
-   active rule set and scored by the active model; the result page shows the group, its explanation
-   and the readiness signal.
-6. **Outcomes.** The clinician records the mode of delivery, and a background job joins every
-   prediction to the outcome of its admission.
-7. **Monitoring.** Calibration per facility and input drift against the training distributions
-   raise alerts for the model custodian, who retrains when needed, which closes the loop back to
-   training.
-8. **Audit.** The facility administrator gets the Robson report and CSV export for the facility;
-   the national reviewer sees aggregates across facilities.
+## Repository structure
 
-*Future (dashed):* fetching the admission from the hospital system (FHIR, by patient number)
-instead of typing it in.
-
-### Who sees what
-
-| Role | Patient data visible |
-|---|---|
-| Clinician | Patient name and number, for admissions at their own facility |
-| Facility administrator | Patient number only (no name), for their own facility |
-| National reviewer | Aggregates only, no individual admissions |
-| Model custodian | No patient data (model metrics, monitoring and drift only) |
-| System administrator | No patient data (users and facilities only) |
-
-## Repository layout
-
-| Folder | Contents |
-|---|---|
-| [`ML/`](ML/) | Notebooks, ML code, tests and the API. **Start with [`ML/README.md`](ML/README.md)** |
-| [`ML/notebooks/`](ML/notebooks/) | `01_eda` (data quality, Robson classification, exploratory analysis), `02_model_training` (architectures, training, hyperparameter tuning, MLflow tracking, per-model metrics and confusion matrices, selection), `03_model_evaluation` (interpretation, robustness, deployment, missing data) and `04_audit_and_research_questions` (Robson audit, case-mix, missing data) |
-| [`ML/api/`](ML/api/) | FastAPI service: Robson classification and readiness probability, with Swagger UI |
-| [`ML/packages/`](ML/packages/) | `robson_engine` (the versioned Robson rule engine) and `robson_serving` (model loading, calibration, drift and monitoring), shared by the ML code and the app |
-| [`app/`](app/) | The web application: admission form, Excel and OpenClinic import, results, outcomes, audit and national reports, model registry, monitoring, users. FastAPI + Jinja2 + htmx over PostgreSQL. **Details in [`app/README.md`](app/README.md)** |
-| [`docs/diagrams/`](docs/diagrams/) | End-to-end, ERD and prediction-sequence diagrams (Mermaid source and PNG) |
-| [`ui-mockups/`](ui-mockups/) | Clickable HTML mockups of every screen of the web app, and their [screenshots](ui-mockups/screenshots/) |
-
-## Setup
-
-Prerequisites: [Git](https://git-scm.com/), [uv](https://docs.astral.sh/uv/getting-started/installation/)
-(it installs Python 3.11 itself) and a web browser.
-
-```bash
-git clone https://github.com/icyeza/robby.git
-cd robby/ML
-uv sync                       # creates .venv with every dependency pinned in uv.lock
-uv run pytest                 # test suite (runs on synthetic data)
 ```
-
-**Notebooks.** Open `ML/notebooks/*.ipynb` in Jupyter (`uv run jupyter lab notebooks/`) or VS Code
-using the `ML/.venv` interpreter. The committed copies already contain the real-data outputs. Without
-the private dataset, re-running them uses synthetic data automatically.
-
-**API.** From `ML/`:
-
-```bash
-uv run uvicorn api.main:app --reload
-# open http://127.0.0.1:8000/docs  (Swagger UI)
+robby/
+├── ML/                          machine-learning workspace (own uv project)
+│   ├── src/robson_ml/           pipeline: ingest, mapping, Robson run, features, leakage audit, splits,
+│   │   └── models/              12 model families and baselines behind one registry
+│   ├── packages/robson_engine/  versioned Robson rule engine (rule set as YAML data), own package
+│   ├── packages/robson_serving/ serving runtime: loader, feature rows, calibration, drift, monitoring
+│   ├── api/                     FastAPI service: /classify, /admissions/assess
+│   ├── notebooks/               01 EDA, 02 training, 03 evaluation, 04 audit and research questions
+│   ├── configs/                 project, features, mapping, experiments, pre-registered selection rule
+│   ├── artefacts/packaged/      the deployed model readiness-v1.0
+│   ├── scripts/                 benchmark, reports, notebook runner
+│   └── tests/                   pytest suite on synthetic data
+├── app/                         web application (own uv project)
+│   ├── src/robby/
+│   │   ├── clinical/            admission form, live classification, scoring, imports, patient pages
+│   │   ├── audit/               hospital and national reports, PDF, monthly export
+│   │   ├── registry/            model registry, promotion state machine, shadow evidence
+│   │   ├── monitoring/          reconciliation, AUC/calibration/drift alerts
+│   │   ├── auth/ users/ facilities/  sign-in, sessions, roles, administration
+│   │   ├── events/              hash-chained event log
+│   │   ├── models/              SQLAlchemy entities (18 tables)
+│   │   └── web/                 templates, static files, CSRF, security headers, navigation
+│   ├── migrations/              Alembic migrations with the append-only triggers
+│   ├── scripts/                 demo, browser check, screenshots, performance check, OpenClinic client
+│   └── tests/                   pytest suite on a throwaway PostgreSQL database
+├── deploy/                      install script, systemd unit, nginx site
+├── docs/
+│   ├── diagrams/                end-to-end, ERD, prediction sequence (Mermaid and PNG)
+│   ├── screenshots/             every screen of the running application
+│   └── testing/                 performance and compatibility measurements
+├── ui-mockups/                  the clickable HTML mockups the app was built from
+└── .github/workflows/ci.yml     tests, lint and types on every push
 ```
-
-Endpoints: `GET /health`, `GET /model`, `POST /classify` (Robson group with explanation),
-`POST /admissions/assess` (screening check + Robson group + readiness probability). Details and an
-example are in [`ML/README.md`](ML/README.md#serving-the-model-api).
-
-The API loads the packaged model committed in `ML/artefacts/packaged/readiness-v1.0/` (coefficients,
-feature schema, training marginal distributions with no bucket under 10 people, and synthetic golden
-test cases; no patient record) and checks it against the hash in its manifest. `uv run python
-scripts/build_demo_model.py` builds a stand-in model from synthetic data instead; start the API with
-`ROBSON_MODEL_DIR=artefacts/demo-synthetic`. Without any model the API still classifies admissions
-and reports that the readiness estimate is unavailable, the same graceful degradation the app is
-designed for.
-
-**Web app.** Needs PostgreSQL 16 as well. Full instructions (Windows and Linux, settings, demo
-mode, tests) are in [`app/README.md`](app/README.md#development-on-windows-git-bash). In short:
-
-```bash
-cd robby/app
-cp .env.example .env          # set ROBBY_DATABASE_URL, ROBBY_SECRET_KEY, ROBBY_SECURE_COOKIES=false
-uv sync
-uv run robby-admin db upgrade
-uv run robby-admin rules load
-uv run robby-admin create-system-admin --username admin
-uv run uvicorn robby.main:create_app --factory --reload
-# open http://127.0.0.1:8000
-```
-
-For a ready-filled example (4 demo hospitals, about 700 admissions, every role), run
-`uv run robby-admin demo load` and then `sh scripts/demo.sh` (http://127.0.0.1:8100; demo
-accounts and password in [`app/README.md`](app/README.md#demo-mode)).
-
-**UI mockups.** Open `ui-mockups/index.html` in a browser. No server or build step is needed.
-
-## Designs
-
-* Figma: <https://www.figma.com/design/pjOYnAzRpyY2UjmONP0gTZ/Robby>
-* Clickable mockups: [`ui-mockups/index.html`](ui-mockups/index.html), 23 screens covering every role
-  and the error states.
-
-| Admission form with live Robson group | Result: group, explanation and readiness signal |
-|---|---|
-| ![New admission](ui-mockups/screenshots/admission-new.png) | ![Result](ui-mockups/screenshots/result.png) |
-| **Incomplete inputs: the field that decides** | **Contradictory inputs** |
-| ![Incomplete](ui-mockups/screenshots/admission-incomplete.png) | ![Conflict](ui-mockups/screenshots/admission-conflict.png) |
-| **Facility audit report** | **National overview** |
-| ![Audit report](ui-mockups/screenshots/audit-report.png) | ![National overview](ui-mockups/screenshots/national-overview.png) |
-| **API (Swagger UI): the deployed MVP** | |
-| ![Swagger UI](ui-mockups/screenshots/api-swagger.png) | |
-| **Model registry** | **Model monitoring** |
-| ![Models](ui-mockups/screenshots/models.png) | ![Monitoring](ui-mockups/screenshots/monitoring.png) |
-
-Every screen:
-
-| Area | Screens |
-|---|---|
-| Everyone | [Sign in](ui-mockups/screenshots/login.png) ([phone](ui-mockups/screenshots/login-mobile.png)), [session ended](ui-mockups/screenshots/session-expired.png) |
-| Clinician | [new admission](ui-mockups/screenshots/admission-new.png), [incomplete](ui-mockups/screenshots/admission-incomplete.png), [conflict](ui-mockups/screenshots/admission-conflict.png), [result](ui-mockups/screenshots/result.png) ([phone](ui-mockups/screenshots/result-mobile.png)), [result without a model](ui-mockups/screenshots/result-no-model.png), [recent admissions](ui-mockups/screenshots/admissions-recent.png), [record outcome](ui-mockups/screenshots/outcome-record.png), [correction](ui-mockups/screenshots/correction.png), [corrected result](ui-mockups/screenshots/result-corrected.png), [connection lost](ui-mockups/screenshots/connection-lost.png) |
-| Facility administrator / model custodian | [audit report](ui-mockups/screenshots/audit-report.png), [unclassified records](ui-mockups/screenshots/unclassified.png), [users](ui-mockups/screenshots/users.png), [models](ui-mockups/screenshots/models.png), [model detail](ui-mockups/screenshots/model-detail.png), [monitoring](ui-mockups/screenshots/monitoring.png), [approval log](ui-mockups/screenshots/audit-log.png) |
-| National | [overview](ui-mockups/screenshots/national-overview.png), [facility report](ui-mockups/screenshots/national-facility.png), [facilities](ui-mockups/screenshots/facilities.png) |
-
-## Testing, performance and compatibility
-
-### Automated tests
-
-About 820 test functions in three suites, all on synthetic data (the real records never enter a test):
-
-| Suite | Run | What it covers |
-|---|---|---|
-| [`ML/tests/`](ML/tests/) | `cd ML && uv run pytest` | Ingest and mapping, Robson classification of the dataset, leakage screens, splits (no mother on both sides), every model family, calibration, metrics, selection rule, packaging, privacy (small-cell suppression), notebooks (including a scan of committed outputs for patient data), the API |
-| [`ML/packages/*/tests/`](ML/packages/) | `uv run pytest` in each package | Rule engine (every group, partial and conflict cases, rule-set checksum), serving: features, calibration, drift, monitoring, golden-output contract |
-| [`app/tests/`](app/tests/) | `cd app && uv run pytest` (needs PostgreSQL) | Migrations and database triggers (clinical rows cannot be edited), the access matrix of every role on every page, CSRF, sessions and lockout, the clinical flow, Excel and API import (all or nothing), audit arithmetic against hand-computed values, model governance, reconciliation, monitoring, no inline script or style in any page |
-
-Model validation is separate from the code tests: leave-one-hospital-out (each hospital is scored
-by a model that never saw it) and a later-period check, reported in [`ML/README.md`](ML/README.md).
-
-### Edge cases and performance
-
-[`ML/scripts/benchmark.py`](ML/scripts/benchmark.py) (`cd ML && uv run python scripts/benchmark.py`), on
-a Windows 11 laptop (AMD Ryzen, Python 3.11), with generated inputs:
-
-* **Exhaustive engine sweep.** All 14,400 combinations of the six Robson inputs, each including
-  "not recorded" and the edges of its domain: 8,129 resolved, 4,543 partial, 1,728 conflict, no
-  exceptions. Every one of the 2,340 complete, non-contradictory combinations resolves to exactly
-  one group. About 6,400 classifications per second.
-* **API latency**, 2,000 requests per endpoint, in-process and sequential, with the `readiness-v1.0`
-  model; a fifth of the admissions have missing fields and a tenth have screening left blank:
-
-  | Endpoint | p50 | p95 | p99 | max |
-  |---|---|---|---|---|
-  | `POST /classify` | 2.7 ms | 3.5 ms | 3.9 ms | 5.1 ms |
-  | `POST /admissions/assess` (screening + Robson + model) | 88 ms | 98 ms | 105 ms | 165 ms |
-
-  All 204 admissions with blank screening were rejected with 422, and none of the valid ones were.
-  Most of the assessment time is the model's iterative imputation; it stays far below what a
-  clinician notices at the bedside. Cold start (rule set and model load): 2.9 s.
-
-### Browsers and devices
-
-[`app/scripts/browser_check.py`](app/scripts/browser_check.py) drives the real app (demo instance)
-through the clinician flow with Playwright: sign in, fill the form, check the live Robson panel,
-check that saving is blocked while screening is blank, save, and check the result page. It fails on
-any console error or Content-Security-Policy violation from the app's own pages.
-
-| Browser | Desktop 1366x768 | Phone 390x844 | Form load |
-|---|---|---|---|
-| Chrome 156 | pass | pass | 75 ms |
-| Edge 156 | pass | pass | 80 ms |
-| Firefox 157 | pass | pass | 150-190 ms |
-| WebKit 27.2 (Safari's engine) | pass | pass | 65-70 ms |
-
-Found and fixed along the way: pages had no favicon, so every browser requested a missing
-`/favicon.ico` (a 404 in the console). Known and harmless: WebKit reports its *own* built-in
-`<select>` styling as refused by the strict CSP (a bare page with only a `<select>` does the same);
-the app's styles apply normally. Screenshots:
-[WebKit on a phone](docs/testing/result-webkit-phone.png),
-[Firefox on a desktop](docs/testing/result-firefox-desktop.png).
-
-### Python versions
-
-The shared packages (`robson_engine`, `robson_serving`) pass their tests on Python 3.11, 3.12 and
-3.13 (130 and 106 tests). The ML workspace is pinned to 3.11 for reproducible training.
 
 ## Scope against the proposal
 
-The proposal (Section 1.5) commits four components at *deployed* level and four at *demonstrated*
-level, and says that any reduction is reported rather than silently dropped. Where each one stands:
+The table below lists every functional (FR) and non-functional (NFR) requirement in the proposal,
+plus its delivery commitments. The proposal states that any reduction is reported here rather than
+dropped silently.
 
-| Proposal item | Level committed | Delivered | Notes |
+| Planned feature | Intended purpose | Current status | Evidence |
 |---|---|---|---|
-| Versioned Robson classification engine | Deployed | Yes | [`ML/packages/robson_engine`](ML/packages/robson_engine/); 94.4% of the 5,520 records resolve to one group, none to more than one |
-| Admission form with enforced screening | Deployed | Yes | Saving is blocked until each screening field has a value or a recorded reason, in the form, the Excel import, the automated import and the API |
-| Audit service against external reference distributions | Deployed | Yes | Facility and national reports in the app; an independent offline implementation ([`audit_offline.py`](ML/src/robson_ml/audit_offline.py)) for the agreement check |
-| Calibrated admission-time model comparing logistic regression, gradient boosting and a tabular deep-learning baseline | Deployed | Yes | All three compared (XGBoost and an FT-Transformer among them); the selected L2 logistic regression is calibrated, registered, and served through the API and the app, with the model version stored on every prediction |
-| Full algorithm comparison (stretch: seven algorithms) | Demonstrated | Exceeded | Eight families plus four baselines, chosen by the pre-registered rule |
-| Reconciliation and monitoring loop | Demonstrated | Yes | Outcome reconciliation, calibration and drift alerts; exercised on the synthetic demo database, since there is no prospective volume yet |
-| FHIR interoperability layer | Demonstrated | **Not evaluated** | No hospital FHIR endpoint was available. Getting admissions out of the hospital system is covered instead by a token-authenticated import API, tested against an OpenClinic stand-in ([`app/scripts/openclinic_standin/`](app/scripts/openclinic_standin/)), and by Excel import; both use the same checks as the form. The FHIR adapter is the next piece of work |
-| Live pilot in a partner maternity unit | Demonstrated | **Reduced to a demonstration instance** | Ethics clearance has not arrived, so, as the proposal provides, the system runs on a demonstration instance with synthetic and de-identified data and is not installed in a ward. Server deployment files (systemd, nginx, TLS) are not written yet |
-| Clinician usability sessions (at least 7 of 8 testers complete an entry unaided; RQ4 bedside time) | Evaluation | **Not yet run** | Planned on the demonstration instance; RQ4 is unanswered until they happen |
+| FR1 Role-based access | Each role sees only its own functions and its own facility | Completed | [roles](#roles); [`test_access_matrix.py`](app/tests/test_access_matrix.py) checks every role on every page |
+| FR2 Enforced screening | No admission saved with blood pressure, proteinuria or glucose silently blank | Completed | [form, screening blank](docs/screenshots/form-resolved-screening-blank.png); enforced in the form, Excel, API import and the ML API |
+| FR3 Automatic Robson classification | Group assigned at admission under a versioned rule set | Completed | [`robson_engine`](ML/packages/robson_engine/); rule-set id stored on every classification |
+| FR4 Partial classification | Missing fields: show the groups still possible and the field that decides | Completed | [partial state](docs/screenshots/form-partial.png) |
+| FR5 Conflict detection | Contradictory fields named instead of a wrong group | Completed | [conflict state](docs/screenshots/form-conflict.png) |
+| FR6 Explanation trace | The assignment can be inspected, not taken on trust | Completed | ["Why group 5"](docs/screenshots/patient-result.png) |
+| FR7 Readiness estimate | Calibrated probability for theatre planning, never a recommendation | Completed | [result page](docs/screenshots/patient-result.png); model results above |
+| FR8 FHIR ingestion | Take admissions from the hospital record system | **Not implemented** | No hospital FHIR endpoint was available. Instead, a token-authenticated import API (tested against an [OpenClinic stand-in](app/scripts/openclinic_standin/)) and [Excel import](docs/screenshots/excel-import.png), both with the form's checks |
+| FR9 Facility audit | Group sizes, rates and contributions against a reference; unclassified records as a residual row | Completed | [hospital report](docs/screenshots/hospital-report.png) ("No group" row) |
+| FR10 Aggregate export | Monthly figures for the national system | **Partial** | CSV export works; its column layout is an assumption until the national template is confirmed ([`export_format.py`](app/src/robby/audit/export_format.py)) |
+| FR11 Model registry and promotion | Exactly one active model; every promotion approved and recorded | Completed | [models](docs/screenshots/models.png), [model detail](docs/screenshots/model-detail.png), [approval log](docs/screenshots/approval-log.png) |
+| FR12 Reconciliation and rolling metrics | Predictions matched to outcomes; AUC and calibration per facility and Robson group | Completed | [monitoring](docs/screenshots/monitoring.png) |
+| NFR1 Performance | Save under 500 ms; facility-year report under 3 s | Completed | Save 149 ms p50 / 198 ms max; report for 4,736 deliveries 193 ms max ([measurements](docs/testing/performance.md)) |
+| NFR2 Predictive performance | AUC ≥ 0.75 and calibration slope 0.8–1.2 on unseen hospitals | **Partial** | Mean AUC 0.752 and slope 0.99 meet the target; per hospital the AUC is 0.71–0.82, so not every hospital does ([`ML/README.md`](ML/README.md)) |
+| NFR3 Classification correctness | Complete inputs resolve to exactly one group | Completed | All 14,400 input combinations swept and all 5,520 records ([testing](#testing-strategies)) |
+| NFR4 Traceability | Stored outputs re-derivable from stored inputs and versions | Completed | [`test_rederivation.py`](app/tests/test_rederivation.py) recomputes every stored classification and prediction exactly |
+| NFR5 Data integrity | No update in place; tamper-evident history | Completed | Database triggers refuse UPDATE/DELETE on clinical rows; hash-chained event log (`robby-admin events verify`). Corrections stay in the schema, but the web pages no longer offer them |
+| NFR6 Security and privacy | HTTPS, RBAC, protected data | **Partial** | Done: HTTPS, argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports. Not done: database encryption at rest and encrypted off-site backups |
+| NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; network loss keeps the form |
+| NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
+| NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
+| Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
+| Live pilot in a partner unit | Use in a real ward | **Not implemented** | Ethics clearance has not arrived. As the proposal provides, the system runs as a public demonstration instance on synthetic data instead |
 
 Out of scope as planned: a wearable or physiological screening layer, and computer-vision extraction
 from antenatal cards or partographs.
 
-One deliberate change of framing: the proposal's title speaks of risk prediction to *support
-cesarean decision-making*, but the same proposal rules out any individual recommendation. The
-system therefore presents the probability as a *readiness signal under current practice*, for
-planning theatre and staff, and every screen that shows it says that it is not a recommendation.
+There is also one deliberate change of framing. The proposal's title speaks of risk prediction to
+*support cesarean decision-making*, but the same proposal rules out any individual recommendation.
+The system therefore presents the probability as a *readiness signal under current practice*, and
+every screen that shows it says so.
 
-## Deployment plan
+## Screens
 
-**Target:** one partner maternity unit first (a pilot), on hardware the hospital already has, with
-intermittent power and no dedicated systems administrator. It needs ethics clearance; until then it
-runs as a demonstration instance on de-identified records.
+Every screen of the running application is in [`docs/screenshots/`](docs/screenshots/), taken by
+[`app/scripts/screenshots.py`](app/scripts/screenshots.py).
 
-**Architecture:** a single Python application.
+| Admission form: missing fields, the field that decides | Contradictory inputs |
+|---|---|
+| ![Partial](docs/screenshots/form-partial.png) | ![Conflict](docs/screenshots/form-conflict.png) |
+| **Clinician: classification and readiness signal** | **Phone** |
+| ![Result](docs/screenshots/patient-result.png) | ![Result on a phone](docs/screenshots/patient-result-phone.png) |
+| **Hospital report** | **Model monitoring** |
+| ![Hospital report](docs/screenshots/hospital-report.png) | ![Monitoring](docs/screenshots/monitoring.png) |
 
-```
-browser (clinician, administrator) ──HTTPS──> nginx (reverse proxy, TLS)
-                                                │
-                                                ▼
-                             Uvicorn workers under systemd: FastAPI app
-                             ├── Robson rule engine (versioned rule set)
-                             ├── readiness model (joblib, loaded in-process)
-                             └── audit service
-                                                │
-                                                ▼
-                                   PostgreSQL (encrypted, append-only records)
-```
+The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the save](docs/screenshots/form-resolved-screening-blank.png),
+[saved](docs/screenshots/form-saved.png), [recent entries](docs/screenshots/recent-entries.png),
+[find a patient](docs/screenshots/find-patient.png), [record the outcome](docs/screenshots/record-outcome.png),
+[Excel import](docs/screenshots/excel-import.png), [users](docs/screenshots/users.png),
+[models](docs/screenshots/models.png), [model detail](docs/screenshots/model-detail.png),
+[approval log](docs/screenshots/approval-log.png), [national overview](docs/screenshots/national-overview.png),
+[facilities](docs/screenshots/facilities.png). The design came first, as clickable
+[HTML mockups](ui-mockups/index.html) and a [Figma file](https://www.figma.com/design/pjOYnAzRpyY2UjmONP0gTZ/Robby).
 
-* **One service, no containers.** Installing or recovering it means updating one virtual environment
-  (`uv sync`) and restarting one systemd unit, which a hospital IT officer can do.
-* **The model runs inside the API process.** The calibrated scikit-learn pipeline is loaded with
-  joblib, so there is no separate inference service to keep alive.
-* **Model lifecycle.** A new model is trained offline with `robson-ml fit-deploy`, registered as a
-  *candidate*, run in *shadow* (scored but not shown), and promoted to *active* only through a recorded
-  approval. Exactly one model is active, and every prediction stores the model and rule-set versions
-  that produced it.
-* **Monitoring.** Predictions are matched to delivery outcomes once recorded, and discrimination and
-  calibration are tracked on a rolling window per facility and Robson group (the monitoring screen).
-* **Graceful degradation.** If the model is unavailable, the Robson classification still works. If
-  the network drops, the form keeps what was entered.
-* **Security.** HTTPS with token authentication, role-based access (clinician, facility
-  administrator, model custodian, national), and no identifiable data leaving the facility.
+## Testing strategies
 
-**Steps:**
+There are 1,316 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 428
+application. All run on synthetic data; the real records never enter a test.
 
-| Step | What | Status |
-|---|---|---|
-| 1 | Train, evaluate and select the model; freeze `readiness-v1.0` | Done |
-| 2 | Robson engine as a tested package (`ML/packages/robson_engine`) | Done |
-| 3 | API exposing classification and readiness (`ML/api`) | Done (MVP) |
-| 4 | UI design (Figma and HTML mockups) | Done |
-| 5 | Web app: server-rendered pages (Jinja2 + htmx), PostgreSQL storage, sign-in, Excel and OpenClinic import, audit, model registry, monitoring ([`app/`](app/)) | Done (runs as a demonstration instance) |
-| 6 | Install on a server at the partner facility (nginx + systemd), usability sessions with clinicians | After ethics clearance |
+- `cd ML && uv run pytest` runs the ML tests.
+- `uv run pytest` inside each `ML/packages/*` folder runs the two shared packages' tests.
+- `cd app && uv run pytest` runs the application tests (it needs PostgreSQL).
+
+[CI](.github/workflows/ci.yml) runs the packages on Python 3.11–3.13, the application against
+PostgreSQL 16, and lint and type checks.
+
+### 1. Unit and exhaustive testing of the rule engine
+
+- **Why.** A wrong Robson group misdirects the whole audit, and the engine is pure logic, so it can
+  be tested completely rather than by sampling.
+- **How.**
+  - 130 unit tests cover every group, the partial and conflict cases, and the rule-set checksum.
+  - [`benchmark.py`](ML/scripts/benchmark.py) sweeps all 14,400 combinations of the six inputs,
+    each with "not recorded" and the edges of its domain.
+  - The engine is also run on all 5,520 study records.
+- **Results.**
+  - The sweep gives 8,129 resolved, 4,543 partial and 1,728 conflict results, with no exceptions,
+    at about 6,400 classifications a second.
+  - All 2,340 complete, consistent combinations resolve to exactly one group.
+- **Improvements made.** Rule values and structure are now validated when the rule set is loaded,
+  and boolean counts are rejected (`412a328`). Gestational age given as weeks plus days is binned by
+  whole weeks (`21daf94`).
+
+### 2. Integration testing against a real PostgreSQL database
+
+- **Why.** Integrity rests on the database itself: triggers make clinical rows append-only, and
+  partial unique indexes allow only one active model. These checks cannot be mocked.
+- **How.** Each run creates a throwaway database, applies the Alembic migrations, and runs every
+  test in a rolled-back transaction. The suite covers:
+  - the access matrix (every role on every page);
+  - CSRF, sessions and lockout;
+  - the form-to-result flow;
+  - Excel and API imports;
+  - audit arithmetic against hand-computed values;
+  - registry transitions, reconciliation and monitoring;
+  - a check that no page contains inline script or style.
+- **Results.** 428 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
+  The skip is a placeholder check with nothing left to check.
+- **Improvements made.** The re-derivation test (NFR4) and the Robson-group monitoring test (FR12)
+  were added after this review. An OpenClinic file with missing columns used to crash the upload
+  and now returns the problem list (regression test in [`test_openclinic.py`](app/tests/test_openclinic.py)).
+
+### 3. Cross-browser end-to-end testing
+
+- **Why.** The live panel depends on htmx and on a strict Content-Security-Policy that browsers
+  enforce differently.
+- **How.** [`browser_check.py`](app/scripts/browser_check.py) drives the real application with
+  Playwright, at desktop and phone sizes, through the whole lab technician and clinician flow. It
+  fails on any console error or CSP violation coming from the app.
+- **Results.** Chrome 156, Edge 156 and Firefox 157 pass at both sizes against the deployed server.
+  WebKit passed on the local run; see [the measurements](docs/testing/performance.md#browsers).
+- **Improvements made.** Pages had no favicon, so every browser logged a 404 (`76d9b75`).
+
+### 4. Performance and resource testing
+
+- **Why.** The target hospitals run on modest hardware, and NFR1 sets hard limits.
+- **How.** [`perf_check.py`](app/scripts/perf_check.py) measures saving, reading, reporting and
+  8 concurrent users. It ran against the deployed configuration with 14,000 synthetic admissions,
+  first on the full server and then capped by systemd at 1 core and at half a core.
+- **Results.** See [Performance](#performance-and-resources).
+- **Improvements made.** The measurements set the stated minimum hardware (1 core, 1 GB). Testing
+  the deployment also uncovered that the server scored nothing, because its model directory was
+  empty (`326ddef`).
+
+### 5. Model validation
+
+- **Why.** A model that only fits the hospitals it has seen is useless at a new one.
+- **How.** Leave-one-hospital-out validation: each hospital is scored by a model that never saw it,
+  and a mother never appears on both sides of a split. There is also a later-period check. The
+  selection rule was committed, with its hash guarded, before any model saw real data.
+- **Results.** See [Results](#results) and [`ML/README.md`](ML/README.md).
+
+## Performance and resources
+
+The deployed configuration (2 Uvicorn workers, PostgreSQL 16) was measured on the server itself, on
+a busiest hospital of 4,736 deliveries. Times are p50 / p95 in milliseconds; full tables are in
+[`docs/testing/performance.md`](docs/testing/performance.md).
+
+| | 6 vCPU server | 1 core, 1 GB | ½ core, 1 GB |
+|---|---|---|---|
+| Save an admission (limit 500 ms) | 149 / 191 | 166 / 210 | 307 / **529** |
+| Open a saved admission | 24 / 29 | 23 / 53 | 32 / 77 |
+| Hospital report, 4,736 deliveries (limit 3 s) | 172 / 193 | 188 / 316 | 176 / 222 |
+| Report PDF | 263 / 347 | 274 / 306 | 326 / 507 |
+| 8 users at once | 90 / 399, 55 req/s | 127 / 464, 37 req/s | 388 / 707, 14 req/s |
+
+Memory for the two workers is about 420 MB at rest, peaking at about 950 MB under load. The
+classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p50
+([`benchmark.py`](ML/scripts/benchmark.py)).
+
+## Code quality and architecture
+
+- **Separation of concerns.** The code is organised by feature (`clinical`, `audit`, `registry`,
+  `monitoring`, …). Each feature has `routes.py` for HTTP and `service.py` for the logic and
+  queries, with no FastAPI imports, so it can be tested without HTTP. Templates only render.
+  - The ML training stack is never installed with the application.
+  - The two share only `robson_engine` and `robson_serving`, so training and serving compute the
+    features and the calibration with the same code.
+- **Abstraction and polymorphism.**
+  - Spreadsheet layouts (`TemplateLayout`, `OpenClinicLayout`, `ResearchExportLayout`) implement one
+    `SheetLayout` protocol, and the importer picks one at run time
+    ([`importer.py`](app/src/robby/clinical/importer.py)).
+  - The model is used through `Scorer` / `ScorerLoader` protocols, so the tests can inject a stub
+    ([`scoring.py`](app/src/robby/clinical/scoring.py)).
+  - Calibration methods implement a `Calibrator` protocol: identity, Platt and isotonic
+    ([`calibration.py`](ML/packages/robson_serving/src/robson_serving/calibration.py)).
+  - Model families are registered strategies behind sklearn's estimator interface, with custom
+    estimators that inherit from `BaseEstimator` ([`models/`](ML/src/robson_ml/models/)).
+- **Encapsulation.**
+  - Immutable value objects: the engine's `RobsonInputs` and `ClassificationResult`, and the
+    report and view dataclasses.
+  - `ModelRuntime` hides model loading and caching.
+  - The Robson rule set is data (YAML), validated and checksummed, not code.
+- **Algorithms worth noting.**
+  - The Robson engine evaluates conditions in three-valued (Kleene) logic, so missing inputs give
+    the set of groups still possible and the fields that would decide
+    ([`engine.py`](ML/packages/robson_engine/src/robson_engine/engine.py)).
+  - Secondary small-cell suppression checks with linear algebra whether a hidden count can be
+    recovered from the published totals ([`privacy.py`](ML/src/robson_ml/privacy.py)).
+  - An exact Poisson-binomial distribution of the theatre load comes from a dynamic program
+    ([`monitoring.py`](ML/packages/robson_serving/src/robson_serving/monitoring.py)).
+  - Leave-one-hospital-out splits are grouped by mother ([`splits.py`](ML/src/robson_ml/splits.py)).
+  - The tamper-evident hash chain verifies the event log in O(n) with constant memory
+    ([`events/log.py`](app/src/robby/events/log.py)).
+  - The audit counts come from one set-based SQL query using `DISTINCT ON`
+    ([`audit/counts.py`](app/src/robby/audit/counts.py)).
+  - Model promotion is a declared state machine
+    ([`registry/transitions.py`](app/src/robby/registry/transitions.py)).
+- **Checks.** ruff (pycodestyle, pyflakes, isort, bugbear, naming, simplify) and the ruff formatter
+  run on both projects, and mypy with `disallow_untyped_defs`; all are clean.
