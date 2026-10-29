@@ -11,6 +11,8 @@
 #   /etc/robby/robby.env (settings, a fresh secret key; kept on later runs)
 #   the demonstration database robby_demo, filled with synthetic data on the first run
 #   systemd unit robby.service (Uvicorn, 2 workers, 127.0.0.1:8170) and the nginx site
+#   a daily encrypted backup (robby-backup.timer, deploy/backup.sh) once a public key is in
+#   /etc/robby/backup-recipients.txt
 # TLS afterwards: certbot --nginx -d robby.example.org
 set -eu
 
@@ -93,6 +95,19 @@ install -m 644 "$SRC/deploy/robby.service" /etc/systemd/system/robby.service
 systemctl daemon-reload
 systemctl enable robby >/dev/null
 systemctl restart robby
+
+say "encrypted backups"
+command -v age >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq age >/dev/null
+install -m 644 "$SRC/deploy/robby-backup.service" /etc/systemd/system/robby-backup.service
+install -m 644 "$SRC/deploy/robby-backup.timer" /etc/systemd/system/robby-backup.timer
+systemctl daemon-reload
+if [ -s /etc/robby/backup-recipients.txt ]; then
+    systemctl enable --now robby-backup.timer >/dev/null
+else
+    # The private key must not be made here: create it where it will be kept (age-keygen) and put
+    # only its public key in /etc/robby/backup-recipients.txt, then run this script again.
+    echo "backups not scheduled: /etc/robby/backup-recipients.txt is missing" >&2
+fi
 
 say "nginx site"
 # Installed once: certbot adds the TLS lines to this file, and a later run must keep them.

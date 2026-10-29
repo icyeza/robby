@@ -1,0 +1,9 @@
+# Encrypted database backup (deploy/backup.sh), started daily by robby-backup.timer.
+[Unit]
+Description=Robby encrypted database backup
+After=postgresql@16-robby.service
+Requires=postgresql@16-robby.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /srv/robby/robby/deploy/backup.sh
