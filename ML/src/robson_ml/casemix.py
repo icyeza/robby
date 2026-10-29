@@ -16,8 +16,10 @@ separated: its coefficient diverges and, in the limit, its rows carry no informa
 facility contrasts. Such rows are left out of the adjusted models (counted and named), which
 is what the maximum-likelihood fit converges to.
 
-Outputs: facility odds ratios with 95% CIs per model; the % reduction in |log OR| from
-``M_raw`` to each adjusted model, with bootstrap CIs (resampling within facility); observed /
+Outputs: facility odds ratios with 95% CIs per model; the change in |log OR| from ``M_raw``
+to each adjusted model and, where the raw contrast is clearly non-null
+(:func:`pct_reduction_estimable`), the % reduction, both with bootstrap CIs (resampling
+within facility); observed /
 expected ratios per facility against the Vogel-expected rate (sum of group size x reference
 CS rate, on resolved records) and the C-Model expected rate (mean per-woman probability),
 each with bootstrap CIs, or "not applicable" when the reference is absent or unusable.
@@ -78,6 +80,9 @@ EXCLUDED_COVARIATES = frozenset(
 MAX_CATEGORICAL_LEVELS = 10
 MIN_COVARIATE_LEVEL_ROWS = 20
 Z_95 = 1.959963984540054
+# Below this |raw log OR| (or with a raw CI spanning 0) the % reduction is not estimable.
+MIN_RAW_ABS_LOG_OR = 0.1
+NOT_ESTIMABLE = "n/e"
 
 
 def robson_levels(audit: pd.DataFrame, merged: bool = False) -> pd.Series:
@@ -263,15 +268,43 @@ def fit_model_set(
 
 
 def pct_reduction(raw: float, adjusted: float) -> float:
-    """Percentage reduction in |log OR| from ``raw`` to ``adjusted`` (NaN if raw is 0)."""
+    """Percentage reduction in |log OR| from ``raw`` to ``adjusted`` (NaN if raw is 0).
+
+    Plain arithmetic: whether the result is reported is decided by
+    :func:`pct_reduction_estimable`."""
     if raw == 0 or not np.isfinite(raw) or not np.isfinite(adjusted):
         return float("nan")
     return 100.0 * (1.0 - abs(adjusted) / abs(raw))
 
 
-def _reductions(fits: dict[str, FacilityFit | None]) -> dict[tuple[str, str], float]:
+def pct_reduction_estimable(raw: float, ci_low: float, ci_high: float) -> bool:
+    """Whether a % reduction from the raw log OR ``raw`` (95% CI ``ci_low``-``ci_high``) is
+    reported.
+
+    The % reduction divides by |raw log OR|, so it is unbounded as the raw contrast nears 0: a
+    raw OR of 1.04 turned into 1.76 by adjustment reads as a "-1300%" reduction. It is
+    reported only when |raw log OR| >= ``MIN_RAW_ABS_LOG_OR`` (a raw OR outside 0.90-1.11)
+    and the raw 95% CI excludes 0 (OR 1); otherwise it is not estimable (``n/e``) and the
+    change in |log OR| (always reported) is the quantity to read.
+    """
+    if not all(np.isfinite(v) for v in (raw, ci_low, ci_high)):
+        return False
+    return abs(raw) >= MIN_RAW_ABS_LOG_OR and (ci_low > 0 or ci_high < 0)
+
+
+@dataclass(frozen=True)
+class Reduction:
+    """How adjustment changed one facility's contrast with the reference facility."""
+
+    change: float  # |adjusted log OR| - |raw log OR|: negative when adjustment shrinks it
+    pct: float  # pct_reduction(raw, adjusted), meaningful only when ``estimable``
+    estimable: bool
+
+
+def _reductions(fits: dict[str, FacilityFit | None]) -> dict[tuple[str, str], Reduction]:
+    """Per (adjusted model, facility), the change from ``M_raw``."""
     raw = fits.get("M_raw")
-    out: dict[tuple[str, str], float] = {}
+    out: dict[tuple[str, str], Reduction] = {}
     if raw is None:
         return out
     for model in ("M_adj1", "M_adj2"):
@@ -280,7 +313,14 @@ def _reductions(fits: dict[str, FacilityFit | None]) -> dict[tuple[str, str], fl
             continue
         for facility, value in raw.log_or.items():
             if facility in adjusted.log_or:
-                out[(model, facility)] = pct_reduction(value, adjusted.log_or[facility])
+                after = adjusted.log_or[facility]
+                out[(model, facility)] = Reduction(
+                    change=abs(after) - abs(value),
+                    pct=pct_reduction(value, after),
+                    estimable=pct_reduction_estimable(
+                        value, raw.ci_low[facility], raw.ci_high[facility]
+                    ),
+                )
     return out
 
 
@@ -380,7 +420,12 @@ class CaseMixResult:
             "",
             "## Reduction in |log OR| from M_raw",
             "",
-            markdown_table(tables["reductions"]),
+            markdown_table(reductions_display(tables["reductions"])),
+            "",
+            "`change_abs_log_or` = |adjusted log OR| - |raw log OR| (negative: adjustment "
+            f"shrinks the contrast). `{NOT_ESTIMABLE}` = % reduction not estimable: it is "
+            f"reported only when |raw log OR| >= {MIN_RAW_ABS_LOG_OR} and the raw 95% CI "
+            "excludes 0, since it divides by |raw log OR|.",
             "",
             "## Observed / expected per facility",
             "",
@@ -398,6 +443,31 @@ class CaseMixResult:
         for name, table in self.published().items():
             table.to_csv(out_dir / f"{name}.csv", index=False)
         (out_dir / "casemix.md").write_text(self.to_markdown(), encoding="utf-8")
+
+
+REDUCTION_COLUMNS = [
+    "classification",
+    "model",
+    "facility",
+    "change_abs_log_or",
+    "change_ci_low",
+    "change_ci_high",
+    "pct_reduction_abs_log_or",
+    "pct_ci_low",
+    "pct_ci_high",
+    "pct_estimable",
+]
+PCT_COLUMNS = ["pct_reduction_abs_log_or", "pct_ci_low", "pct_ci_high"]
+
+
+def reductions_display(table: pd.DataFrame) -> pd.DataFrame:
+    """The reductions table for reading: the % reduction and its CI read ``n/e`` where it is
+    not estimable."""
+    if table.empty:
+        return table
+    shown = table.drop(columns="pct_estimable").astype(object)
+    shown.loc[~table["pct_estimable"].astype(bool), PCT_COLUMNS] = NOT_ESTIMABLE
+    return shown
 
 
 OE_COUNTS = ["n", "n_resolved", "n_cs_resolved", "n_scored", "n_cs_scored"]
@@ -430,6 +500,234 @@ def cmodel_covariates(frame: pd.DataFrame, cmodel: CModelReference | None) -> li
     return [c for c in cmodel.columns() if c in frame.columns and c not in EXCLUDED_COVARIATES]
 
 
+@dataclass(frozen=True)
+class ExpectedRates:
+    """Per-record expected CS rate under each reference (``None`` when not applicable), with
+    the status line of each comparison."""
+
+    rates: dict[str, npt.NDArray[Any] | None]
+    vogel_status: str
+    cmodel_status: str
+
+
+def expected_rates(
+    audit: pd.DataFrame,
+    levels: pd.Series,
+    vogel: VogelReference | None,
+    cmodel: CModelReference | None,
+    vogel_absent_reason: str,
+    cmodel_absent_reason: str,
+) -> ExpectedRates:
+    """The Vogel-expected rate (resolved records) and the C-Model probability, when their
+    references are present (and, for the C-Model, applicable to the data)."""
+    rates: dict[str, npt.NDArray[Any] | None] = {"vogel": None, "cmodel": None}
+    vogel_status = f"{NOT_APPLICABLE} ({vogel_absent_reason})"
+    if vogel is not None:
+        rates["vogel"] = vogel_expected(levels, vogel).to_numpy()
+        vogel_status = (
+            f"sum of group size x reference CS rate, resolved records only ({vogel.citation}, "
+            f"{vogel.source_table}, {vogel.population})"
+        )
+    cmodel_status = f"{NOT_APPLICABLE} ({cmodel_absent_reason})"
+    if cmodel is not None:
+        applicability = cmodel_applicability(audit, cmodel)
+        if applicability.applicable:
+            rates["cmodel"] = cmodel_probability(audit, cmodel).to_numpy()
+            cmodel_status = f"mean per-woman probability ({cmodel.citation})"
+        else:
+            cmodel_status = applicability.statement()
+    return ExpectedRates(rates, vogel_status, cmodel_status)
+
+
+@dataclass(frozen=True)
+class BootstrapDraws:
+    """Bootstrap draws: the O/E ratio per reference and scope, and the full-classification
+    reductions per (model, facility) from the resamples where every model fitted."""
+
+    oe: dict[str, dict[str, list[float]]]
+    reductions: dict[tuple[str, str], list[Reduction]]
+    effective: int
+
+
+def bootstrap_draws(
+    audit: pd.DataFrame,
+    rates: dict[str, npt.NDArray[Any] | None],
+    scopes: Sequence[str],
+    reference: str,
+    covariates: Sequence[str],
+    n_boot: int,
+    rng: np.random.Generator,
+    bootstrap_models: bool,
+) -> BootstrapDraws:
+    """``n_boot`` resamples within facility; the models are refitted only with
+    ``bootstrap_models`` (otherwise every resample counts as effective)."""
+    facility_codes = audit["facility_id"].astype(str).to_numpy()
+    cs = audit["cs"].astype(float).to_numpy()
+    oe: dict[str, dict[str, list[float]]] = {
+        k: {s: [] for s in scopes} for k, v in rates.items() if v is not None
+    }
+    reductions: dict[tuple[str, str], list[Reduction]] = {}
+    effective = 0
+    for _ in range(n_boot):
+        idx = within_facility_resample(audit["facility_id"], rng)
+        for kind, values in rates.items():
+            if values is None:
+                continue
+            point = _oe_point(facility_codes[idx], cs[idx], values[idx], scopes)
+            for scope, (_, _, obs, exp) in point.items():
+                oe[kind][scope].append(obs / exp if exp else float("nan"))
+        if bootstrap_models:
+            sample = audit.iloc[idx].reset_index(drop=True)
+            model_set = fit_model_set(sample, reference, merged=False, covariates=covariates)
+            if all(model_set.fits[m] is not None for m in MODELS):
+                effective += 1
+                for key, value in _reductions(model_set.fits).items():
+                    reductions.setdefault(key, []).append(value)
+    return BootstrapDraws(oe, reductions, effective if bootstrap_models else n_boot)
+
+
+def percentile_ci(draws: Sequence[float]) -> tuple[float, float]:
+    """Percentile 95% interval of the finite ``draws`` (NaN, NaN when there are none)."""
+    values = np.asarray(draws, dtype=float)
+    finite = values[np.isfinite(values)]
+    if not len(finite):
+        return float("nan"), float("nan")
+    low, high = np.percentile(finite, [2.5, 97.5])
+    return float(low), float(high)
+
+
+def odds_ratio_table(sets: Sequence[ModelSet], notes: list[str]) -> pd.DataFrame:
+    """Facility odds ratios with 95% CIs per classification and model; a model that could
+    not be fitted is named in ``notes`` instead."""
+    rows = []
+    for model_set in sets:
+        for model in MODELS:
+            fit = model_set.fits[model]
+            if fit is None:
+                notes.append(f"{model_set.classification} {model}: could not be fitted")
+                continue
+            for facility in sorted(fit.log_or):
+                b = fit.log_or[facility]
+                rows.append(
+                    {
+                        "classification": model_set.classification,
+                        "model": model,
+                        "facility": facility,
+                        "n_model": fit.n,
+                        "log_or": b,
+                        "or": float(np.exp(b)),
+                        "ci_low": float(np.exp(fit.ci_low[facility])),
+                        "ci_high": float(np.exp(fit.ci_high[facility])),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def reduction_table(
+    sets: Sequence[ModelSet], draws: dict[tuple[str, str], list[Reduction]]
+) -> pd.DataFrame:
+    """Change in |log OR| and % reduction from ``M_raw`` per adjusted model and facility.
+    Bootstrap CIs are given for the full classification; the % reduction and its CI are NaN
+    where it is not estimable (:func:`pct_reduction_estimable`)."""
+    nan = float("nan")
+    rows = []
+    for model_set in sets:
+        points = _reductions(model_set.fits)
+        for (model, facility), point in sorted(points.items(), key=lambda item: item[0]):
+            sampled = draws.get((model, facility), []) if model_set.classification == FULL else []
+            change_low, change_high = percentile_ci([d.change for d in sampled])
+            pct_low, pct_high = (
+                percentile_ci([d.pct for d in sampled]) if point.estimable else (nan, nan)
+            )
+            rows.append(
+                {
+                    "classification": model_set.classification,
+                    "model": model,
+                    "facility": facility,
+                    "change_abs_log_or": point.change,
+                    "change_ci_low": change_low,
+                    "change_ci_high": change_high,
+                    "pct_reduction_abs_log_or": point.pct if point.estimable else nan,
+                    "pct_ci_low": pct_low,
+                    "pct_ci_high": pct_high,
+                    "pct_estimable": point.estimable,
+                }
+            )
+    return pd.DataFrame(rows, columns=REDUCTION_COLUMNS)
+
+
+OE_COLUMNS = [
+    "facility",
+    "n",
+    "n_resolved",
+    "n_cs_resolved",
+    "observed_rate_resolved",
+    "vogel_expected_rate",
+    "vogel_oe",
+    "vogel_oe_low",
+    "vogel_oe_high",
+    "n_scored",
+    "n_cs_scored",
+    "observed_rate_scored",
+    "cmodel_expected_rate",
+    "cmodel_oe",
+    "cmodel_oe_low",
+    "cmodel_oe_high",
+]
+
+
+def _mark_not_applicable(row: dict[str, object], kind: str) -> None:
+    for suffix in ("expected_rate", "oe", "oe_low", "oe_high"):
+        row[f"{kind}_{suffix}"] = NOT_APPLICABLE
+    if kind == "cmodel":
+        row["n_scored"] = NOT_APPLICABLE
+        row["n_cs_scored"] = NOT_APPLICABLE
+        row["observed_rate_scored"] = NOT_APPLICABLE
+
+
+def observed_expected_table(
+    audit: pd.DataFrame,
+    levels: pd.Series,
+    rates: dict[str, npt.NDArray[Any] | None],
+    scopes: Sequence[str],
+    boot_oe: dict[str, dict[str, list[float]]],
+) -> pd.DataFrame:
+    """Observed and expected CS rates and O/E ratios (bootstrap CIs) per scope (all, then
+    each facility); "not applicable" for a reference that is absent or unusable."""
+    facility_codes = audit["facility_id"].astype(str).to_numpy()
+    cs = audit["cs"].astype(float).to_numpy()
+    points = {
+        kind: _oe_point(facility_codes, cs, values, scopes)
+        for kind, values in rates.items()
+        if values is not None
+    }
+    resolved = levels.isin(GROUP_LABELS).to_numpy()
+    rows = []
+    for scope in scopes:
+        in_scope = np.ones(len(audit), bool) if scope == OVERALL else facility_codes == scope
+        row: dict[str, object] = {
+            "facility": scope,
+            "n": int(in_scope.sum()),
+            "n_resolved": int((in_scope & resolved).sum()),
+            "n_cs_resolved": int(cs[in_scope & resolved].sum()),
+            "observed_rate_resolved": (
+                float(cs[in_scope & resolved].mean()) if (in_scope & resolved).any() else np.nan
+            ),
+        }
+        for kind in ("vogel", "cmodel"):
+            if kind not in points:
+                _mark_not_applicable(row, kind)
+                continue
+            n_has, n_cs, obs, exp = points[kind][scope]
+            if kind == "cmodel":
+                row["n_scored"], row["n_cs_scored"], row["observed_rate_scored"] = n_has, n_cs, obs
+            row[f"{kind}_expected_rate"] = exp
+            row[f"{kind}_oe"] = obs / exp if exp else float("nan")
+            row[f"{kind}_oe_low"], row[f"{kind}_oe_high"] = percentile_ci(boot_oe[kind][scope])
+        rows.append(row)
+    return pd.DataFrame(rows)[OE_COLUMNS]
+
+
 def casemix_analysis(
     audit: pd.DataFrame,
     vogel: VogelReference | None = None,
@@ -445,8 +743,8 @@ def casemix_analysis(
     """Run the RQ1 case-mix analysis on ``audit`` (P_audit, classified).
 
     ``n_boot`` resamples within facility give the O/E CIs and, with ``bootstrap_models``,
-    the CIs of the |log OR| reduction (full classification). ``reference_facility``
-    defaults to the first facility in sorted order.
+    the CIs of the change in |log OR| and of the % reduction (full classification).
+    ``reference_facility`` defaults to the first facility in sorted order.
     """
     if audit["cs"].isna().any():
         raise ValueError("casemix_analysis expects P_audit rows (cs non-missing)")
@@ -462,151 +760,16 @@ def casemix_analysis(
         fit_model_set(audit, reference, merged=False, covariates=covariates),
         fit_model_set(audit, reference, merged=True, covariates=covariates),
     ]
-    or_rows = []
-    for model_set in sets:
-        for model in MODELS:
-            fit = model_set.fits[model]
-            if fit is None:
-                notes.append(f"{model_set.classification} {model}: could not be fitted")
-                continue
-            for facility in sorted(fit.log_or):
-                b = fit.log_or[facility]
-                or_rows.append(
-                    {
-                        "classification": model_set.classification,
-                        "model": model,
-                        "facility": facility,
-                        "n_model": fit.n,
-                        "log_or": b,
-                        "or": float(np.exp(b)),
-                        "ci_low": float(np.exp(fit.ci_low[facility])),
-                        "ci_high": float(np.exp(fit.ci_high[facility])),
-                    }
-                )
-    odds_ratios = pd.DataFrame(or_rows)
-
-    # Bootstrap (within facility).
-    rng = np.random.default_rng(seed)
+    odds_ratios = odds_ratio_table(sets, notes)
     levels = robson_levels(audit)
-    facility_codes = audit["facility_id"].astype(str).to_numpy()
-    cs = audit["cs"].astype(float).to_numpy()
     scopes = [OVERALL, *facilities]
-    expected: dict[str, npt.NDArray[Any] | None] = {"vogel": None, "cmodel": None}
-    vogel_status = f"{NOT_APPLICABLE} ({vogel_absent_reason})"
-    if vogel is not None:
-        expected["vogel"] = vogel_expected(levels, vogel).to_numpy()
-        vogel_status = (
-            f"sum of group size x reference CS rate, resolved records only ({vogel.citation}, "
-            f"{vogel.source_table}, {vogel.population})"
-        )
-    cmodel_status = f"{NOT_APPLICABLE} ({cmodel_absent_reason})"
-    if cmodel is not None:
-        applicability = cmodel_applicability(audit, cmodel)
-        if applicability.applicable:
-            expected["cmodel"] = cmodel_probability(audit, cmodel).to_numpy()
-            cmodel_status = f"mean per-woman probability ({cmodel.citation})"
-        else:
-            cmodel_status = applicability.statement()
-    boot_oe: dict[str, dict[str, list[float]]] = {
-        k: {s: [] for s in scopes} for k, v in expected.items() if v is not None
-    }
-    boot_reduction: dict[tuple[str, str], list[float]] = {}
-    effective = 0
-    for _ in range(n_boot):
-        idx = within_facility_resample(audit["facility_id"], rng)
-        for kind, values in expected.items():
-            if values is None:
-                continue
-            point = _oe_point(facility_codes[idx], cs[idx], values[idx], scopes)
-            for scope, (_, _, obs, exp) in point.items():
-                boot_oe[kind][scope].append(obs / exp if exp else float("nan"))
-        if bootstrap_models:
-            sample = audit.iloc[idx].reset_index(drop=True)
-            model_set = fit_model_set(sample, reference, merged=False, covariates=covariates)
-            if all(model_set.fits[m] is not None for m in MODELS):
-                effective += 1
-                for key, value in _reductions(model_set.fits).items():
-                    boot_reduction.setdefault(key, []).append(value)
-    if not bootstrap_models:
-        effective = n_boot
-
-    reduction_rows = []
-    for model_set in sets:
-        for (model, facility), value in sorted(_reductions(model_set.fits).items()):
-            red_row: dict[str, object] = {
-                "classification": model_set.classification,
-                "model": model,
-                "facility": facility,
-                "pct_reduction_abs_log_or": value,
-                "ci_low": float("nan"),
-                "ci_high": float("nan"),
-            }
-            red_draws = boot_reduction.get((model, facility), [])
-            if model_set.classification == FULL and red_draws:
-                red_finite = np.asarray(red_draws)[np.isfinite(red_draws)]
-                if len(red_finite):
-                    red_row["ci_low"], red_row["ci_high"] = (
-                        float(v) for v in np.percentile(red_finite, [2.5, 97.5])
-                    )
-            reduction_rows.append(red_row)
-    reductions = pd.DataFrame(reduction_rows)
-
-    oe_rows = []
-    points = {
-        kind: _oe_point(facility_codes, cs, values, scopes)
-        for kind, values in expected.items()
-        if values is not None
-    }
-    resolved = levels.isin(GROUP_LABELS).to_numpy()
-    for scope in scopes:
-        in_scope = np.ones(len(audit), bool) if scope == OVERALL else facility_codes == scope
-        row: dict[str, object] = {
-            "facility": scope,
-            "n": int(in_scope.sum()),
-            "n_resolved": int((in_scope & resolved).sum()),
-            "n_cs_resolved": int(cs[in_scope & resolved].sum()),
-            "observed_rate_resolved": (
-                float(cs[in_scope & resolved].mean()) if (in_scope & resolved).any() else np.nan
-            ),
-        }
-        for kind, prefix in (("vogel", "vogel"), ("cmodel", "cmodel")):
-            if kind not in points:
-                for suffix in ("expected_rate", "oe", "oe_low", "oe_high"):
-                    row[f"{prefix}_{suffix}"] = NOT_APPLICABLE
-                if kind == "cmodel":
-                    row["n_scored"] = NOT_APPLICABLE
-                    row["n_cs_scored"] = NOT_APPLICABLE
-                    row["observed_rate_scored"] = NOT_APPLICABLE
-                continue
-            n_has, n_cs, obs, exp = points[kind][scope]
-            if kind == "cmodel":
-                row["n_scored"], row["n_cs_scored"], row["observed_rate_scored"] = n_has, n_cs, obs
-            row[f"{prefix}_expected_rate"] = exp
-            row[f"{prefix}_oe"] = obs / exp if exp else float("nan")
-            draws = np.asarray(boot_oe[kind][scope], dtype=float)
-            finite = draws[np.isfinite(draws)]
-            low, high = np.percentile(finite, [2.5, 97.5]) if len(finite) else (np.nan, np.nan)
-            row[f"{prefix}_oe_low"], row[f"{prefix}_oe_high"] = float(low), float(high)
-        oe_rows.append(row)
-    columns = [
-        "facility",
-        "n",
-        "n_resolved",
-        "n_cs_resolved",
-        "observed_rate_resolved",
-        "vogel_expected_rate",
-        "vogel_oe",
-        "vogel_oe_low",
-        "vogel_oe_high",
-        "n_scored",
-        "n_cs_scored",
-        "observed_rate_scored",
-        "cmodel_expected_rate",
-        "cmodel_oe",
-        "cmodel_oe_low",
-        "cmodel_oe_high",
-    ]
-    observed_expected = pd.DataFrame(oe_rows)[columns]
+    expected = expected_rates(
+        audit, levels, vogel, cmodel, vogel_absent_reason, cmodel_absent_reason
+    )
+    rng = np.random.default_rng(seed)
+    draws = bootstrap_draws(
+        audit, expected.rates, scopes, reference, covariates, n_boot, rng, bootstrap_models
+    )
     if cmodel is None or not covariates:
         notes.append(
             "M_adj2 adds no C-Model covariate: "
@@ -614,14 +777,14 @@ def casemix_analysis(
         )
     return CaseMixResult(
         odds_ratios=odds_ratios,
-        reductions=reductions,
-        observed_expected=observed_expected,
+        reductions=reduction_table(sets, draws.reductions),
+        observed_expected=observed_expected_table(audit, levels, expected.rates, scopes, draws.oe),
         reference_facility=reference,
         covariates=covariates,
         separated={s.classification: s.separated for s in sets},
         n_boot=n_boot,
-        n_boot_effective=effective,
-        vogel_status=vogel_status,
-        cmodel_status=cmodel_status,
+        n_boot_effective=draws.effective,
+        vogel_status=expected.vogel_status,
+        cmodel_status=expected.cmodel_status,
         notes=notes,
     )

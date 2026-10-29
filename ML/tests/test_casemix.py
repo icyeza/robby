@@ -11,11 +11,15 @@ from robson_ml.audit_offline import OVERALL
 from robson_ml.casemix import (
     FULL,
     MERGED,
+    MIN_RAW_ABS_LOG_OR,
     NOT_APPLICABLE,
+    NOT_ESTIMABLE,
     SECTOR_CONFOUND_STATEMENT,
     casemix_analysis,
     drop_collinear,
     pct_reduction,
+    pct_reduction_estimable,
+    reductions_display,
     robson_levels,
     separated_levels,
     suppress_observed_expected,
@@ -67,6 +71,37 @@ def test_pct_reduction_arithmetic() -> None:
     assert pct_reduction(-0.5, 0.25) == pytest.approx(50.0)
     assert pct_reduction(0.4, 0.8) == pytest.approx(-100.0)
     assert np.isnan(pct_reduction(0.0, 0.3))
+
+
+def test_pct_reduction_needs_a_clearly_non_null_raw_contrast() -> None:
+    assert pct_reduction_estimable(0.5, 0.2, 0.8)
+    assert pct_reduction_estimable(-0.5, -0.8, -0.2)
+    # A near-null raw contrast (OR 1.04) would turn 1.04 -> 1.76 into a "-1300%" reduction.
+    assert not pct_reduction_estimable(0.04, -0.10, 0.18)
+    assert not pct_reduction_estimable(MIN_RAW_ABS_LOG_OR / 2, 0.01, 0.2)  # CI excludes 0
+    assert not pct_reduction_estimable(0.5, -0.1, 1.1)  # large but the CI spans 0
+    assert not pct_reduction_estimable(float("nan"), 0.1, 0.2)
+
+
+def test_reductions_report_the_change_and_mark_non_estimable_pct(audit: pd.DataFrame) -> None:
+    result = casemix_analysis(audit, n_boot=5, seed=1, reference_facility="FAC_A")
+    table = result.reductions
+    odds = result.odds_ratios.set_index(["classification", "model", "facility"])
+    for row in table.itertuples():
+        raw = odds.loc[(row.classification, "M_raw", row.facility), "log_or"]
+        adjusted = odds.loc[(row.classification, row.model, row.facility), "log_or"]
+        assert row.change_abs_log_or == pytest.approx(abs(adjusted) - abs(raw))
+        if row.pct_estimable:
+            assert row.pct_reduction_abs_log_or == pytest.approx(pct_reduction(raw, adjusted))
+        else:
+            assert np.isnan(row.pct_reduction_abs_log_or) and np.isnan(row.pct_ci_low)
+    full = table[table["classification"] == FULL]
+    assert full["change_ci_low"].notna().all()
+    shown = reductions_display(table)
+    hidden = ~table["pct_estimable"]
+    assert (shown.loc[hidden, "pct_reduction_abs_log_or"] == NOT_ESTIMABLE).all()
+    if hidden.any():
+        assert f"| {NOT_ESTIMABLE} |" in result.to_markdown()
 
 
 def test_vogel_observed_expected_arithmetic(tmp_path: Path) -> None:
