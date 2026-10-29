@@ -54,7 +54,7 @@ flowchart LR
         NAT["national aggregates<br/>national reviewer"]
     end
 
-    FHIR["Future: fetch admission from the<br/>hospital system, FHIR, by patient number"]
+    FHIR["hospital record system (FHIR R4):<br/>pushes a Bundle, or the form fetches<br/>by patient number"]
 
     FEAT --> FIT
     SEL --> DEP
@@ -66,7 +66,5 @@ flowchart LR
     CLS --> FAC
     DOUT --> FAC
     FAC --> NAT
-    FHIR -.-> FORM
+    FHIR --> FORM
 
-    classDef future stroke-dasharray: 6 4,fill:#ffffff,color:#555555
-    class FHIR future

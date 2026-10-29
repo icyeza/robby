@@ -32,8 +32,12 @@ At admission to a maternity ward, the system does six things:
    each group's contribution, compared with a reference population. The report also comes as a PDF,
    and a monthly CSV export goes to the national system. The national reviewer sees aggregates
    across hospitals.
-6. **Imports** admissions from Excel (facility administrator) or from the hospital's record system
-   through a token-authenticated API. Both go through the same checks as the form.
+6. **Connects to the hospital record system** through FHIR R4, which is the international standard
+   for exchanging health records. The hospital system can push admissions to the app as FHIR
+   Bundles, or the form can fetch a patient's admission by patient number. If the record system is
+   unreachable, the form says so and works by hand. Admissions can also come from Excel (facility
+   administrator) or a token-authenticated JSON API. Every route goes through the same checks as
+   the form.
 
 ### Roles
 
@@ -89,7 +93,9 @@ is `demo-password-123`.
 | scikit-learn / pandas / NumPy | 1.9 / 2.3 / 2.4 | Model and features (shared by training and serving) |
 | XGBoost / PyTorch / statsmodels | 3.2 / 2.14 / 0.15 | Training and comparison only (`ML/`); never installed with the app |
 | MLflow / Optuna / SHAP | 3.16 / 5.0 / 0.51 | Experiment tracking, tuning, explanations (`ML/`) |
-| argon2-cffi, openpyxl, ReportLab | 25.1, 3.1, 5.1 | Password hashing, Excel import, PDF reports |
+| argon2-cffi, cryptography | 25.1, 50.0 | Password hashing; AES-256-GCM encryption of patient identifiers |
+| openpyxl, ReportLab, httpx2 | 3.1, 5.1, 2.13 | Excel import, PDF reports, FHIR client |
+| age | 1.1 (server) | Encrypting database backups |
 | Playwright | 1.x, via `uv run --with playwright` | Cross-browser and screenshot scripts (optional) |
 
 **Operating systems:** developed on Windows 11, and deployed and tested on Ubuntu 24.04.
@@ -164,6 +170,12 @@ browser ──HTTPS──> nginx ──> Uvicorn workers (systemd): FastAPI app
                                    PostgreSQL 16 (append-only clinical rows, hash-chained event log)
 ```
 
+A daily systemd timer runs [`deploy/backup.sh`](deploy/backup.sh). It dumps every database and
+encrypts the dump with [age](https://age-encryption.org) to a public key, so the private key never
+lives on the server. [`restore.sh`](deploy/restore.sh) restores only into a new database, and
+[`pull-backups.sh`](deploy/pull-backups.sh) lets an off-site machine fetch the backups and verify
+their checksums.
+
 There is one service and no containers: recovery means `uv sync` and restarting one unit, which a
 hospital IT officer can do. If the model cannot be loaded, the Robson classification still works.
 If the network drops, the form says so and keeps what was entered.
@@ -227,7 +239,7 @@ flowchart LR
         NAT["national aggregates<br/>national reviewer"]
     end
 
-    FHIR["Future: fetch admission from the<br/>hospital system, FHIR, by patient number"]
+    FHIR["hospital record system (FHIR R4):<br/>pushes a Bundle, or the form fetches<br/>by patient number"]
 
     FEAT --> FIT
     SEL --> DEP
@@ -239,10 +251,8 @@ flowchart LR
     CLS --> FAC
     DOUT --> FAC
     FAC --> NAT
-    FHIR -.-> FORM
+    FHIR --> FORM
 
-    classDef future stroke-dasharray: 6 4,fill:#ffffff,color:#555555
-    class FHIR future
 ```
 
 ## Repository structure
@@ -266,6 +276,7 @@ robby/
 │   │   ├── audit/               hospital and national reports, PDF, monthly export
 │   │   ├── registry/            model registry, promotion state machine, shadow evidence
 │   │   ├── monitoring/          reconciliation, AUC/calibration/drift alerts
+│   │   ├── fhir/                FHIR R4 adapter: Bundle endpoint, fetch from the hospital system
 │   │   ├── auth/ users/ facilities/  sign-in, sessions, roles, administration
 │   │   ├── events/              hash-chained event log
 │   │   ├── models/              SQLAlchemy entities (18 tables)
@@ -273,7 +284,7 @@ robby/
 │   ├── migrations/              Alembic migrations with the append-only triggers
 │   ├── scripts/                 demo, browser check, screenshots, performance check, OpenClinic client
 │   └── tests/                   pytest suite on a throwaway PostgreSQL database
-├── deploy/                      install script, systemd unit, nginx site
+├── deploy/                      install script, systemd unit, nginx site, encrypted backups
 ├── docs/
 │   ├── diagrams/                end-to-end, ERD, prediction sequence (Mermaid and PNG)
 │   ├── screenshots/             every screen of the running application
@@ -297,7 +308,7 @@ dropped silently.
 | FR5 Conflict detection | Contradictory fields named instead of a wrong group | Completed | [conflict state](docs/screenshots/form-conflict.png) |
 | FR6 Explanation trace | The assignment can be inspected, not taken on trust | Completed | ["Why group 5"](docs/screenshots/patient-result.png) |
 | FR7 Readiness estimate | Calibrated probability for theatre planning, never a recommendation | Completed | [result page](docs/screenshots/patient-result.png); model results above |
-| FR8 FHIR ingestion | Take admissions from the hospital record system | **Not implemented** | No hospital FHIR endpoint was available. Instead, a token-authenticated import API (tested against an [OpenClinic stand-in](app/scripts/openclinic_standin/)) and [Excel import](docs/screenshots/excel-import.png), both with the form's checks |
+| FR8 FHIR ingestion | Take admissions from the hospital record system | Completed (against a stand-in) | [`robby/fhir/`](app/src/robby/fhir/): `POST /api/v1/fhir/Bundle` maps Patient, Encounter, Observation and Condition onto the form's checks and answers with a transaction-response Bundle or an OperationOutcome; the form can fetch a patient by number. Tested with a [stand-in FHIR server](app/scripts/fhir_standin/), because no hospital FHIR endpoint was available. Four codes without a standard LOINC/SNOMED match are placeholders until the hospital's profile is known |
 | FR9 Facility audit | Group sizes, rates and contributions against a reference; unclassified records as a residual row | Completed | [hospital report](docs/screenshots/hospital-report.png) ("No group" row) |
 | FR10 Aggregate export | Monthly figures for the national system | **Partial** | CSV export works; its column layout is an assumption until the national template is confirmed ([`export_format.py`](app/src/robby/audit/export_format.py)) |
 | FR11 Model registry and promotion | Exactly one active model; every promotion approved and recorded | Completed | [models](docs/screenshots/models.png), [model detail](docs/screenshots/model-detail.png), [approval log](docs/screenshots/approval-log.png) |
@@ -307,8 +318,8 @@ dropped silently.
 | NFR3 Classification correctness | Complete inputs resolve to exactly one group | Completed | All 14,400 input combinations swept and all 5,520 records ([testing](#testing-strategies)) |
 | NFR4 Traceability | Stored outputs re-derivable from stored inputs and versions | Completed | [`test_rederivation.py`](app/tests/test_rederivation.py) recomputes every stored classification and prediction exactly |
 | NFR5 Data integrity | No update in place; tamper-evident history | Completed | Database triggers refuse UPDATE/DELETE on clinical rows; hash-chained event log (`robby-admin events verify`). Corrections stay in the schema, but the web pages no longer offer them |
-| NFR6 Security and privacy | HTTPS, RBAC, protected data | **Partial** | Done: HTTPS, argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports. Not done: database encryption at rest and encrypted off-site backups |
-| NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; network loss keeps the form |
+| NFR6 Security and privacy | HTTPS, RBAC, encrypted data and backups | Completed | Patient number and name encrypted at rest with AES-256-GCM, plus a blind index for search ([`crypto.py`](app/src/robby/crypto.py)); daily [backups](deploy/backup.sh) encrypted with age to a key kept off the server, restore tested, off-site copy pulled and verified; argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports |
+| NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
 | NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
 | NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
@@ -457,6 +468,8 @@ classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p
     ([`importer.py`](app/src/robby/clinical/importer.py)).
   - The model is used through `Scorer` / `ScorerLoader` protocols, so the tests can inject a stub
     ([`scoring.py`](app/src/robby/clinical/scoring.py)).
+  - The hospital record system sits behind a `HospitalRecords` protocol: the FHIR client in
+    production, a fake in the tests ([`fhir/`](app/src/robby/fhir/)).
   - Calibration methods implement a `Calibrator` protocol: identity, Platt and isotonic
     ([`calibration.py`](ML/packages/robson_serving/src/robson_serving/calibration.py)).
   - Model families are registered strategies behind sklearn's estimator interface, with custom
@@ -466,6 +479,9 @@ classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p
     report and view dataclasses.
   - `ModelRuntime` hides model loading and caching.
   - The Robson rule set is data (YAML), validated and checksummed, not code.
+  - `EncryptedText` is a SQLAlchemy column type. Patient identifiers stay plain strings in Python
+    and are ciphertext in the database, and the type refuses any SQL comparison on ciphertext
+    ([`models/base.py`](app/src/robby/models/base.py)).
 - **Algorithms worth noting.**
   - The Robson engine evaluates conditions in three-valued (Kleene) logic, so missing inputs give
     the set of groups still possible and the fields that would decide
@@ -481,5 +497,11 @@ classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p
     ([`audit/counts.py`](app/src/robby/audit/counts.py)).
   - Model promotion is a declared state machine
     ([`registry/transitions.py`](app/src/robby/registry/transitions.py)).
+  - Field encryption uses AES-256-GCM with the column name as associated data and HKDF-derived
+    subkeys. An HMAC blind index per facility gives exact-number search and duplicate detection
+    without storing the number ([`crypto.py`](app/src/robby/crypto.py)).
+  - The FHIR adapter is a table-driven mapping from LOINC and SNOMED codes onto the admission
+    form. Every problem points back at the FHIR element that caused it
+    ([`fhir/mapping.py`](app/src/robby/fhir/mapping.py)).
 - **Checks.** ruff (pycodestyle, pyflakes, isort, bugbear, naming, simplify) and the ruff formatter
   run on both projects, and mypy with `disallow_untyped_defs`; all are clean.
