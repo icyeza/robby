@@ -425,7 +425,7 @@ PostgreSQL 16, and lint and type checks.
 - **Improvements made.**
   - Pages had no favicon, so every browser logged a 404 (`76d9b75`).
   - Against the deployed server, Firefox caught a live-panel preview that the browser had abandoned
-    being logged and answered as a server error. It now ends quietly with status 499 (`f6dc28d`).
+    being logged and answered as a server error. It now ends quietly with status 499 (`15fe49d`).
 
 ### 4. Performance and resource testing
 
@@ -436,7 +436,7 @@ PostgreSQL 16, and lint and type checks.
 - **Results.** See [Performance](#performance-and-resources).
 - **Improvements made.** The measurements set the stated minimum hardware (1 core, 1 GB). Testing
   the deployment also uncovered that the server scored nothing, because its model directory was
-  empty (`326ddef`).
+  empty (`273db46`).
 
 ### 5. Stress testing (Locust)
 
@@ -450,7 +450,7 @@ PostgreSQL 16, and lint and type checks.
   - First errors at 50 users, and collapse at about 100 (median 33 s).
   - All 127 failures were 30-second waits for a database connection that ended in a 500, and
     memory reached the cap during sign-in bursts.
-- **Improvements made** (`f595e28`).
+- **Improvements made** (`baf853a`).
   - The connection pool is sized to the workers.
   - A request that can't get a connection within 5 s gets a quick 503 "busy, try again" instead
     of a 500.
@@ -472,8 +472,8 @@ PostgreSQL 16, and lint and type checks.
   screens covering every role. pip-audit checks both lock files against the OSV database, in CI.
 - **Results and improvements.**
   - axe found one rule broken: colour contrast on 8 elements. After three colour changes
-    (`5658544`) there are no violations.
-  - pip-audit found 11 vulnerable training-side packages, which were upgraded (`2bd1950`). Both
+    (`bba185a`) there are no violations.
+  - pip-audit found 11 vulnerable training-side packages, which were upgraded (`3dbf409`). Both
     audits are now clean.
 
 ### 7. Model validation
