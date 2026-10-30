@@ -90,7 +90,9 @@ form.inline{display:inline}
 .search{margin-bottom:20px}
 .search label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
 .search-row{display:flex;gap:10px;max-width:620px}
-.search-row input{flex:1;font-size:16px;padding:10px 12px}
+.search-row input{flex:1;height:42px;font:inherit;font-size:16px;padding:0 12px;color:var(--ink);background:#fff;border:1.5px solid var(--field);border-radius:4px;-webkit-appearance:none;appearance:none}
+.search-row input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px #f1d6de}
+.search-row input::-webkit-search-cancel-button{cursor:pointer}
 
 /* ---------- searchable dropdown (select[data-searchable], app.js) ---------- */
 .combo{position:relative;min-width:220px}
