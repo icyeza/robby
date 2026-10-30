@@ -10,6 +10,10 @@ FloatArray = npt.NDArray[np.float64]
 PROB_CLIP = 1e-6
 NEWTON_MAX_ITER = 100
 NEWTON_TOL = 1e-10
+# Singular values below this fraction of the largest are treated as zero in the Newton step. NumPy's
+# default (about 1e-16 here) can keep rounding noise from a rank-deficient design, and the steps
+# then never settle, depending on the platform's linear-algebra library.
+PINV_RCOND = 1e-10
 
 
 class ConvergenceError(ArithmeticError):
@@ -78,7 +82,7 @@ def fit_logistic(
         hessian = design.T @ (design * weight[:, None])
         # Pseudo-inverse step (as statsmodels' IRLS): a constant covariate, e.g. a baseline that
         # predicts one probability for everyone, gives the minimum-norm solution, not an error.
-        step = np.linalg.pinv(hessian) @ gradient
+        step = np.linalg.pinv(hessian, rcond=PINV_RCOND, hermitian=True) @ gradient
         beta = beta + step
         if not np.all(np.isfinite(beta)):
             raise ConvergenceError("logistic fit diverged")
