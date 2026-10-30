@@ -57,6 +57,10 @@ jobs:
           uv run ruff format --check src tests
       - name: Types
         run: uv run mypy
+      - name: Known vulnerabilities in dependencies
+        run: |
+          uv export --frozen --no-hashes --no-emit-project --no-dev | grep -v '^-e ' > requirements.txt
+          uvx pip-audit -r requirements.txt --disable-pip --no-deps --vulnerability-service osv
       - name: Tests
         run: uv run pytest -q
 
@@ -77,5 +81,9 @@ jobs:
           uv run ruff format --check .
       - name: Types
         run: uv run mypy
+      - name: Known vulnerabilities in dependencies
+        run: |
+          uv export --frozen --no-hashes --no-emit-workspace | grep -v '^-e ' > requirements.txt
+          uvx pip-audit -r requirements.txt --disable-pip --no-deps --vulnerability-service osv
       - name: Tests
         run: uv run pytest -q tests
