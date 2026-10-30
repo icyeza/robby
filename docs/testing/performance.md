@@ -1,6 +1,6 @@
 # Performance and compatibility measurements
 
-Measured on 29 October 2026 against commit `c93f986`; the operating-system runs against `847680d` (packages) and `9fe1050` (app).
+Measured on 29 October 2026 against commit `5991c08`; the operating-system runs against `6938f93` (packages) and `20046ce` (app).
 
 ## Server performance (requirement NFR1)
 
@@ -102,7 +102,7 @@ each: 10, 25, 50, 100, 150 and 200.
 **Target.** The deployed configuration (2 Uvicorn workers) on the 14,000-admission database, capped
 at **2 CPU cores and 1.5 GB** with systemd, run on the server itself.
 
-**First run** (commit `c44173e`; [report](stress/before.html)).
+**First run** (commit `7f77305`; [report](stress/before.html)).
 - Up to 45 users there were no errors, at a 95th percentile of 0.4–1.3 s.
 - At 50 users the first errors appeared. At about 100 users the system collapsed: the median was
   33 s and throughput fell to 4 requests/s.
@@ -110,13 +110,13 @@ at **2 CPU cores and 1.5 GB** with systemd, run on the server itself.
   requests held database connections, and the others waited 30 s before failing with a 500.
 - Memory reached the 1.5 GB cap, mostly from bursts of sign-ins. Each argon2id hash uses 64 MiB.
 
-**Changes** (`baf853a`).
+**Changes** (`59d2601`).
 - The connection pool is sized explicitly (10 + 10 per worker).
 - A request that finds no free connection within 5 s gets a styled **503 "busy, try again"** with
   `Retry-After`, instead of a 500 after 30 s.
 - At most two argon2id hashes run at once per process, keeping the RFC 9106 parameters.
 
-**Second run** (commit `9fe1050`; [report](stress/after.html)).
+**Second run** (commit `20046ce`; [report](stress/after.html)).
 
 | | First run | Second run |
 |---|---|---|
@@ -147,7 +147,7 @@ protocol, so the strict CSP stays on.
 
 - **First run:** one rule failed, `color-contrast`, on 8 elements across 4 screens: muted labels
   at 4.26:1, unresolved group numbers at 3.52:1 and the sign-in strip at 3.43:1.
-- **Fix:** three colours changed (`bba185a`), each to at least 4.5:1.
+- **Fix:** three colours changed (`77057c2`), each to at least 4.5:1.
 - **Second run:** **no violations**.
 
 ## Dependencies (pip-audit)
@@ -158,7 +158,7 @@ pip-audit checked both lock files against the OSV database.
 - **ML workspace, first check:** 11 packages with known vulnerabilities, all on the training and
   notebook side, none of them installed with the app: pillow, setuptools, tornado, werkzeug,
   aiohttp, certifi, filelock, gitpython, mlflow, nbconvert and opentelemetry-api.
-- **Fix:** they were upgraded (`3dbf409`). The API, serving-parity and tracking tests pass, and the
+- **Fix:** they were upgraded (`b8a81b1`). The API, serving-parity and tracking tests pass, and the
   audit finds none.
 - **CI:** both audits now run on every push.
 
