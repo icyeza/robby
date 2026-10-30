@@ -28,7 +28,9 @@ PAGES.append(("/admissions/import", frozenset({Role.FACILITY_ADMIN})))
 PAGES.append(("/admissions/import/template.xlsx", frozenset({Role.FACILITY_ADMIN})))
 PAGES.append(("/lab-requests", frozenset({Role.LAB_TECHNICIAN})))
 PAGES.append(("/lab-requests/count", frozenset({Role.LAB_TECHNICIAN})))
-# Pages under an admission code or a lab request id: test_lab_requests.test_request_pages_by_role
+PAGES.append(("/patients/admission-requests/new", frozenset({Role.CLINICIAN})))
+# Pages under an admission code or a request id: test_request_pages_by_role in
+# test_lab_requests and test_admission_requests
 
 
 @pytest.mark.parametrize("role", list(Role))
@@ -101,6 +103,11 @@ POST_ACTIONS: list[tuple[str, frozenset[Role]]] = [
         frozenset({Role.CLINICIAN}),
     ),
     ("/lab-requests/00000000-0000-4000-8000-000000000001", frozenset({Role.LAB_TECHNICIAN})),
+    ("/patients/admission-requests", frozenset({Role.CLINICIAN})),
+    (
+        "/patients/admission-requests/00000000-0000-4000-8000-000000000001/cancel",
+        frozenset({Role.CLINICIAN}),
+    ),
 ]
 
 

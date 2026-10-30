@@ -1,23 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Lab requests{% endblock %}
 {% block content %}
-<div class="titlebar"><h1>Lab requests</h1><span class="meta">{{ who.place }} · waiting for a result, urgent first, then the oldest</span></div>
+<div class="titlebar"><h1>Lab requests</h1><span class="meta">{{ who.place }} · tests and new patients waiting for the lab, urgent first, then the oldest</span></div>
 {% if saved %}
 <div class="notice saved-note" role="status"><b>✓ Result saved</b> · {{ saved[0] }} for {{ saved[1] }}. The clinician sees it on the patient's page.</div>
+{% endif %}
+{% if entered %}
+<div class="notice saved-note" role="status"><b>✓ Admission saved</b> · {{ entered.code }}{% if entered.patient_name %} for {{ entered.patient_name }}{% endif %}. The clinician who asked sees it entered.</div>
 {% endif %}
 
 <section class="tablecard">
   <table>
-    <thead><tr><th>Patient</th><th>Admission</th><th>Test</th><th>Requested</th><th>Note</th><th></th></tr></thead>
+    <thead><tr><th>Patient</th><th>Admission</th><th>Request</th><th>Requested</th><th>Note</th><th></th></tr></thead>
     <tbody>
     {% for row in rows %}
       <tr>
-        <td>{% if row.patient_name %}<b>{{ row.patient_name }}</b><br><span class="muted">{{ row.patient_number }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-        <td><b>{{ row.code }}</b></td>
+        <td>{% if row.patient_name %}<b>{{ row.patient_name }}</b><br>{% endif %}{% if row.patient_number %}<span class="muted">{{ row.patient_number }}</span>{% elif not row.patient_name %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if row.code %}<b>{{ row.code }}</b>{% else %}<span class="st new-patient">New patient</span>{% endif %}</td>
         <td>{{ row.test }}{% if row.urgent %} <span class="st urgent">Urgent</span>{% endif %}</td>
         <td>{{ row.requested_at | local_dt_short }}</td>
         <td>{% if row.note %}{{ row.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
-        <td><a class="btn btn-s btn-sm" href="/lab-requests/{{ row.request_id }}">Record result</a></td>
+        <td><a class="btn btn-s btn-sm" href="{{ row.href }}">{{ row.action }}</a></td>
       </tr>
     {% else %}
       <tr><td colspan="6" class="muted">No lab requests are waiting.</td></tr>

@@ -33,6 +33,8 @@
 <div class="grid-form" id="adm-form-wrap">
   <form method="post" action="{{ action }}" hx-post="{{ action }}" hx-target="#adm-form-wrap" hx-swap="outerHTML" data-gate novalidate>
     {{ ui.csrf_input() }}
+    {% if asked %}<input type="hidden" name="{{ ask_field }}" value="{{ asked.request_id }}">
+    <div class="notice" role="status"><b>The clinician asked for this admission</b>{% if asked.urgent %} · <span class="st urgent">Urgent</span>{% endif %} · asked {{ asked.requested_at | local_dt }}{% if asked.note %} · Note: {{ asked.note }}{% endif %}. Check the patient number and name. When you save, the clinician sees that the patient is entered.</div>{% endif %}
     <div class="errbox top" id="conn-banner" role="alert" hidden><b>⚠ Connection lost.</b> This admission was not saved. Your entries are still on this page. Try again when the connection returns; if it does not, record on paper and enter it later.</div>
     {% if errors.get('_form') %}<div class="errbox top" role="alert"><b>⚠ Not saved.</b> {{ errors['_form'] }}</div>{% endif %}
 

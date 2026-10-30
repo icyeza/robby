@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Ask the lab to enter a new patient{% endblock %}
+{% block body %}
+{% include "partials/_header.html" %}
+<main class="page narrow">
+  {% include "partials/_banner.html" %}
+  <div class="crumbs"><a href="/patients">Find patient</a> / New patient</div>
+  <h1>Ask the lab to enter a new patient</h1>
+  <p class="lede">For a patient you cannot find because the lab has not entered her admission yet.</p>
+
+  <form class="sec" method="post" action="/patients/admission-requests">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      <div class="f{% if errors.get('patient_number') %} conflict{% endif %}">
+        <label for="f-patient_number">Patient number</label>
+        <input id="f-patient_number" name="patient_number" type="text" maxlength="32" value="{{ values.get('patient_number', '') }}" autocomplete="off"{% if errors.get('patient_number') %} aria-invalid="true" aria-describedby="f-patient_number-msg"{% endif %}>
+        <div class="help">Hospital patient or file number</div>
+        {% if errors.get('patient_number') %}<div class="msg" id="f-patient_number-msg">{{ errors['patient_number'] }}</div>{% endif %}
+      </div>
+      <div class="f{% if errors.get('patient_name') %} conflict{% endif %}">
+        <label for="f-patient_name">Patient name <span class="optional">(optional)</span></label>
+        <input id="f-patient_name" name="patient_name" type="text" maxlength="{{ name_max }}" value="{{ values.get('patient_name', '') }}" autocomplete="off"{% if errors.get('patient_name') %} aria-invalid="true" aria-describedby="f-patient_name-msg"{% endif %}>
+        {% if errors.get('patient_name') %}<div class="msg" id="f-patient_name-msg">{{ errors['patient_name'] }}</div>{% endif %}
+      </div>
+      <div class="f{% if errors.get('note') %} conflict{% endif %}">
+        <label for="f-note">Note for the lab <span class="optional">(optional)</span></label>
+        <input id="f-note" name="note" type="text" maxlength="{{ note_max }}" value="{{ values.get('note', '') }}" autocomplete="off"{% if errors.get('note') %} aria-invalid="true" aria-describedby="f-note-msg"{% endif %}>
+        {% if errors.get('note') %}<div class="msg" id="f-note-msg">{{ errors['note'] }}</div>{% endif %}
+      </div>
+      <div class="f">
+        <label class="lab-test"><input type="checkbox" name="urgent" value="1"{% if values.get('urgent') %} checked{% endif %}>Urgent: the lab sees it at the top of its list</label>
+      </div>
+      <div class="notice">The lab technician sees the patient number, the name and this note, enters the admission, and you see it here on Find patient.</div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Send to the lab</button><a class="btn-g" href="/patients">Cancel</a></div>
+    </div>
+  </form>
+</main>
+{% endblock %}

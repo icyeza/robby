@@ -123,3 +123,9 @@ fieldset.lab-tests{border:none;margin:0 0 18px;padding:0}
 .lab-lines .what{font-weight:600}
 .lab-lines .push{margin-left:auto}
 .n-v.later{color:var(--ok);margin-top:4px}
+
+/* ---- admission requests (robby/lab/admission_requests) ---- */
+.st.new-patient{background:var(--size-flag-bg);color:var(--size-flag)}
+.tc-h .push{margin-left:auto}
+.tablecard.ask-card{margin-bottom:20px}
+.tc-empty{margin:0;padding:14px 20px}

@@ -19,6 +19,7 @@ from robby.db import get_sessionmaker
 from robby.facilities.routes import router as facilities_router
 from robby.fhir.routes import api_router as fhir_api_router
 from robby.fhir.routes import form_router as fhir_form_router
+from robby.lab.routes import ask_router as lab_ask_router
 from robby.lab.routes import clinician_router as lab_clinician_router
 from robby.lab.routes import router as lab_router
 from robby.monitoring.reconcile import reconcile_loop
@@ -69,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(clinical_router)
     app.include_router(patients_router)
     app.include_router(lab_clinician_router)
+    app.include_router(lab_ask_router)
     app.include_router(lab_router)
     app.include_router(api_router)
     app.include_router(fhir_api_router)

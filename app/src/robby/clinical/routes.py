@@ -2,16 +2,21 @@
 their recent entries; the clinician finds a patient by name or number, reads the admission with
 its Robson group and readiness signal, and records the outcome. Nothing entered can be edited
 here. Import from Excel is for the facility administrator. The facility always comes from the
-signed-in user; another facility's code is a 404."""
+signed-in user; another facility's code is a 404.
+
+An admission the clinician asked the lab to enter (robby.lab.admission_requests) opens the form
+with the patient filled in and the request id in a hidden field; saving the admission marks the
+request entered in the same transaction."""
 
 from __future__ import annotations
 
 import hashlib
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
@@ -30,6 +35,7 @@ from robby.clinical.form import (
 )
 from robby.clinical.views import result_view
 from robby.errors import NotAllowed, NotFound
+from robby.lab import admission_requests
 from robby.lab import views as lab_views
 from robby.models import Admission, DeliveryMode, Role
 from robby.timeutil import utcnow
@@ -85,6 +91,30 @@ def _panel_for(parsed: Parsed, db: Session) -> cls.PanelView:
     return cls.view_of_result(result, trace)
 
 
+ASK_FIELD = "admission_request"  # the hidden field with the id of the request being entered
+
+
+def _asked_id(values: Mapping[str, str]) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(values.get(ASK_FIELD, ""))
+    except ValueError:
+        return None
+
+
+def _asked(
+    db: Session, current: CurrentUser, values: Mapping[str, str]
+) -> lab_views.AskView | None:
+    """The waiting admission request named by the hidden field, or None."""
+    request_id = _asked_id(values)
+    if request_id is None:
+        return None
+    try:
+        line = admission_requests.get_line(db, current.user, request_id)
+    except NotFound:
+        return None
+    return lab_views.ask_view(line) if line.is_open else None
+
+
 def _form_page(
     request: Request,
     db: Session,
@@ -128,6 +158,9 @@ def _form_page(
         # FHIR pull mode (robby/fhir): the "Fetch from hospital system" button and its result.
         fhir_pull=bool(settings.fhir_base_url),
         fetch_note=fetch_note,
+        # The admission request being entered (robby/lab), carried in a hidden field.
+        asked=_asked(db, current, values),
+        ask_field=ASK_FIELD,
     )
 
 
@@ -136,21 +169,33 @@ def _now_text(request: Request) -> str:
 
 
 @router.get("/new")
-def new_admission(request: Request, db: DbDep, current: LabTechnician, saved: str = "") -> Response:
+def new_admission(
+    request: Request,
+    db: DbDep,
+    current: LabTechnician,
+    saved: str = "",
+    asked: Annotated[uuid.UUID | None, Query(alias="request")] = None,
+) -> Response:
     just_saved = None
     if saved:
         try:
             just_saved = service.get_admission(db, current.user, saved)
         except NotFound:
             just_saved = None
-    return _form_page(
-        request,
-        db,
-        current,
-        values={"admitted_at": _now_text(request)},
-        errors={},
-        saved=just_saved,
-    )
+    values = {"admitted_at": _now_text(request)}
+    if asked is not None:
+        try:
+            line = admission_requests.get_line(db, current.user, asked)
+        except NotFound:
+            raise HTTPException(status_code=404) from None
+        if not line.is_open:
+            return redirect(request, "/lab-requests")
+        values |= {
+            "patient_number": line.request.patient_number,
+            "patient_name": line.request.patient_name or "",
+            ASK_FIELD: str(line.request.id),
+        }
+    return _form_page(request, db, current, values=values, errors={}, saved=just_saved)
 
 
 @router.post("/preview")
@@ -183,14 +228,28 @@ async def create_admission(
     settings = request.app.state.settings
     parsed, errors = parse(values, _specs(request, db), settings.zone, utcnow())
     htmx = request.headers.get("HX-Request") == "true"
+    asked = _asked_id(values)
     if not errors:
         try:
             saved = service.save_admission(db, runtime_of(request), current.user, parsed)
+            if asked is not None:
+                admission_requests.fulfil(db, current.user, asked, saved.admission)
             db.commit()
+            if asked is not None:
+                return redirect(request, f"/lab-requests?entered={saved.admission.code}")
             return redirect(request, f"/admissions/new?saved={saved.admission.code}")
         except cls.NoRuleSetError:
             db.rollback()
             errors["_form"] = cls.NOTHING_SAVED_ASK_ADMIN
+        except (NotAllowed, NotFound) as exc:
+            # The request was closed (or is not this facility's) while the form was open:
+            # nothing is saved, and the form stays filled in without the request.
+            db.rollback()
+            reason = str(exc) if isinstance(exc, NotAllowed) else "The request was not found."
+            errors["_form"] = (
+                f"{reason} Save again to enter this admission without the clinician's request."
+            )
+            values = {k: v for k, v in values.items() if k != ASK_FIELD}
     return _form_page(
         request,
         db,
@@ -217,15 +276,24 @@ def find_patient(request: Request, db: DbDep, current: Clinician, q: str = "") -
         if query
         else service.recent(db, current.user)
     )
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "clinical/patients_results.html",
+            current=current,
+            query=query,
+            rows=rows,
+            limit=service.SEARCH_LIMIT,
+        )
     return render(
         request,
-        "clinical/patients_results.html"
-        if request.headers.get("HX-Request") == "true"
-        else "clinical/patients.html",
+        "clinical/patients.html",
         current=current,
         query=query,
         rows=rows,
         limit=service.SEARCH_LIMIT,
+        # Patients the clinician asked the lab to enter (robby/lab).
+        asks=[lab_views.ask_view(x) for x in admission_requests.for_clinician(db, current.user)],
     )
 
 
