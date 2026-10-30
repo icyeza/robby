@@ -378,6 +378,38 @@ application. All run on synthetic data; the real records never enter a test.
 [CI](.github/workflows/ci.yml) runs the packages on Python 3.11–3.13, the application against
 PostgreSQL 16, and lint and type checks.
 
+### Results at a glance
+
+| Strategy | Why | Result | What changed because of it |
+|---|---|---|---|
+| Rule engine, exhaustive | A wrong group corrupts the audit | All 14,400 input combinations: every complete, consistent one gives exactly one group; 130 tests | Rule set validated on load; weeks-plus-days gestational age binned correctly |
+| Integration on real PostgreSQL | Integrity rests on triggers and constraints | 685 app tests: 684 passed, 1 skipped; every role checked on every page | Re-derivation test (NFR4) and per-group monitoring test added |
+| Cross-browser end to end | htmx and a strict CSP behave differently per browser | Chrome, Edge, Firefox pass at desktop and phone size | Missing favicon fixed; an abandoned request no longer logged as an error |
+| Performance (NFR1) | Save under 500 ms, report under 3 s | Save 149 ms, report 172 ms (p50); still within limits on 1 core | 1 core and 1 GB stated as the minimum server |
+| Stress (Locust) | Find where it breaks, and how | Collapsed at ~100 users before; after the fixes, no errors up to 90 | Pool sized, quick 503 "busy", password hashing capped |
+| Accessibility (axe-core) | Usability sessions wait on ethics clearance | 8 contrast failures, now 0 on 19 screens | Three colours darkened |
+| Dependency audit (pip-audit) | Most common source of security holes | 11 vulnerable training-side packages, now 0 | Packages upgraded; audit runs in CI |
+| Model validation | A model must work at a hospital it never saw | Mean AUC 0.752, calibration slope 0.99, leave one hospital out | Selection rule committed before training |
+
+**Stress test, before and after** (10 to 200 simulated staff, 2 cores, 1.5 GB):
+
+| | Before | After |
+|---|---|---|
+| Requests served in 6 minutes | 2,968 | **4,304** (+45%) |
+| Errors up to 90 users | 5 | **0** |
+| 100 users: median wait | 33 s | **5.1 s** |
+| Server errors (500) | 127 | **0** (overload answered with a quick 503) |
+| Memory peak | 1.57 GB (limit reached) | **0.90 GB** |
+
+| Before | After |
+|---|---|
+| ![Locust report, first run](docs/testing/stress/before.png) | ![Locust report, second run](docs/testing/stress/after.png) |
+
+**Where it runs:** Windows 11 and Ubuntu 24.04; Python 3.11, 3.12 and 3.13; Chrome 156, Edge 156
+and Firefox 157 at desktop and phone size. Timings on smaller servers are in
+[Performance and resources](#performance-and-resources); every measurement is in
+[`docs/testing/performance.md`](docs/testing/performance.md).
+
 ### 1. Unit and exhaustive testing of the rule engine
 
 - **Why.** A wrong Robson group misdirects the whole audit, and the engine is pure logic, so it can
