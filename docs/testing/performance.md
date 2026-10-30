@@ -1,6 +1,6 @@
 # Performance and compatibility measurements
 
-Measured on 29 October 2026 against commit `e90e34a`; the operating-system runs against `89ddb1d` (packages) and `21ba9e7` (app).
+Measured on 29 October 2026 against commit `e90e34a`; the operating-system runs against `89ddb1d` (packages) and `7da2cf2` (app).
 
 ## Server performance (requirement NFR1)
 
@@ -87,11 +87,86 @@ marked `Secure`. Chromium and Firefox treat `127.0.0.1` as a secure origin and d
 earlier local run (`ROBBY_SECURE_COOKIES=false`) WebKit passed at both sizes. The check is to be
 repeated over HTTPS once the public address is live.
 
+## Stress test (Locust): finding the breaking point
+
+**Tool.** [`app/scripts/locustfile.py`](../../app/scripts/locustfile.py).
+
+**Load.** Simulated staff of the four demo hospitals act in proportion:
+- lab technicians open the form and save admissions (weight 3);
+- clinicians search a patient by name and open the admission (weight 3);
+- administrators open the whole-period hospital report (weight 1).
+
+Each simulated user pauses 1–3 s between actions. The number of users rises in steps of one minute
+each: 10, 25, 50, 100, 150 and 200.
+
+**Target.** The deployed configuration (2 Uvicorn workers) on the 14,000-admission database, capped
+at **2 CPU cores and 1.5 GB** with systemd, run on the server itself.
+
+**First run** (commit `21ba9e7`; [report](stress/before.html)).
+- Up to 45 users there were no errors, at a 95th percentile of 0.4–1.3 s.
+- At 50 users the first errors appeared. At about 100 users the system collapsed: the median was
+  33 s and throughput fell to 4 requests/s.
+- All 127 failures were `QueuePool limit of size 5 overflow 10 reached … timeout 30`. CPU-bound
+  requests held database connections, and the others waited 30 s before failing with a 500.
+- Memory reached the 1.5 GB cap, mostly from bursts of sign-ins. Each argon2id hash uses 64 MiB.
+
+**Changes** (`f595e28`).
+- The connection pool is sized explicitly (10 + 10 per worker).
+- A request that finds no free connection within 5 s gets a styled **503 "busy, try again"** with
+  `Retry-After`, instead of a 500 after 30 s.
+- At most two argon2id hashes run at once per process, keeping the RFC 9106 parameters.
+
+**Second run** (commit `7da2cf2`; [report](stress/after.html)).
+
+| | First run | Second run |
+|---|---|---|
+| Requests served in the 6 minutes | 2,968 | **4,304** (+45%) |
+| 10–45 users: p95, errors | 0.4–1.3 s, 0 | 0.5–1.1 s, 0 |
+| 50–70 users: throughput, p95 | 13–17 req/s, 1.7–3 s | **20 req/s**, 3 s |
+| 90 users: errors | 5 | **0** |
+| 100 users: median, throughput | 33 s, 4 req/s | **5.1 s, 14 req/s** |
+| 200 users: median | 60 s | 36 s |
+| Failures | 127, all 500 after a 30 s wait | 187, all **503 "busy"** returned quickly |
+| Server errors (500) | 127 | **0** |
+| Memory peak | 1.57 GB (cap reached) | **0.90 GB** |
+
+**Reading.**
+- On 2 cores the system serves about **45 simultaneously active staff with p95 near 1 s**, and 90
+  without a single error. That is far more than one maternity unit's staff on a shift.
+- Beyond that it now degrades gracefully: it answers "busy" quickly, never fails with a server
+  error, and stays within memory.
+- Sign-in remains the slowest action under a burst, because hashes are queued two at a time.
+  That is deliberate: real sign-ins are spread across a shift, and the hashing cost is what
+  protects the passwords.
+
+## Accessibility (axe-core)
+
+[`app/scripts/a11y_check.py`](../../app/scripts/a11y_check.py) runs the WCAG 2.1 A and AA rules of
+axe-core 4.10.2 on 18 screens covering every role. axe runs through the browser's debugging
+protocol, so the strict CSP stays on.
+
+- **First run:** one rule failed, `color-contrast`, on 8 elements across 4 screens: muted labels
+  at 4.26:1, unresolved group numbers at 3.52:1 and the sign-in strip at 3.43:1.
+- **Fix:** three colours changed (`5658544`), each to at least 4.5:1.
+- **Second run:** **no violations**.
+
+## Dependencies (pip-audit)
+
+pip-audit checked both lock files against the OSV database.
+
+- **App:** no known vulnerabilities.
+- **ML workspace, first check:** 11 packages with known vulnerabilities, all on the training and
+  notebook side, none of them installed with the app: pillow, setuptools, tornado, werkzeug,
+  aiohttp, certifi, filelock, gitpython, mlflow, nbconvert and opentelemetry-api.
+- **Fix:** they were upgraded (`2bd1950`). The API, serving-parity and tracking tests pass, and the
+  audit finds none.
+- **CI:** both audits now run on every push.
+
 ## Operating systems and Python versions
 
 | Environment | Suite | Result |
 |---|---|---|
-| Windows 11 (laptop), Python 3.11, PostgreSQL 16 | app | 537 passed, 1 skipped |
-| Ubuntu 24.04 (server), Python 3.11, PostgreSQL 16 | app | 537 passed, 1 skipped |
+| Windows 11 (laptop), Python 3.11, PostgreSQL 16 | app | 628 passed, 1 skipped |
+| Ubuntu 24.04 (server), Python 3.11, PostgreSQL 16 | app | 628 passed, 1 skipped |
 | Ubuntu 24.04, Python 3.11, 3.12 and 3.13 | `robson_engine`, `robson_serving` | 130 and 107 passed on each |
 | Windows 11, Python 3.11 | `robson_engine`, `robson_serving`, ML pipeline | 130, 107 and 651 passed |

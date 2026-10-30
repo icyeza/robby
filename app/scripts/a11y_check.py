@@ -32,12 +32,13 @@ BLOCKING = {"serious", "critical"}
 # (account, screens) per role; {code} is replaced by an admission code of that hospital.
 SCREENS: dict[str, list[str]] = {
     "": ["/login"],
-    "lab.da": ["/admissions/new", "/admissions"],
+    "lab.da": ["/admissions/new", "/admissions", "/lab-requests"],
     "clinician.da": [
         "/patients",
         "/patients?q=a",
         "/admissions/{code}",
         "/admissions/{code}/outcome",
+        "/admissions/{code}/lab-requests/new",
     ],
     "admin.da": ["/audit", "/admissions/import", "/admin/users"],
     "custodian": ["/models", "/monitoring", "/approval-log"],

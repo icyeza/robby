@@ -24,15 +24,20 @@ At admission to a maternity ward, the system does six things:
 3. **Estimates readiness**: a calibrated probability that the birth ends in a cesarean *under current
    practice*. It is an operational signal for planning theatre and staff, never a recommendation for
    or against a cesarean.
-4. **Closes the loop**: the clinician records the mode of delivery, and every prediction is joined
+4. **Lab requests**: a clinician can ask the lab for a urine protein, blood glucose or HIV rapid
+   test, marked urgent if needed. The lab technician sees the waiting requests (a count in the
+   navigation) and records the results. An HIV result re-scores the readiness signal, because HIV
+   status is one of the model's inputs. The earlier signal is kept, so every past signal can still
+   be reproduced. Results are encrypted at rest.
+5. **Closes the loop**: the clinician records the mode of delivery, and every prediction is joined
    to its outcome. The model custodian then sees discrimination, calibration and input drift per
    facility and per Robson group. A new model goes from *candidate* to *shadow* to *active*, and
    each step needs a named approver and a reason.
-5. **Audits facilities**: each hospital gets a Robson report with group sizes, cesarean rates and
+6. **Audits facilities**: each hospital gets a Robson report with group sizes, cesarean rates and
    each group's contribution, compared with a reference population. The report also comes as a PDF,
    and a monthly CSV export goes to the national system. The national reviewer sees aggregates
    across hospitals.
-6. **Connects to the hospital record system** through FHIR R4, which is the international standard
+7. **Connects to the hospital record system** through FHIR R4, which is the international standard
    for exchanging health records. The hospital system can push admissions to the app as FHIR
    Bundles, or the form can fetch a patient's admission by patient number. If the record system is
    unreachable, the form says so and works by hand. Admissions can also come from Excel (facility
@@ -43,8 +48,8 @@ At admission to a maternity ward, the system does six things:
 
 | Role | Does | Patient data visible |
 |---|---|---|
-| Lab technician | Enters admissions on the form; sees their recent entries | Name and number, own facility |
-| Clinician | Finds a patient, reads the classification and readiness signal, records the outcome | Name and number, own facility |
+| Lab technician | Enters admissions on the form; answers clinicians' lab requests | Name and number, own facility |
+| Clinician | Finds a patient, reads the classification and readiness signal, requests lab tests, records the outcome | Name and number, own facility |
 | Facility administrator | Hospital report, PDF, monthly export, Excel import, facility users | Patient number only, own facility |
 | National reviewer | National overview across facilities | Aggregates only |
 | Model custodian | Model registry and promotion, monitoring, approval log | None |
@@ -73,8 +78,8 @@ is `demo-password-123`.
 
 | Sign in as | To see |
 |---|---|
-| `lab.da` | The admission form: the live Robson group, partial and conflict states, blocked screening |
-| `clinician.da` | Find a patient, the result page with the readiness signal, record an outcome |
+| `lab.da` | The admission form (the live Robson group, partial and conflict states, blocked screening, fetch from the hospital system with `FX-2001`), and the lab requests waiting |
+| `clinician.da` | Find a patient, the result page with the readiness signal, request lab tests, record an outcome |
 | `admin.da` | The hospital report, the PDF, the monthly export and Excel import |
 | `reviewer` | The national overview |
 | `custodian` | Models, promotion, the approval log and monitoring |
@@ -96,7 +101,7 @@ is `demo-password-123`.
 | argon2-cffi, cryptography | 25.1, 50.0 | Password hashing; AES-256-GCM encryption of patient identifiers |
 | openpyxl, ReportLab, httpx2 | 3.1, 5.1, 2.13 | Excel import, PDF reports, FHIR client |
 | age | 1.1 (server) | Encrypting database backups |
-| Playwright | 1.x, via `uv run --with playwright` | Cross-browser and screenshot scripts (optional) |
+| Playwright, Locust, axe-core, pip-audit | via `uv run --with …` / `uvx` | Cross-browser, screenshot, stress, accessibility and dependency checks (optional) |
 
 **Operating systems:** developed on Windows 11, and deployed and tested on Ubuntu 24.04.
 
@@ -277,6 +282,7 @@ robby/
 │   │   ├── registry/            model registry, promotion state machine, shadow evidence
 │   │   ├── monitoring/          reconciliation, AUC/calibration/drift alerts
 │   │   ├── fhir/                FHIR R4 adapter: Bundle endpoint, fetch from the hospital system
+│   │   ├── lab/                 clinicians' lab requests and the lab technician's results
 │   │   ├── auth/ users/ facilities/  sign-in, sessions, roles, administration
 │   │   ├── events/              hash-chained event log
 │   │   ├── models/              SQLAlchemy entities (18 tables)
@@ -322,6 +328,7 @@ dropped silently.
 | NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([screenshot](docs/screenshots/fetch-timeout.png), [`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
 | NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
 | NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
+| Lab test requests (added on the supervisor's advice) | The clinician can obtain missing screening results and HIV status from the lab | Completed | [request](docs/screenshots/lab-request-new.png), [lab queue](docs/screenshots/lab-requests.png); an HIV result re-scores the readiness signal; also as FHIR ServiceRequest/Observation; [`lab/`](app/src/robby/lab/) |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
 | Live pilot in a partner unit | Use in a real ward | **Not implemented** | Ethics clearance has not arrived. As the proposal provides, the system runs as a public demonstration instance on synthetic data instead |
 
@@ -350,6 +357,8 @@ The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the sav
 [saved](docs/screenshots/form-saved.png), [fetched from the hospital system (FHIR)](docs/screenshots/fetch-from-hospital.png),
 [hospital system not answering](docs/screenshots/fetch-timeout.png), [recent entries](docs/screenshots/recent-entries.png),
 [find a patient](docs/screenshots/find-patient.png), [record the outcome](docs/screenshots/record-outcome.png),
+[request lab tests](docs/screenshots/lab-request-new.png), [lab requests waiting](docs/screenshots/lab-requests.png),
+[record a lab result](docs/screenshots/lab-result-record.png),
 [Excel import](docs/screenshots/excel-import.png), [users](docs/screenshots/users.png),
 [models](docs/screenshots/models.png), [model detail](docs/screenshots/model-detail.png),
 [approval log](docs/screenshots/approval-log.png), [national overview](docs/screenshots/national-overview.png),
@@ -358,7 +367,7 @@ The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the sav
 
 ## Testing strategies
 
-There are 1,425 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 537
+There are 1,516 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 628
 application. All run on synthetic data; the real records never enter a test.
 
 - `cd ML && uv run pytest` runs the ML tests.
@@ -398,7 +407,7 @@ PostgreSQL 16, and lint and type checks.
   - audit arithmetic against hand-computed values;
   - registry transitions, reconciliation and monitoring;
   - a check that no page contains inline script or style.
-- **Results.** 537 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
+- **Results.** 628 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
   The skip is a placeholder check with nothing left to check.
 - **Improvements made.** The re-derivation test (NFR4) and the Robson-group monitoring test (FR12)
   were added after this review. An OpenClinic file with missing columns used to crash the upload
@@ -429,7 +438,45 @@ PostgreSQL 16, and lint and type checks.
   the deployment also uncovered that the server scored nothing, because its model directory was
   empty (`326ddef`).
 
-### 5. Model validation
+### 5. Stress testing (Locust)
+
+- **Why.** The performance test runs 8 fixed users. A stress test finds where the system breaks,
+  and how it behaves when it does.
+- **How.** [`locustfile.py`](app/scripts/locustfile.py) runs mixed lab technicians, clinicians and
+  administrators. Users rise in one-minute steps from 10 to 200 against the deployed configuration,
+  capped at 2 cores and 1.5 GB.
+- **Results (first run).**
+  - No errors up to 45 users.
+  - First errors at 50 users, and collapse at about 100 (median 33 s).
+  - All 127 failures were 30-second waits for a database connection that ended in a 500, and
+    memory reached the cap during sign-in bursts.
+- **Improvements made** (`f595e28`).
+  - The connection pool is sized to the workers.
+  - A request that can't get a connection within 5 s gets a quick 503 "busy, try again" instead
+    of a 500.
+  - At most two password hashes run at once.
+- **Results (second run).**
+  - 45% more requests served.
+  - Throughput holds at 20 req/s at 50–70 users.
+  - No errors up to 90 users, and no 500 at any load.
+  - Memory peaked at 0.90 GB instead of 1.57 GB.
+  - Before/after numbers are in [`performance.md`](docs/testing/performance.md#stress-test-locust-finding-the-breaking-point),
+    with the two Locust reports in [`docs/testing/stress/`](docs/testing/stress/).
+
+### 6. Accessibility and dependency audits
+
+- **Why.** Usability sessions with clinicians wait for ethics clearance. Meanwhile, automated
+  accessibility rules catch problems any user would hit. Dependencies are the most common source
+  of security holes.
+- **How.** [`a11y_check.py`](app/scripts/a11y_check.py) runs axe-core's WCAG 2.1 A/AA rules on 18
+  screens covering every role. pip-audit checks both lock files against the OSV database, in CI.
+- **Results and improvements.**
+  - axe found one rule broken: colour contrast on 8 elements. After three colour changes
+    (`5658544`) there are no violations.
+  - pip-audit found 11 vulnerable training-side packages, which were upgraded (`2bd1950`). Both
+    audits are now clean.
+
+### 7. Model validation
 
 - **Why.** A model that only fits the hospitals it has seen is useless at a new one.
 - **How.** Leave-one-hospital-out validation: each hospital is scored by a model that never saw it,
@@ -451,7 +498,9 @@ a busiest hospital of 4,736 deliveries. Times are p50 / p95 in milliseconds; ful
 | Report PDF | 263 / 347 | 274 / 306 | 326 / 507 |
 | 8 users at once | 90 / 399, 55 req/s | 127 / 464, 37 req/s | 388 / 707, 14 req/s |
 
-Memory for the two workers is about 420 MB at rest, peaking at about 950 MB under load. The
+Memory for the two workers is about 420 MB at rest, peaking at about 950 MB under load. Under the
+stepped stress test on 2 cores, about 45 simultaneously active staff are served at a p95 near 1 s,
+and 90 without an error. Beyond that the app answers "busy, try again" rather than failing. The
 classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p50
 ([`benchmark.py`](ML/scripts/benchmark.py)).
 
