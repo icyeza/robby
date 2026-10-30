@@ -1,15 +1,18 @@
-"""Security headers on every response, and a styled 500 page instead of a stack trace."""
+"""Security headers on every response, a styled 500 page instead of a stack trace, and a quick
+503 when the server is overloaded."""
 
 import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.requests import ClientDisconnect
 
 from robby.web.errors import error_page
 
 logger = logging.getLogger("robby")
 CLIENT_CLOSED_REQUEST = 499  # nginx's status for a request the client abandoned
+RETRY_AFTER_SECONDS = 5
 
 CSP = (
     "default-src 'self'; base-uri 'self'; form-action 'self'; "
@@ -35,6 +38,12 @@ def install_security_headers(app: FastAPI) -> None:
             # one is sent): nobody is waiting for an answer, and nothing went wrong here.
             logger.info("Client left during %s %s", request.method, request.url.path)
             response = Response(status_code=CLIENT_CLOSED_REQUEST)
+        except PoolTimeout:
+            # Every database connection is busy: say so at once rather than fail after a long
+            # wait; the request changed nothing, so trying again is safe.
+            logger.warning("Overloaded: no database connection for %s", request.url.path)
+            response = error_page(request, 503)
+            response.headers["Retry-After"] = str(RETRY_AFTER_SECONDS)
         except Exception:
             logger.exception("Unhandled error on %s %s", request.method, request.url.path)
             response = error_page(request, 500)

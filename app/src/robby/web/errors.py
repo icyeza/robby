@@ -33,6 +33,13 @@ MESSAGES: dict[int, tuple[str, str]] = {
             "tell your system administrator."
         ),
     ),
+    503: (
+        "The system is busy",
+        (
+            "Too many people are using it at this moment. Nothing was saved; "
+            "try again in a few seconds."
+        ),
+    ),
 }
 CSRF_TITLE = "This form has expired"
 CSRF_MESSAGE = (

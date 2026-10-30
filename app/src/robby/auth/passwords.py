@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import threading
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -11,17 +12,24 @@ MIN_PASSWORD_LENGTH = 10
 # Lowercase letters and digits without i, l, o, 0 and 1, which are easy to misread.
 TEMPORARY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 
-# argon2-cffi's PasswordHasher is argon2id with the RFC 9106 low-memory profile.
+# argon2-cffi's PasswordHasher is argon2id with the RFC 9106 low-memory profile: 64 MiB and four
+# lanes per hash. That cost is what makes guessing slow, so it stays; instead, at most
+# CONCURRENT_HASHES hashes run at once per process, and further sign-ins wait their turn. A burst
+# of sign-ins (a shift change) then needs 2 x 64 MiB per worker instead of 64 MiB per request.
 _hasher = PasswordHasher()
+CONCURRENT_HASHES = 2
+_hashing = threading.BoundedSemaphore(CONCURRENT_HASHES)
 
 
 def hash_password(password: str) -> str:
-    return _hasher.hash(password)
+    with _hashing:
+        return _hasher.hash(password)
 
 
 def verify_password(password_hash: str, password: str) -> bool:
     try:
-        return _hasher.verify(password_hash, password)
+        with _hashing:
+            return _hasher.verify(password_hash, password)
     except (VerificationError, InvalidHashError):
         return False
 

@@ -2,8 +2,15 @@
 
 import hashlib
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
+from robby.auth import passwords
 from robby.auth.passwords import (
+    CONCURRENT_HASHES,
     TEMPORARY_ALPHABET,
     generate_temporary_password,
     hash_password,
@@ -12,6 +19,28 @@ from robby.auth.passwords import (
     verify_password,
 )
 from robby.auth.tokens import hash_token, new_session_token
+
+
+def test_at_most_concurrent_hashes_run_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    running, peak, lock = 0, 0, threading.Lock()
+
+    def slow_hash(password: str) -> str:
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        with lock:
+            running -= 1
+        return "hashed"
+
+    class SlowHasher:
+        hash = staticmethod(slow_hash)
+
+    monkeypatch.setattr(passwords, "_hasher", SlowHasher())
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert list(pool.map(hash_password, ["x"] * 8)) == ["hashed"] * 8
+    assert peak == CONCURRENT_HASHES
 
 
 def test_hashes_are_argon2id_and_verify() -> None:

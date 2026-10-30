@@ -8,12 +8,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.requests import ClientDisconnect
 
 from robby.config import Settings
 from robby.models import AppUser, Facility, Role
 from robby.web.nav import NAV, Who, landing_path, nav_for, who_for
-from robby.web.security import CLIENT_CLOSED_REQUEST, CSP
+from robby.web.security import CLIENT_CLOSED_REQUEST, CSP, RETRY_AFTER_SECONDS
 from robby.web.templating import format_local
 from tests.webutil import make_test_app
 
@@ -64,6 +65,18 @@ def test_server_errors_are_styled_and_hide_details(app: FastAPI) -> None:
     assert "Something went wrong" in response.text
     assert "secret internals" not in response.text and "Traceback" not in response.text
     assert response.headers["content-security-policy"] == CSP
+
+
+def test_no_free_database_connection_answers_busy_at_once(app: FastAPI) -> None:
+    def overloaded() -> None:
+        raise PoolTimeout("QueuePool limit reached")
+
+    app.add_api_route("/overloaded", overloaded)
+    with TestClient(app) as test_client:
+        response = test_client.get("/overloaded")
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == str(RETRY_AFTER_SECONDS)
+    assert "The system is busy" in response.text and "QueuePool" not in response.text
 
 
 def test_a_client_that_leaves_mid_request_is_not_a_server_error(
