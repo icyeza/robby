@@ -19,9 +19,12 @@ from robby.models import (
     AppUser,
     DeliveryOutcome,
     Facility,
+    LabRequest,
+    LabResult,
     ReferenceSet,
     Role,
 )
+from robby.timeutil import utcnow
 from tests.dbutil import server_url_from_env
 
 runner = CliRunner()
@@ -51,6 +54,20 @@ def assert_demo_patients(db: Session) -> None:
     assert recorders == {Role.CLINICIAN}
 
 
+def assert_demo_lab_requests(db: Session) -> None:
+    """The lab's list has open requests at every facility, exactly one of them urgent; requests
+    are made by clinicians and answered by lab technicians, never in the future."""
+    roles = {u.id: u.role for u in db.scalars(select(AppUser))}
+    requests = list(db.scalars(select(LabRequest)))
+    results = list(db.scalars(select(LabResult)))
+    assert {roles[r.requested_by] for r in requests} == {Role.CLINICIAN}
+    assert {roles[r.recorded_by] for r in results} == {Role.LAB_TECHNICIAN}
+    assert sum(r.urgent for r in requests) == 1
+    now = utcnow()
+    assert all(r.requested_at <= now for r in requests)
+    assert all(r.resulted_at <= now for r in results)
+
+
 def test_demo_load_refusals_and_purge(
     demo_url: URL, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -61,6 +78,7 @@ def test_demo_load_refusals_and_purge(
     summary = loader.load_demo(plain, admissions=30, model_dir=None, say=lambda _: None)
     assert summary.events_ok and summary.events_checked > 60
     assert summary.awaiting == 12 and summary.outcomes >= 10
+    assert (summary.lab_open, summary.lab_resulted) == (8, 8)
     assert len(summary.credentials) == 15
 
     engine = create_engine(demo_url)
@@ -73,6 +91,7 @@ def test_demo_load_refusals_and_purge(
         assert reference.name == "DEMO placeholder reference"
         assert events.verify(db).ok
         assert_demo_patients(db)
+        assert_demo_lab_requests(db)
     engine.dispose()
 
     with pytest.raises(loader.DemoError, match="already has data"):

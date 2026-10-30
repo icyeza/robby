@@ -55,6 +55,7 @@ def demo_load(
         + f"; with a prediction: {s.scored}"
     )
     typer.echo(f"Outcomes recorded: {s.outcomes}; awaiting outcome: {s.awaiting}")
+    typer.echo(f"Lab requests: {s.lab_open} waiting for the lab, {s.lab_resulted} with a result")
     for name, (cs, total) in s.cs_by_facility.items():
         typer.echo(f"  {name}: {cs}/{total} cesarean ({100 * cs / total:.1f}%)")
     typer.echo(f"Active model: {s.model or 'none'}")

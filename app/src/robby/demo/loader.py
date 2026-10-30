@@ -34,11 +34,14 @@ from robby.config import APP_ROOT, get_settings
 from robby.db import get_sessionmaker
 from robby.demo import generate
 from robby.facilities.service import create_facility
+from robby.lab import service as lab
 from robby.migrate import upgrade
 from robby.models import (
+    Admission,
     AppUser,
     DeliveryMode,
     Facility,
+    LabTest,
     ModelState,
     ModelVersion,
     ReferenceKind,
@@ -146,6 +149,8 @@ class Summary:
     outcomes: int = 0
     awaiting: int = 0
     scored: int = 0
+    lab_open: int = 0
+    lab_resulted: int = 0
     cs_by_facility: dict[str, tuple[int, int]] = field(default_factory=dict)
     events_ok: bool = False
     events_checked: int = 0
@@ -346,6 +351,7 @@ def load_demo(
 
     sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
     _fill(factory, runtime, rng, admissions, summary, say, sampler, random.Random(seed + 1))
+    _lab_requests(factory, runtime, random.Random(seed + 2), summary)
     _finish(factory, summary)
     return summary
 
@@ -427,3 +433,53 @@ def _fill(
             if (i + 1) % 100 == 0:
                 say(f"  {i + 1} of {n} admissions...")
     summary.cs_by_facility = {k: (cs_count[k], totals[k]) for k in sorted(totals)}
+
+
+def _lab_requests(
+    factory: sessionmaker[Session],
+    runtime: scoring.ModelRuntime,
+    rng: random.Random,
+    summary: Summary,
+) -> None:
+    """A few lab requests on each facility's most recent admissions, through the real service:
+    two left open for the lab's list (one urgent, at the first facility only), a glucose result
+    and an HIV result (negative, so the readiness signal is re-scored)."""
+    now = utcnow()
+
+    def between(start: Any, share: float) -> Any:
+        return start + (now - start) * share
+
+    with factory() as db:
+        for f_index, facility in enumerate(db.scalars(select(Facility).order_by(Facility.code))):
+            clinician, technician = (
+                db.scalars(
+                    select(AppUser).where(AppUser.facility_id == facility.id, AppUser.role == role)
+                ).one()
+                for role in (Role.CLINICIAN, Role.LAB_TECHNICIAN)
+            )
+            recent = list(
+                db.scalars(
+                    select(Admission)
+                    .where(Admission.facility_id == facility.id)
+                    .order_by(Admission.admitted_at.desc(), Admission.code)
+                    .limit(4)
+                )
+            )
+            plan = (
+                (LabTest.HIV_RAPID, f_index == 0, "Before theatre, please", None),
+                (LabTest.URINE_PROTEIN, False, None, None),
+                (LabTest.BLOOD_GLUCOSE, False, None, f"{rng.uniform(4.0, 9.0):.1f}"),
+                (LabTest.HIV_RAPID, False, None, "negative"),
+            )
+            for admission, (test, urgent, note, value) in zip(recent, plan, strict=False):
+                asked = between(admission.admitted_at, rng.uniform(0.1, 0.4))
+                (request,) = lab.request_tests(
+                    db, clinician, admission, [test], note=note, urgent=urgent, now=asked
+                )
+                if value is None:
+                    summary.lab_open += 1
+                else:
+                    done = between(asked, rng.uniform(0.3, 0.7))
+                    lab.record_result(db, runtime, technician, request.id, value, now=done)
+                    summary.lab_resulted += 1
+            db.commit()

@@ -15,6 +15,10 @@ synthetic packaged artefact and runs the golden check.
   recent entries. The clinician finds a patient by name or number (`/patients`), reads the
   admission on a read-only page with the Robson explanation and readiness signal, and records the
   delivery outcome. Nothing entered can be edited from the web pages.
+- **Lab requests**: the clinician asks the lab for urine protein, blood glucose or an HIV rapid
+  test from the patient page; the lab technician sees the open requests of the facility (count in
+  the navigation) and records each result. An HIV result updates the readiness signal; see
+  [Lab requests](#lab-requests).
 - **Import**: Excel template download and upload for the facility administrator (rows with a
   problem are left out and listed), and token-authenticated automated import for the hospital's
   patient record system (tokens from `robby-admin api-token create`).
@@ -39,7 +43,7 @@ synthetic packaged artefact and runs the golden check.
 
 ## Data model
 
-Eighteen tables (`api_token` is not in the diagram below), created by migrations `0001`–`0007` in `migrations/versions/`. The diagram shows
+Twenty-one tables (`api_token` is not in the diagram below), created by migrations `0001`–`0008` in `migrations/versions/`. The diagram shows
 each table's primary key (PK), foreign keys (FK), unique columns (UK) and main business columns,
 not every column. Source: [`docs/diagrams/erd.mmd`](../docs/diagrams/erd.mmd); image:
 [`erd.png`](../docs/diagrams/erd.png).
@@ -150,7 +154,8 @@ erDiagram
         enum mode "active, shadow"
         numeric probability "0 to 1"
         jsonb feature_vector "exact row scored"
-        uuid supersedes_id FK
+        uuid supersedes_id FK, UK "set on a re-score"
+        uuid lab_result_id FK, UK "the HIV result that prompted a re-score"
     }
     delivery_outcome {
         uuid id PK
@@ -192,6 +197,29 @@ erDiagram
         char64 prev_hash
         char64 hash UK "hash chain"
     }
+    lab_request {
+        uuid id PK
+        uuid admission_id FK
+        enum test "urine_protein, blood_glucose, hiv_rapid"
+        bool urgent
+        bytea note "encrypted, optional"
+        uuid requested_by FK "a clinician"
+        timestamptz requested_at
+    }
+    lab_result {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea value "encrypted"
+        uuid recorded_by FK "a lab technician"
+        timestamptz resulted_at
+    }
+    lab_cancellation {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea reason "encrypted, required"
+        uuid cancelled_by FK "a clinician"
+        timestamptz cancelled_at
+    }
     export_record {
         uuid id PK
         uuid facility_id FK
@@ -223,6 +251,11 @@ erDiagram
     reference_set ||--o{ reference_value : "contains"
     app_user |o--o{ reference_set : "loads"
     app_user |o--o{ event_log : "acts in"
+    admission ||--o{ lab_request : "tests asked for"
+    lab_request ||--o| lab_result : "answered by"
+    lab_request ||--o| lab_cancellation : "withdrawn by"
+    lab_result |o--o| prediction : "prompts a re-score"
+    app_user ||--o{ lab_request : "requests"
     facility ||--o{ export_record : "exported for"
     app_user ||--o{ export_record : "exports"
 ```
@@ -230,8 +263,14 @@ erDiagram
 How to read it:
 
 - **Clinical rows are insert-only.** `admission`, `screening_omission`, `classification`,
-  `prediction`, `delivery_outcome`, `reconciled_outcome` and `event_log` have PostgreSQL triggers
-  that reject every `UPDATE`, `DELETE` and `TRUNCATE`.
+  `prediction`, `delivery_outcome`, `reconciled_outcome`, `lab_request`, `lab_result`,
+  `lab_cancellation` and `event_log` have PostgreSQL triggers that reject every `UPDATE`,
+  `DELETE` and `TRUNCATE`. A lab request's status is derived (requested, resulted or cancelled),
+  and a trigger lets a request get a result or a cancellation only once.
+- **A re-score is a new prediction.** After an HIV result the readiness signal is scored again:
+  the new `prediction` row names the one it replaces (`supersedes_id`) and the result that
+  prompted it (`lab_result_id`); the first prediction stays. Pages, monitoring and the evidence
+  report read the current prediction of each admission (the one nothing supersedes).
 - **A correction is a new row.** The web pages no longer offer corrections, but the schema keeps
   them: a corrected admission points at the one it replaces through `supersedes_id` and must give a
   `correction_reason`; the original stays as it was. A delivery
@@ -243,7 +282,8 @@ How to read it:
   `patient_number_index` a keyed hash of the number for exact search (see
   [Encryption at rest](#encryption-at-rest)). They are never copied into the event log, the
   feature vector or any export. Lab technicians and clinicians see the name and number, facility
-  administrators the number only, and the other roles neither.
+  administrators the number only, and the other roles neither. Lab results, notes and
+  cancellation reasons are encrypted the same way.
 - `event_log.entity_type` / `entity_id` name the row an event is about (an admission, a model, a
   facility) without a foreign key; each entry's `hash` covers the previous entry's `hash`.
 - A partial unique index allows only one `model_version` in state `active` and only one active
@@ -326,6 +366,43 @@ each save only re-reads which model is active, so promoting a model needs no res
 predictions are read back by admission code, and only within the signed-in user's own facility.
 Patient name and number are stored, encrypted, on the admission but are not model inputs and never
 reach the feature vector or the event log.
+
+## Lab requests
+
+Source: `src/robby/lab/` (`catalogue.py` tests and result checks, `service.py`, `routes.py`,
+`views.py`), migration `0008`.
+
+| Who | Where | What |
+|---|---|---|
+| Clinician | patient page `/admissions/{code}`, "Request lab tests" | Chooses one or more tests (urine protein dipstick, blood glucose, HIV rapid test), an optional short note and "urgent". A test waiting for the lab cannot be requested again until it has a result or is cancelled. Blood pressure is bedside, not lab, so it is not offered |
+| Clinician | patient page, "Cancel request" | Withdraws an open request; the reason is required and kept |
+| Lab technician | "Lab requests" `/lab-requests` (in the navigation, with the number of open requests, refreshed every 30 seconds by htmx) | Open requests of the facility, urgent first, then the oldest: patient name and number, admission code, test, note. "Record result" checks the value (dipstick option; glucose 0.5–60 mmol/L, one decimal; HIV positive, negative or indeterminate) |
+| Both | patient page (clinician), the result form (lab technician) | Each request with its status, and the result or cancellation reason |
+
+The lab technician keeps entering admissions exactly as before; facility administrators,
+national reviewers, model custodians and system administrators see no lab requests or results.
+
+What a result changes:
+
+- **Robson classification**: never (no lab value is a Robson input).
+- **Readiness signal**: of the three, only HIV status is a model input (`hiv_positive` in the
+  model's feature schema). A positive or negative result re-scores the admission with the active
+  model: the current prediction's stored feature vector with `hiv_positive` set, spelled by the
+  model itself, so the row is the one the form would have produced had the status been entered
+  at admission (`tests/test_rederivation.py` checks this and re-derives the new probability). The
+  new prediction supersedes the old one, which stays on record; the patient page shows the
+  current signal and says it was updated after the HIV result. Indeterminate is recorded with no
+  re-score. If re-scoring fails, the result is still saved and the earlier signal stays (NFR7).
+  Shadow models are not re-scored.
+- **Proteinuria and glucose**: shown on the patient page as "Screening completed later" next to
+  the "Not measured" entry of the admission; no re-score.
+
+Privacy: results, notes and reasons are encrypted at rest. The events `lab.requested`,
+`lab.resulted` and `lab.cancelled` carry the admission code, the facility code and the test names
+only, never a value, a note, a reason or a patient identifier. Every route checks the role and
+takes the facility from the signed-in user, so another facility's admission or request is a 404.
+The badge's polling does not move the session's idle timer, so an unattended screen still signs
+out after 30 minutes.
 
 ## Settings
 
@@ -546,6 +623,9 @@ uv run robby-admin demo purge --yes     # drop the demo database
 Everything is created through the real services (classification, the packaged model for predictions,
 events and the hash chain). Outcomes are sampled from the model probability with a per-facility offset.
 Admissions are entered by the demo lab technicians and outcomes recorded by the demo clinicians.
+Each demo hospital's four most recent admissions carry lab requests: two waiting for the lab (an
+urgent HIV test at Demo Hospital A), a glucose result and a negative HIV result that re-scored
+the readiness signal.
 Sign in with `lab.da` ... `lab.dd`, `clinician.da` ... `clinician.dd`, `admin.da` ... `admin.dd`,
 `reviewer`, or (behind the scenes) `custodian` and `sysadmin`; the password for all demo accounts is `demo-password-123`. The reference table in the demo
 is a labelled placeholder ("DEMO placeholder reference"), not a published source. The model is read from
@@ -594,9 +674,11 @@ are encrypted in the database (below).
 ### Encryption at rest
 
 - **What**: `admission.patient_number` and `admission.patient_name`, the only identifiers the
-  database holds. The rest is clinical data without identifiers (the event log, feature vectors
-  and exports never carry them) and is not encrypted by the application; database backups and
-  disks still need their own protection.
+  database holds, and the lab values (`lab_result.value`; an HIV result is the most sensitive
+  value stored), with the free text that may name a patient (`lab_request.note`,
+  `lab_cancellation.reason`). The rest is clinical data without identifiers (the event log,
+  feature vectors and exports never carry them) and is not encrypted by the application;
+  database backups and disks still need their own protection.
 - **How** (`src/robby/crypto.py`): AES-256-GCM. Each value is stored as `bytea`: version byte
   `0x01`, a random 12-byte nonce, then ciphertext and tag. The column name is the associated
   data, so a value moved to the other column, altered, or written under another key fails to
