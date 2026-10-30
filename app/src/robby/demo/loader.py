@@ -34,6 +34,7 @@ from robby.config import APP_ROOT, get_settings
 from robby.db import get_sessionmaker
 from robby.demo import generate
 from robby.facilities.service import create_facility
+from robby.lab import admission_requests
 from robby.lab import service as lab
 from robby.migrate import upgrade
 from robby.models import (
@@ -151,6 +152,7 @@ class Summary:
     scored: int = 0
     lab_open: int = 0
     lab_resulted: int = 0
+    asks_open: int = 0
     cs_by_facility: dict[str, tuple[int, int]] = field(default_factory=dict)
     events_ok: bool = False
     events_checked: int = 0
@@ -352,6 +354,7 @@ def load_demo(
     sampler = generate.DetailSampler(model_dir) if use_model and model_dir else None
     _fill(factory, runtime, rng, admissions, summary, say, sampler, random.Random(seed + 1))
     _lab_requests(factory, runtime, random.Random(seed + 2), summary)
+    _admission_requests(factory, random.Random(seed + 3), summary)
     _finish(factory, summary)
     return summary
 
@@ -433,6 +436,41 @@ def _fill(
             if (i + 1) % 100 == 0:
                 say(f"  {i + 1} of {n} admissions...")
     summary.cs_by_facility = {k: (cs_count[k], totals[k]) for k in sorted(totals)}
+
+
+def _admission_requests(
+    factory: sessionmaker[Session], rng: random.Random, summary: Summary
+) -> None:
+    """Three new patients the clinician of the first facility asked the lab to enter, left
+    waiting (one urgent, one without a name), through the real service. Their numbers are of
+    their own series (-N-), so entering them never repeats a number of the generated
+    admissions."""
+    now = utcnow()
+    plan = (
+        (timedelta(minutes=20), True, True, "In labour, please enter her first"),
+        (timedelta(hours=1, minutes=10), False, True, None),
+        (timedelta(hours=2, minutes=30), False, False, "Referred from the health centre"),
+    )
+    with factory() as db:
+        facility = db.scalars(select(Facility).order_by(Facility.code)).first()
+        assert facility is not None
+        clinician = db.scalars(
+            select(AppUser).where(
+                AppUser.facility_id == facility.id, AppUser.role == Role.CLINICIAN
+            )
+        ).one()
+        for n, (ago, urgent, named, note) in enumerate(plan, start=1):
+            admission_requests.request_admission(
+                db,
+                clinician,
+                patient_number=f"{facility.code}-N-{n:05d}",
+                patient_name=generate.demo_patient_name(rng) if named else None,
+                note=note,
+                urgent=urgent,
+                now=now - ago,
+            )
+            summary.asks_open += 1
+        db.commit()
 
 
 def _lab_requests(

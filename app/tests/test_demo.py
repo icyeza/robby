@@ -15,6 +15,7 @@ from robby.demo import cli as demo_cli
 from robby.demo import loader
 from robby.models import (
     Admission,
+    AdmissionRequest,
     AdmissionSource,
     AppUser,
     DeliveryOutcome,
@@ -68,6 +69,22 @@ def assert_demo_lab_requests(db: Session) -> None:
     assert all(r.resulted_at <= now for r in results)
 
 
+def assert_demo_admission_requests(db: Session) -> None:
+    """Three new patients wait for the lab at the first facility only, one urgent, asked by its
+    clinician, with numbers no generated admission has."""
+    roles = {u.id: u.role for u in db.scalars(select(AppUser))}
+    asks = list(db.scalars(select(AdmissionRequest)))
+    first = db.scalars(select(Facility).order_by(Facility.code)).first()
+    assert first is not None and first.name == "Demo Hospital A"
+    assert len(asks) == 3 and {a.facility_id for a in asks} == {first.id}
+    assert {roles[a.requested_by] for a in asks} == {Role.CLINICIAN}
+    assert sum(a.urgent for a in asks) == 1
+    numbers = {a.patient_number_index for a in asks}
+    taken = {a.patient_number_index for a in db.scalars(select(Admission))}
+    assert len(numbers) == 3 and not numbers & taken
+    assert all(a.requested_at <= utcnow() for a in asks)
+
+
 def test_demo_load_refusals_and_purge(
     demo_url: URL, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -79,6 +96,7 @@ def test_demo_load_refusals_and_purge(
     assert summary.events_ok and summary.events_checked > 60
     assert summary.awaiting == 12 and summary.outcomes >= 10
     assert (summary.lab_open, summary.lab_resulted) == (8, 8)
+    assert summary.asks_open == 3
     assert len(summary.credentials) == 15
 
     engine = create_engine(demo_url)
@@ -92,6 +110,7 @@ def test_demo_load_refusals_and_purge(
         assert events.verify(db).ok
         assert_demo_patients(db)
         assert_demo_lab_requests(db)
+        assert_demo_admission_requests(db)
     engine.dispose()
 
     with pytest.raises(loader.DemoError, match="already has data"):
