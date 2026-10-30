@@ -5,7 +5,7 @@
 
 :root{
   --brand:#7b1e3a; --brand-dark:#5c1229; --brand-tint:#f8eef1; --brand-line:#e7cfd6;
-  --ink:#1c1b1d; --ink-2:#4a4649; --ink-3:#77707a; --line:#e4e1e3; --bg:#faf9f9; --white:#fff;
+  --ink:#1c1b1d; --ink-2:#4a4649; --ink-3:#6e6771; --line:#e4e1e3; --bg:#faf9f9; --white:#fff;
   --field:#8f878c; --track:#f1eef0;
   --error:#c62828; --error-bg:#fdeeee; --warn:#9a5b00; --warn-bg:#fff6e5; --ok:#2e6b3f; --ok-bg:#eaf3ec;
   --fig:#4b4650; --fig-off:#dcd8db;
@@ -125,7 +125,7 @@ select:disabled,input:disabled{background:#f4f2f3;color:var(--ink-3)}
 /* ---------- Robson strip ---------- */
 .strip{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-bottom:6px}
 .strip.compact{grid-template-columns:repeat(5,1fr);gap:6px;margin:10px 0 16px}
-.strip div{height:34px;border-radius:4px;background:#f2f0f1;color:#857d82;display:grid;place-items:center;font-weight:700;font-size:13px}
+.strip div{height:34px;border-radius:4px;background:#f2f0f1;color:#716a6f;display:grid;place-items:center;font-weight:700;font-size:13px}
 .strip div.on{background:var(--brand);color:#fff;box-shadow:0 0 0 3px var(--brand-tint)}
 .strip div.poss{background:var(--brand-tint);color:var(--brand);outline:1.5px solid var(--brand-line)}
 .strip div.out{text-decoration:line-through;text-decoration-thickness:1.5px;color:#9a9297}
@@ -257,7 +257,7 @@ table.wide th{white-space:normal;vertical-align:bottom}
 .login-brand .mark-tiles i{background:rgba(255,255,255,.3)}
 .login-brand .mark-tiles i.on{background:#fff}
 .login-brand .big{display:grid;grid-template-columns:repeat(5,56px);gap:8px}
-.login-brand .big i{height:56px;border-radius:6px;background:rgba(255,255,255,.12);display:grid;place-items:center;font-style:normal;font-weight:700;color:rgba(255,255,255,.55)}
+.login-brand .big i{height:56px;border-radius:6px;background:rgba(255,255,255,.12);display:grid;place-items:center;font-style:normal;font-weight:700;color:rgba(255,255,255,.82)}
 .login-brand .big i.on{background:#fff;color:var(--brand)}
 .login-brand p{font-family:var(--serif);font-size:22px;max-width:420px;line-height:1.35;margin:0}
 .login-form{display:flex;flex-direction:column;justify-content:center;padding:48px;max-width:480px;width:100%;margin:0 auto}
