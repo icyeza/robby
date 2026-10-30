@@ -368,7 +368,7 @@ The others: [sign in](docs/screenshots/sign-in.png), [screening blocking the sav
 
 ## Testing strategies
 
-There are 1,516 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 628
+There are 1,573 automated test cases in four suites: 651 ML, 130 rule engine, 107 serving and 685
 application. All run on synthetic data; the real records never enter a test.
 
 - `cd ML && uv run pytest` runs the ML tests.
@@ -408,7 +408,8 @@ PostgreSQL 16, and lint and type checks.
   - audit arithmetic against hand-computed values;
   - registry transitions, reconciliation and monitoring;
   - a check that no page contains inline script or style.
-- **Results.** 628 passed, 1 skipped on both Windows 11 and Ubuntu 24.04.
+- **Results.** 684 passed, 1 skipped on Windows 11. On Ubuntu 24.04, 628 passed and 1 skipped, in
+  a run made before the new-patient requests were added.
   The skip is a placeholder check with nothing left to check.
 - **Improvements made.** The re-derivation test (NFR4) and the Robson-group monitoring test (FR12)
   were added after this review. An OpenClinic file with missing columns used to crash the upload
