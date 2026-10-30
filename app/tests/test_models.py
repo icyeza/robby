@@ -12,7 +12,7 @@ def test_every_table_in_the_spec_is_mapped() -> None:
 
 def test_uuid_primary_keys_default_to_gen_random_uuid() -> None:
     with_uuid_id = [t for t in Base.metadata.sorted_tables if "id" in t.c and t.c.id.primary_key]
-    assert len(with_uuid_id) == 17
+    assert len(with_uuid_id) == 20
     for table in with_uuid_id:
         default = table.c.id.server_default
         assert default is not None and "gen_random_uuid()" in str(default.arg), table.name

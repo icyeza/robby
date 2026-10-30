@@ -16,6 +16,9 @@ from robby.auth.passwords import hash_password
 from robby.models import (
     FACILITY_ROLES,
     Admission,
+    AdmissionRequest,
+    AdmissionRequestCancellation,
+    AdmissionRequestFulfilment,
     AdmissionSource,
     AppUser,
     Classification,
@@ -209,6 +212,28 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
         cancelled_by=clinician.id,
         cancelled_at=utcnow(),
     )
+    entered, withdrawn = (
+        AdmissionRequest(
+            id=uuid.uuid4(),
+            facility_id=facility.id,
+            patient_number=number,
+            requested_by=clinician.id,
+            requested_at=utcnow(),
+        )
+        for number in (admission.patient_number or "", f"T-{next(_sequence):04d}")
+    )
+    fulfilment = AdmissionRequestFulfilment(
+        request_id=entered.id,
+        admission_id=admission.id,
+        fulfilled_by=clinician.id,
+        fulfilled_at=utcnow(),
+    )
+    ask_cancellation = AdmissionRequestCancellation(
+        request_id=withdrawn.id,
+        reason="Went to another hospital",
+        cancelled_by=clinician.id,
+        cancelled_at=utcnow(),
+    )
     event = EventLog(
         id=uuid.uuid4(),
         occurred_at=utcnow(),
@@ -222,8 +247,9 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
     db.add(admission)
     db.flush()
     db.add_all([omission, classification, prediction, outcome, resulted, cancelled])
+    db.add_all([entered, withdrawn])
     db.flush()
-    db.add_all([reconciled, event, lab_result, cancellation])
+    db.add_all([reconciled, event, lab_result, cancellation, fulfilment, ask_cancellation])
     db.flush()
     return {
         "facility": facility,

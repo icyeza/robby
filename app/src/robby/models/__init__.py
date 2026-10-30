@@ -29,7 +29,14 @@ from robby.models.enums import (
 )
 from robby.models.events import EventLog
 from robby.models.facility import DEFAULT_READINESS_CUT_PERCENT, Facility
-from robby.models.lab import LabCancellation, LabRequest, LabResult
+from robby.models.lab import (
+    AdmissionRequest,
+    AdmissionRequestCancellation,
+    AdmissionRequestFulfilment,
+    LabCancellation,
+    LabRequest,
+    LabResult,
+)
 from robby.models.references import ExportRecord, ReferenceSet, ReferenceValue
 from robby.models.registry import ModelTransition, ModelVersion, Prediction
 from robby.models.rules import RuleSet
@@ -41,6 +48,9 @@ __all__ = [
     "ROLE_LABELS",
     "Admission",
     "AdmissionCounter",
+    "AdmissionRequest",
+    "AdmissionRequestCancellation",
+    "AdmissionRequestFulfilment",
     "AdmissionSource",
     "ApiToken",
     "AppUser",

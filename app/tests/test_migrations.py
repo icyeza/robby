@@ -1,6 +1,6 @@
 """The initial migration builds exactly the schema the models describe, and can be undone; 0007
 encrypts the identifiers of admissions already stored; 0008's downgrade removes the lab tables
-with the predictions re-scored from them."""
+with the predictions re-scored from them; 0009's removes the admission request tables."""
 
 import uuid
 from pathlib import Path
@@ -215,6 +215,30 @@ def test_0008_downgrade_removes_lab_tables_and_rescored_predictions() -> None:
             assert {"lab_request", "lab_result", "lab_cancellation"} <= set(
                 inspect(conn).get_table_names()
             )
+    finally:
+        engine.dispose()
+        drop_database(url)
+
+
+ASK_TABLES = {"admission_request", "admission_request_fulfilment", "admission_request_cancellation"}
+
+
+def test_0009_downgrade_removes_the_admission_request_tables() -> None:
+    url = create_database(server_url_from_env())
+    raw = url.render_as_string(hide_password=False)
+    engine = create_engine(url)
+    try:
+        upgrade(raw)
+        downgrade(raw, "0008")
+        with engine.connect() as conn:
+            assert not set(inspect(conn).get_table_names()) & ASK_TABLES
+            leftover = conn.execute(
+                text("SELECT count(*) FROM pg_proc WHERE proname = 'admission_request_closed_once'")
+            ).scalar_one()
+            assert leftover == 0
+        upgrade(raw)
+        with engine.connect() as conn:
+            assert set(inspect(conn).get_table_names()) >= ASK_TABLES
     finally:
         engine.dispose()
         drop_database(url)

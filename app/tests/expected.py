@@ -36,6 +36,9 @@ EXPECTED_TABLES = {
     "lab_request",
     "lab_result",
     "lab_cancellation",
+    "admission_request",
+    "admission_request_fulfilment",
+    "admission_request_cancellation",
 }
 
 EXPECTED_ENUMS = {
@@ -62,4 +65,7 @@ IMMUTABLE_TABLES = (
     "lab_request",
     "lab_result",
     "lab_cancellation",
+    "admission_request",
+    "admission_request_fulfilment",
+    "admission_request_cancellation",
 )
