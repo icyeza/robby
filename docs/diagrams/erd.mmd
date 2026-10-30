@@ -1,5 +1,5 @@
 ---
-title: Robson Readiness application database (migrations 0001-0003)
+title: Robson Readiness application database (migrations 0001-0008)
 ---
 erDiagram
     facility {
@@ -14,7 +14,7 @@ erDiagram
         uuid id PK
         text username UK "lowercase"
         text password_hash "argon2id"
-        enum role "clinician, facility_admin, model_custodian, national_reviewer, system_admin"
+        enum role "clinician, facility_admin, model_custodian, national_reviewer, system_admin, lab_technician"
         uuid facility_id FK "set only for clinician and facility_admin"
         bool active
         int failed_logins
@@ -46,8 +46,9 @@ erDiagram
         uuid entered_by FK "required unless source is fhir"
         uuid supersedes_id FK "set on a correction"
         text correction_reason "required with supersedes_id"
-        text patient_number "required unless source is fhir"
-        text patient_name "required unless source is fhir"
+        bytea patient_number "encrypted; required unless source is fhir"
+        bytea patient_name "encrypted; required unless source is fhir"
+        char patient_number_index "blind index of the number"
         int parity
         int previous_cs_count
         int plurality
@@ -105,7 +106,8 @@ erDiagram
         enum mode "active, shadow"
         numeric probability "0 to 1"
         jsonb feature_vector "exact row scored"
-        uuid supersedes_id FK
+        uuid supersedes_id FK, UK "set on a re-score"
+        uuid lab_result_id FK, UK "the HIV result that prompted a re-score"
     }
     delivery_outcome {
         uuid id PK
@@ -147,6 +149,29 @@ erDiagram
         char64 prev_hash
         char64 hash UK "hash chain"
     }
+    lab_request {
+        uuid id PK
+        uuid admission_id FK
+        enum test "urine_protein, blood_glucose, hiv_rapid"
+        bool urgent
+        bytea note "encrypted, optional"
+        uuid requested_by FK "a clinician"
+        timestamptz requested_at
+    }
+    lab_result {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea value "encrypted"
+        uuid recorded_by FK "a lab technician"
+        timestamptz resulted_at
+    }
+    lab_cancellation {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea reason "encrypted, required"
+        uuid cancelled_by FK "a clinician"
+        timestamptz cancelled_at
+    }
     export_record {
         uuid id PK
         uuid facility_id FK
@@ -178,5 +203,10 @@ erDiagram
     reference_set ||--o{ reference_value : "contains"
     app_user |o--o{ reference_set : "loads"
     app_user |o--o{ event_log : "acts in"
+    admission ||--o{ lab_request : "tests asked for"
+    lab_request ||--o| lab_result : "answered by"
+    lab_request ||--o| lab_cancellation : "withdrawn by"
+    lab_result |o--o| prediction : "prompts a re-score"
+    app_user ||--o{ lab_request : "requests"
     facility ||--o{ export_record : "exported for"
     app_user ||--o{ export_record : "exports"
