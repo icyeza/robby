@@ -1,5 +1,5 @@
 ---
-title: Robson Readiness application database (migrations 0001-0008)
+title: Robson Readiness application database (migrations 0001-0009)
 ---
 erDiagram
     facility {
@@ -172,6 +172,31 @@ erDiagram
         uuid cancelled_by FK "a clinician"
         timestamptz cancelled_at
     }
+    admission_request {
+        uuid id PK
+        uuid facility_id FK
+        bytea patient_number "encrypted"
+        bytea patient_name "encrypted, optional"
+        char patient_number_index "blind index of the number"
+        bool urgent
+        bytea note "encrypted, optional"
+        uuid requested_by FK "a clinician"
+        timestamptz requested_at
+    }
+    admission_request_fulfilment {
+        uuid id PK
+        uuid request_id FK, UK
+        uuid admission_id FK, UK "saved in the same transaction"
+        uuid fulfilled_by FK "a lab technician"
+        timestamptz fulfilled_at
+    }
+    admission_request_cancellation {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea reason "encrypted, required"
+        uuid cancelled_by FK "a clinician"
+        timestamptz cancelled_at
+    }
     export_record {
         uuid id PK
         uuid facility_id FK
@@ -208,5 +233,10 @@ erDiagram
     lab_request ||--o| lab_cancellation : "withdrawn by"
     lab_result |o--o| prediction : "prompts a re-score"
     app_user ||--o{ lab_request : "requests"
+    facility ||--o{ admission_request : "asked to enter"
+    app_user ||--o{ admission_request : "asks"
+    admission_request ||--o| admission_request_fulfilment : "entered by"
+    admission ||--o| admission_request_fulfilment : "fulfils"
+    admission_request ||--o| admission_request_cancellation : "withdrawn by"
     facility ||--o{ export_record : "exported for"
     app_user ||--o{ export_record : "exports"

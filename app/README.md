@@ -17,8 +17,9 @@ synthetic packaged artefact and runs the golden check.
   delivery outcome. Nothing entered can be edited from the web pages.
 - **Lab requests**: the clinician asks the lab for urine protein, blood glucose or an HIV rapid
   test from the patient page; the lab technician sees the open requests of the facility (count in
-  the navigation) and records each result. An HIV result updates the readiness signal; see
-  [Lab requests](#lab-requests).
+  the navigation) and records each result. An HIV result updates the readiness signal. The
+  clinician can also ask the lab, from Find patient, to enter a new patient; the lab technician
+  enters the admission from the same list. See [Lab requests](#lab-requests).
 - **Import**: Excel template download and upload for the facility administrator (rows with a
   problem are left out and listed), and token-authenticated automated import for the hospital's
   patient record system (tokens from `robby-admin api-token create`).
@@ -43,7 +44,7 @@ synthetic packaged artefact and runs the golden check.
 
 ## Data model
 
-Twenty-one tables (`api_token` is not in the diagram below), created by migrations `0001`–`0008` in `migrations/versions/`. The diagram shows
+Twenty-four tables (`api_token` is not in the diagram below), created by migrations `0001`–`0009` in `migrations/versions/`. The diagram shows
 each table's primary key (PK), foreign keys (FK), unique columns (UK) and main business columns,
 not every column. Source: [`docs/diagrams/erd.mmd`](../docs/diagrams/erd.mmd); image:
 [`erd.png`](../docs/diagrams/erd.png).
@@ -220,6 +221,31 @@ erDiagram
         uuid cancelled_by FK "a clinician"
         timestamptz cancelled_at
     }
+    admission_request {
+        uuid id PK
+        uuid facility_id FK
+        bytea patient_number "encrypted"
+        bytea patient_name "encrypted, optional"
+        char patient_number_index "blind index of the number"
+        bool urgent
+        bytea note "encrypted, optional"
+        uuid requested_by FK "a clinician"
+        timestamptz requested_at
+    }
+    admission_request_fulfilment {
+        uuid id PK
+        uuid request_id FK, UK
+        uuid admission_id FK, UK "saved in the same transaction"
+        uuid fulfilled_by FK "a lab technician"
+        timestamptz fulfilled_at
+    }
+    admission_request_cancellation {
+        uuid id PK
+        uuid request_id FK, UK
+        bytea reason "encrypted, required"
+        uuid cancelled_by FK "a clinician"
+        timestamptz cancelled_at
+    }
     export_record {
         uuid id PK
         uuid facility_id FK
@@ -256,6 +282,11 @@ erDiagram
     lab_request ||--o| lab_cancellation : "withdrawn by"
     lab_result |o--o| prediction : "prompts a re-score"
     app_user ||--o{ lab_request : "requests"
+    facility ||--o{ admission_request : "asked to enter"
+    app_user ||--o{ admission_request : "asks"
+    admission_request ||--o| admission_request_fulfilment : "entered by"
+    admission ||--o| admission_request_fulfilment : "fulfils"
+    admission_request ||--o| admission_request_cancellation : "withdrawn by"
     facility ||--o{ export_record : "exported for"
     app_user ||--o{ export_record : "exports"
 ```
@@ -264,9 +295,11 @@ How to read it:
 
 - **Clinical rows are insert-only.** `admission`, `screening_omission`, `classification`,
   `prediction`, `delivery_outcome`, `reconciled_outcome`, `lab_request`, `lab_result`,
-  `lab_cancellation` and `event_log` have PostgreSQL triggers that reject every `UPDATE`,
-  `DELETE` and `TRUNCATE`. A lab request's status is derived (requested, resulted or cancelled),
-  and a trigger lets a request get a result or a cancellation only once.
+  `lab_cancellation`, `admission_request`, `admission_request_fulfilment`,
+  `admission_request_cancellation` and `event_log` have PostgreSQL triggers that reject every
+  `UPDATE`, `DELETE` and `TRUNCATE`. A lab request's status is derived (requested, resulted or
+  cancelled), and a trigger lets a request get a result or a cancellation only once; an
+  admission request (waiting, entered or cancelled) works the same way.
 - **A re-score is a new prediction.** After an HIV result the readiness signal is scored again:
   the new `prediction` row names the one it replaces (`supersedes_id`) and the result that
   prompted it (`lab_result_id`); the first prediction stays. Pages, monitoring and the evidence
@@ -369,14 +402,15 @@ reach the feature vector or the event log.
 
 ## Lab requests
 
-Source: `src/robby/lab/` (`catalogue.py` tests and result checks, `service.py`, `routes.py`,
-`views.py`), migration `0008`.
+Source: `src/robby/lab/` (`catalogue.py` tests and result checks, `service.py`,
+`admission_requests.py`, `routes.py`, `views.py`), migrations `0008` and `0009`.
 
 | Who | Where | What |
 |---|---|---|
 | Clinician | patient page `/admissions/{code}`, "Request lab tests" | Chooses one or more tests (urine protein dipstick, blood glucose, HIV rapid test), an optional short note and "urgent". A test waiting for the lab cannot be requested again until it has a result or is cancelled. Blood pressure is bedside, not lab, so it is not offered |
 | Clinician | patient page, "Cancel request" | Withdraws an open request; the reason is required and kept |
-| Lab technician | "Lab requests" `/lab-requests` (in the navigation, with the number of open requests, refreshed every 30 seconds by htmx) | Open requests of the facility, urgent first, then the oldest: patient name and number, admission code, test, note. "Record result" checks the value (dipstick option; glucose 0.5–60 mmol/L, one decimal; HIV positive, negative or indeterminate) |
+| Clinician | Find patient `/patients`, "Ask the lab to enter a new patient" | For a patient the lab has not entered yet: patient number (required), name (optional), a short note and "urgent". A number waiting for the lab cannot be asked again until it is entered or cancelled. Find patient lists the facility's requests still waiting and those closed in the last 72 hours: waiting, entered by the lab (with a link to the admission) or cancelled; "Cancel request" withdraws a waiting one, with a reason |
+| Lab technician | "Lab requests" `/lab-requests` (in the navigation, with the number of open requests of both kinds, refreshed every 30 seconds by htmx) | Open requests of the facility, urgent first, then the oldest: patient name and number, admission code (or "New patient"), test or "Enter new admission", note. "Record result" checks the value (dipstick option; glucose 0.5–60 mmol/L, one decimal; HIV positive, negative or indeterminate). "Enter admission" opens the admission form with the number and name filled in and the request in a hidden field; saving the admission marks the request entered in the same transaction (if the clinician cancelled it meanwhile, nothing is saved and the form says so). An admission entered without the request does not close it: nothing is matched automatically |
 | Both | patient page (clinician), the result form (lab technician) | Each request with its status, and the result or cancellation reason |
 
 The lab technician keeps entering admissions exactly as before; facility administrators,
@@ -399,7 +433,9 @@ What a result changes:
 
 Privacy: results, notes and reasons are encrypted at rest. The events `lab.requested`,
 `lab.resulted` and `lab.cancelled` carry the admission code, the facility code and the test names
-only, never a value, a note, a reason or a patient identifier. Every route checks the role and
+only, never a value, a note, a reason or a patient identifier. The events
+`admission_request.created`, `.fulfilled` and `.cancelled` carry the facility code, the urgency
+and the admission code entered, never a patient number, name, note or reason. Every route checks the role and
 takes the facility from the signed-in user, so another facility's admission or request is a 404.
 The badge's polling does not move the session's idle timer, so an unattended screen still signs
 out after 30 minutes.
@@ -679,7 +715,9 @@ are encrypted in the database (below).
 - **What**: `admission.patient_number` and `admission.patient_name`, the only identifiers the
   database holds, and the lab values (`lab_result.value`; an HIV result is the most sensitive
   value stored), with the free text that may name a patient (`lab_request.note`,
-  `lab_cancellation.reason`). The rest is clinical data without identifiers (the event log,
+  `lab_cancellation.reason`), and the patient number and name of a request to enter a new
+  patient (`admission_request.patient_number`, `.patient_name`, `.note` and
+  `admission_request_cancellation.reason`; the number has the same blind index as admission's). The rest is clinical data without identifiers (the event log,
   feature vectors and exports never carry them) and is not encrypted by the application;
   database backups and disks still need their own protection.
 - **How** (`src/robby/crypto.py`): AES-256-GCM. Each value is stored as `bytea`: version byte

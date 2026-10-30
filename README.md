@@ -329,6 +329,7 @@ dropped silently.
 | NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
 | NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
 | Lab test requests (added on the supervisor's advice) | The clinician can obtain missing screening results and HIV status from the lab | Completed | [request](docs/screenshots/lab-request-new.png), [lab queue](docs/screenshots/lab-requests.png); an HIV result re-scores the readiness signal; also as FHIR ServiceRequest/Observation; [`lab/`](app/src/robby/lab/) |
+| New-patient requests to the lab | A clinician whose patient has no admission yet can ask the lab to enter it | Completed | From Find patient (number, optional name, note, urgent); the lab enters it from the same list as the tests, with the form filled in; the clinician sees it entered, with a link. Number and name encrypted at rest; [`admission_requests.py`](app/src/robby/lab/admission_requests.py), migration 0009 |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
 | Live pilot in a partner unit | Use in a real ward | **Not implemented** | Ethics clearance has not arrived. As the proposal provides, the system runs as a public demonstration instance on synthetic data instead |
 
