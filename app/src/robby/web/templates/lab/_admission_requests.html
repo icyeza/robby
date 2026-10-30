@@ -9,7 +9,7 @@
       <tr>
         <td>{% if ask.patient_name %}<b>{{ ask.patient_name }}</b><br>{% endif %}<span class="muted">{{ ask.patient_number }}</span></td>
         <td>{{ ask.requested_at | local_dt_short }}</td>
-        <td>{% if ask.status == 'waiting' %}<span class="st awaiting">{{ ask.status_text }}</span>{% elif ask.status == 'entered' %}<span class="st done">{{ ask.status_text }}</span> <span class="muted">{{ ask.code }}</span>{% else %}<span class="st cancelled">{{ ask.status_text }}</span>{% endif %}{% if ask.urgent %} <span class="st urgent">Urgent</span>{% endif %}{% if ask.reason %}<br><span class="muted">{{ ask.reason }}</span>{% endif %}</td>
+        <td>{% if ask.status == 'waiting' %}<span class="st awaiting">{{ ask.status_text }}</span>{% elif ask.status == 'entered' %}<span class="st done">{{ ask.status_text }}</span> <span class="muted">{{ ask.code }}</span>{% else %}<span class="st cancelled">{{ ask.status_text }}</span>{% endif %}{% if ask.urgent and ask.status == 'waiting' %} <span class="st urgent">Urgent</span>{% endif %}{% if ask.reason %}<br><span class="muted">{{ ask.reason }}</span>{% endif %}</td>
         <td>{% if ask.note %}{{ ask.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
         <td class="r">{% if ask.status == 'entered' %}<a href="/admissions/{{ ask.code }}">Open</a>{% elif ask.status == 'waiting' %}<a class="btn-g" href="/patients/admission-requests/{{ ask.request_id }}/cancel">Cancel request</a>{% endif %}</td>
       </tr>

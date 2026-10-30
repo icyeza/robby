@@ -39,6 +39,7 @@ SCREENS: dict[str, list[str]] = {
         "/admissions/{code}",
         "/admissions/{code}/outcome",
         "/admissions/{code}/lab-requests/new",
+        "/patients/admission-requests/new",
     ],
     "admin.da": ["/audit", "/admissions/import", "/admin/users"],
     "custodian": ["/models", "/monitoring", "/approval-log"],
