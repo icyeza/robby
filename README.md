@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Live demonstration | <https://robby.example.org>: synthetic data, accounts under [Try it](#try-it) |
+| Demonstration | Synthetic data only: `uv run robby-admin demo load`, then `sh app/scripts/demo.sh` ([Setup](#setup)); accounts under [Try it](#try-it) |
 | Walkthrough video | *link to be added* |
 | Technical report (PDF) | *link to be added* |
 | Repository | <https://github.com/icyeza/robby> |
@@ -459,7 +459,7 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
 - **Improvements made.**
   - Pages had no favicon, so every browser logged a 404 (`76d9b75`).
   - Against the deployed server, Firefox caught a live-panel preview that the browser had abandoned
-    being logged and answered as a server error. It now ends quietly with status 499 (`9e351f3`).
+    being logged and answered as a server error. It now ends quietly with status 499 (`44fd3c0`).
 
 ### 4. Performance and resource testing
 
@@ -470,7 +470,7 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
 - **Results.** See [Performance](#performance-and-resources).
 - **Improvements made.** The measurements set the stated minimum hardware (1 core, 1 GB). Testing
   the deployment also uncovered that the server scored nothing, because its model directory was
-  empty (`1789493`).
+  empty (`2f6bc1e`).
 
 ### 5. Stress testing (Locust)
 
@@ -484,7 +484,7 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
   - First errors at 50 users, and collapse at about 100 (median 33 s).
   - All 127 failures were 30-second waits for a database connection that ended in a 500, and
     memory reached the cap during sign-in bursts.
-- **Improvements made** (`59d2601`).
+- **Improvements made** (`bfb5b35`).
   - The connection pool is sized to the workers.
   - A request that can't get a connection within 5 s gets a quick 503 "busy, try again" instead
     of a 500.
@@ -506,8 +506,8 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
   screens covering every role. pip-audit checks both lock files against the OSV database, in CI.
 - **Results and improvements.**
   - axe found one rule broken: colour contrast on 8 elements. After three colour changes
-    (`77057c2`) there are no violations.
-  - pip-audit found 11 vulnerable training-side packages, which were upgraded (`b8a81b1`). Both
+    (`d1035c4`) there are no violations.
+  - pip-audit found 11 vulnerable training-side packages, which were upgraded (`fbe02f4`). Both
     audits are now clean.
 
 ### 7. Model validation
