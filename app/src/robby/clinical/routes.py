@@ -276,24 +276,25 @@ def find_patient(request: Request, db: DbDep, current: Clinician, q: str = "") -
         if query
         else service.recent(db, current.user)
     )
-    if request.headers.get("HX-Request") == "true":
-        return render(
-            request,
-            "clinical/patients_results.html",
-            current=current,
-            query=query,
-            rows=rows,
-            limit=service.SEARCH_LIMIT,
-        )
+    # Patients the clinician asked the lab to enter (robby/lab); shown only when not searching.
+    asks = (
+        []
+        if query
+        else [lab_views.ask_view(x) for x in admission_requests.for_clinician(db, current.user)]
+    )
+    template = (
+        "clinical/patients_results.html"
+        if request.headers.get("HX-Request") == "true"
+        else "clinical/patients.html"
+    )
     return render(
         request,
-        "clinical/patients.html",
+        template,
         current=current,
         query=query,
         rows=rows,
         limit=service.SEARCH_LIMIT,
-        # Patients the clinician asked the lab to enter (robby/lab).
-        asks=[lab_views.ask_view(x) for x in admission_requests.for_clinician(db, current.user)],
+        asks=asks,
     )
 
 

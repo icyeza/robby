@@ -1,4 +1,7 @@
-<section class="tablecard" id="patient-results">
+<div id="patient-results">
+{# A search hides the requests to the lab, so the matches come first. #}
+{% if not query %}{% include "lab/_admission_requests.html" %}{% endif %}
+<section class="tablecard">
   <div class="tc-h"><h2>{% if query %}{{ rows | length }}{% if rows | length == limit %}+{% endif %} match{{ "" if rows | length == 1 else "es" }} for “{{ query }}”{% else %}Admitted in the last 72 hours{% endif %}</h2></div>
   <table>
     <thead><tr><th>Patient</th><th>Admitted</th><th>Robson group</th><th class="r">Readiness signal</th><th>Outcome</th><th></th></tr></thead>
@@ -19,3 +22,4 @@
   </table>
   <div class="tc-foot">Admission details are entered by the lab and cannot be changed here. Search covers every admission at this facility.</div>
 </section>
+</div>

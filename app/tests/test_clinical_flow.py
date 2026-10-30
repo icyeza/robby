@@ -291,7 +291,12 @@ def test_the_clinician_finds_a_patient_by_name_or_number(
     assert names("Nobody") == set()
     assert names("") == {"Uwase", "Mukamana", "Ingabire"}  # empty: the last 72 hours
     fragment = client.get("/patients", params={"q": "uwase"}, headers={"HX-Request": "true"})
-    assert fragment.text.startswith('<section class="tablecard" id="patient-results">')
+    assert fragment.text.startswith('<div id="patient-results">')
+    # The requests to the lab give way to the matches while searching, and come back after.
+    assert "New patients asked from the lab" not in fragment.text
+    assert "New patients asked from the lab" not in client.get("/patients?q=uwase").text
+    cleared = client.get("/patients", params={"q": ""}, headers={"HX-Request": "true"})
+    assert "New patients asked from the lab" in cleared.text
 
 
 def test_the_clinician_sees_the_patient_name_and_number(

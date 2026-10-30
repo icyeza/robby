@@ -32,14 +32,13 @@ _NOT_DETAILS = frozenset(
 )  # fmt: skip
 
 
-# Invented patient names, obviously synthetic (the "Demo-" surnames); no real person is used.
+# Invented patient names; no real person is used. Every page of the demo says it is example data.
 DEMO_FIRST_NAMES = (
     "Amani", "Bwiza", "Cyiza", "Dusabe", "Ganza", "Hirwa", "Ineza", "Keza",
     "Mahoro", "Nziza", "Rukundo", "Shema", "Teta", "Umwiza",
 )  # fmt: skip
 DEMO_SURNAMES = (
-    "Demo-Abera", "Demo-Byiza", "Demo-Gatete", "Demo-Kamana", "Demo-Mugabo",
-    "Demo-Nshuti", "Demo-Rugero", "Demo-Uwera",
+    "Byiza", "Gatete", "Iradukunda", "Kamana", "Mugabo", "Nshuti", "Rugero", "Uwera",
 )  # fmt: skip
 
 
