@@ -1,5 +1,6 @@
 """The initial migration builds exactly the schema the models describe, and can be undone; 0007
-encrypts the identifiers of admissions already stored."""
+encrypts the identifiers of admissions already stored; 0008's downgrade removes the lab tables
+with the predictions re-scored from them."""
 
 import uuid
 from pathlib import Path
@@ -135,6 +136,85 @@ def test_0007_encrypts_stored_identifiers_and_downgrade_restores_them(
                 ("MIG-2", None, None),
             ]
             assert conn.execute(TRIGGER_STATE).scalar_one() == "O"
+    finally:
+        engine.dispose()
+        drop_database(url)
+
+
+PREDICTION_TRIGGERS = text(
+    "SELECT tgname, tgenabled FROM pg_trigger "
+    "WHERE tgname IN ('prediction_immutable', 'reconciled_outcome_immutable') ORDER BY tgname"
+)
+
+
+def _rescored_at_0008(engine: Engine) -> None:
+    """An admission scored once, re-scored after an HIV result, both reconciled."""
+    with engine.begin() as conn:
+        ids = conn.execute(
+            text(
+                "WITH f AS (INSERT INTO facility (name, code, district) "
+                "VALUES ('Lab Hospital', 'LABH', 'Test') RETURNING id), "
+                "u AS (INSERT INTO app_user (username, password_hash, role, facility_id) "
+                "SELECT 'mig.clin', 'x', 'clinician', id FROM f RETURNING id), "
+                "a AS (INSERT INTO admission (facility_id, code, admitted_at, source) "
+                "SELECT id, 'LABH-1', now(), 'fhir' FROM f RETURNING id), "
+                "m AS (INSERT INTO model_version (version_label, algorithm, feature_set, "
+                "feature_list, hyperparameters, calibration_method, evaluation_metrics, "
+                "artefact_hash, artefact_path, manifest, training_window_start, "
+                "training_window_end) VALUES ('mig-model', 'lr', 'core', '[]', '{}', 'none', "
+                "'{}', repeat('0', 64), 'x', '{}', '2020-01-01', '2020-12-31') RETURNING id) "
+                "SELECT (SELECT id FROM u), (SELECT id FROM a), (SELECT id FROM m)"
+            )
+        ).one()
+        user, admission, model = ids
+        params = {"u": user, "a": admission, "m": model}
+        statements = (
+            "INSERT INTO lab_request (id, admission_id, test, requested_by, requested_at) "
+            "VALUES ('00000000-0000-4000-8000-0000000000a1', :a, 'hiv_rapid', :u, now());"
+            "INSERT INTO lab_result (id, request_id, value, recorded_by, resulted_at) VALUES "
+            "('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000a1', "
+            "decode('00', 'hex'), :u, now());"
+            "INSERT INTO prediction (id, admission_id, model_id, mode, probability, "
+            "feature_vector) VALUES ('00000000-0000-4000-8000-0000000000c1', :a, :m, "
+            "'active', 0.5, '{}');"
+            "INSERT INTO prediction (id, admission_id, model_id, mode, probability, "
+            "feature_vector, supersedes_id, lab_result_id) VALUES "
+            "('00000000-0000-4000-8000-0000000000c2', :a, :m, 'active', 0.8, '{}', "
+            "'00000000-0000-4000-8000-0000000000c1', '00000000-0000-4000-8000-0000000000b1');"
+            "INSERT INTO delivery_outcome (id, admission_id, mode, delivered_at, recorded_by) "
+            "VALUES ('00000000-0000-4000-8000-0000000000d1', :a, 'cesarean', now(), :u);"
+            "INSERT INTO reconciled_outcome (prediction_id, delivery_outcome_id, cesarean) "
+            "SELECT id, '00000000-0000-4000-8000-0000000000d1', true FROM prediction"
+        )
+        for statement in statements.split(";"):
+            conn.execute(text(statement), params)
+
+
+def test_0008_downgrade_removes_lab_tables_and_rescored_predictions() -> None:
+    url = create_database(server_url_from_env())
+    raw = url.render_as_string(hide_password=False)
+    engine = create_engine(url)
+    try:
+        upgrade(raw)
+        _rescored_at_0008(engine)
+        downgrade(raw, "0007")
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            assert not tables & {"lab_request", "lab_result", "lab_cancellation"}
+            kept = conn.execute(text("SELECT probability FROM prediction")).scalars().all()
+            assert [float(p) for p in kept] == [0.5]  # the first score stays
+            assert conn.execute(text("SELECT count(*) FROM reconciled_outcome")).scalar() == 1
+            assert conn.execute(PREDICTION_TRIGGERS).all() == [
+                ("prediction_immutable", "O"),
+                ("reconciled_outcome_immutable", "O"),
+            ]
+            uniques = {u["name"] for u in inspect(conn).get_unique_constraints("prediction")}
+            assert uniques == {"uq_prediction_admission_id_model_id"}
+        upgrade(raw)
+        with engine.connect() as conn:
+            assert {"lab_request", "lab_result", "lab_cancellation"} <= set(
+                inspect(conn).get_table_names()
+            )
     finally:
         engine.dispose()
         drop_database(url)

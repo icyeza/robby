@@ -155,8 +155,10 @@ def active_model(db: Session) -> ModelVersion | None:
 
 def _frame(db: Session, model: ModelVersion, since: datetime) -> pd.DataFrame:
     """Active-mode predictions of the model on current (not superseded) admissions, dated by the
-    admission time (not by when the prediction row was written)."""
+    admission time (not by when the prediction row was written). A prediction re-scored after a
+    lab result counts once, as its current version."""
     newer = aliased(Admission)
+    rescored = aliased(Prediction)
     group = (
         select(Classification.robson_group)
         .where(Classification.admission_id == Admission.id)
@@ -182,6 +184,7 @@ def _frame(db: Session, model: ModelVersion, since: datetime) -> pd.DataFrame:
             Prediction.mode == PredictionMode.ACTIVE,
             Admission.admitted_at >= since,
             ~exists().where(newer.supersedes_id == Admission.id),
+            ~exists().where(rescored.supersedes_id == Prediction.id),
         )
     ).all()
     return pd.DataFrame(

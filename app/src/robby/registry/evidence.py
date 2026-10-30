@@ -50,6 +50,7 @@ LEFT JOIN LATERAL (
 ) c ON true
 WHERE p.created_at >= :since
   AND NOT EXISTS (SELECT 1 FROM admission r WHERE r.supersedes_id = p.admission_id)
+  AND NOT EXISTS (SELECT 1 FROM prediction n WHERE n.supersedes_id = p.id)
 """
 )
 

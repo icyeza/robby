@@ -5,6 +5,7 @@ from robby.models.enums import (
     AdmissionSource,
     ClassificationStatus,
     DeliveryMode,
+    LabTest,
     ModelState,
     OmissionField,
     OmissionReason,
@@ -32,6 +33,9 @@ EXPECTED_TABLES = {
     "reference_value",
     "event_log",
     "export_record",
+    "lab_request",
+    "lab_result",
+    "lab_cancellation",
 }
 
 EXPECTED_ENUMS = {
@@ -44,6 +48,7 @@ EXPECTED_ENUMS = {
     "prediction_mode": PredictionMode,
     "delivery_mode": DeliveryMode,
     "reference_kind": ReferenceKind,
+    "lab_test": LabTest,
 }
 
 IMMUTABLE_TABLES = (
@@ -54,4 +59,7 @@ IMMUTABLE_TABLES = (
     "delivery_outcome",
     "reconciled_outcome",
     "event_log",
+    "lab_request",
+    "lab_result",
+    "lab_cancellation",
 )

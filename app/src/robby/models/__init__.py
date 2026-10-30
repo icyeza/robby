@@ -18,6 +18,7 @@ from robby.models.enums import (
     AdmissionSource,
     ClassificationStatus,
     DeliveryMode,
+    LabTest,
     ModelState,
     OmissionField,
     OmissionReason,
@@ -28,6 +29,7 @@ from robby.models.enums import (
 )
 from robby.models.events import EventLog
 from robby.models.facility import DEFAULT_READINESS_CUT_PERCENT, Facility
+from robby.models.lab import LabCancellation, LabRequest, LabResult
 from robby.models.references import ExportRecord, ReferenceSet, ReferenceValue
 from robby.models.registry import ModelTransition, ModelVersion, Prediction
 from robby.models.rules import RuleSet
@@ -50,6 +52,10 @@ __all__ = [
     "EventLog",
     "ExportRecord",
     "Facility",
+    "LabCancellation",
+    "LabRequest",
+    "LabResult",
+    "LabTest",
     "ModelState",
     "ModelTransition",
     "ModelVersion",

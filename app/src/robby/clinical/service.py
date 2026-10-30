@@ -383,11 +383,23 @@ def classification_of(db: Session, admission: Admission) -> Classification:
     return row
 
 
+def _not_rescored() -> Any:
+    """Predictions no re-score has replaced (robby.lab): the current one of each chain."""
+    newer = aliased(Prediction)
+    return ~exists().where(newer.supersedes_id == Prediction.id)
+
+
 def prediction_of(db: Session, admission: Admission) -> tuple[Prediction, ModelVersion] | None:
+    """The current active-mode prediction of the admission (a re-score replaces the one before
+    it) and its model."""
     row = db.execute(
         select(Prediction, ModelVersion)
         .join(ModelVersion, ModelVersion.id == Prediction.model_id)
-        .where(Prediction.admission_id == admission.id, Prediction.mode == PredictionMode.ACTIVE)
+        .where(
+            Prediction.admission_id == admission.id,
+            Prediction.mode == PredictionMode.ACTIVE,
+            _not_rescored(),
+        )
         .order_by(Prediction.created_at.desc())
         .limit(1)
     ).first()
@@ -515,13 +527,17 @@ def _groups(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, int | None]:
 
 
 def _percents(db: Session, ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
-    """Readiness percent by admission, in one query; the latest active prediction wins, as in
+    """Readiness percent by admission, in one query; the current active prediction wins, as in
     prediction_of."""
     return {
         p.admission_id: percent_of(p.probability)
         for p in db.scalars(
             select(Prediction)
-            .where(Prediction.admission_id.in_(ids), Prediction.mode == PredictionMode.ACTIVE)
+            .where(
+                Prediction.admission_id.in_(ids),
+                Prediction.mode == PredictionMode.ACTIVE,
+                _not_rescored(),
+            )
             .order_by(Prediction.created_at)
         )
     }

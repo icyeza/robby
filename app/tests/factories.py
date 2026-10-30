@@ -24,6 +24,10 @@ from robby.models import (
     DeliveryOutcome,
     EventLog,
     Facility,
+    LabCancellation,
+    LabRequest,
+    LabResult,
+    LabTest,
     ModelState,
     ModelVersion,
     OmissionField,
@@ -182,6 +186,29 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
     reconciled = ReconciledOutcome(
         prediction_id=prediction.id, delivery_outcome_id=outcome.id, cesarean=True
     )
+    resulted = LabRequest(
+        id=uuid.uuid4(),
+        admission_id=admission.id,
+        test=LabTest.URINE_PROTEIN,
+        requested_by=clinician.id,
+        requested_at=utcnow(),
+    )
+    cancelled = LabRequest(
+        id=uuid.uuid4(),
+        admission_id=admission.id,
+        test=LabTest.HIV_RAPID,
+        requested_by=clinician.id,
+        requested_at=utcnow(),
+    )
+    lab_result = LabResult(
+        request_id=resulted.id, value="trace", recorded_by=clinician.id, resulted_at=utcnow()
+    )
+    cancellation = LabCancellation(
+        request_id=cancelled.id,
+        reason="Delivered first",
+        cancelled_by=clinician.id,
+        cancelled_at=utcnow(),
+    )
     event = EventLog(
         id=uuid.uuid4(),
         occurred_at=utcnow(),
@@ -194,9 +221,9 @@ def make_clinical_chain(db: Session) -> dict[str, Any]:
     # flush parents before children explicitly.
     db.add(admission)
     db.flush()
-    db.add_all([omission, classification, prediction, outcome])
+    db.add_all([omission, classification, prediction, outcome, resulted, cancelled])
     db.flush()
-    db.add_all([reconciled, event])
+    db.add_all([reconciled, event, lab_result, cancellation])
     db.flush()
     return {
         "facility": facility,

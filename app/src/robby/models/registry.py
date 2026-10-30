@@ -76,18 +76,32 @@ class ModelTransition(Base):
 
 
 class Prediction(Base):
+    """A score of one admission by one model. A re-score (after an HIV result, robby.lab) is a
+    new row: supersedes_id names the prediction it replaces, lab_result_id the result that
+    prompted it. The first score per admission and model is unique; each prediction is
+    superseded at most once, so the predictions of an admission form one chain."""
+
     __tablename__ = "prediction"
     __table_args__ = (
-        UniqueConstraint("admission_id", "model_id"),
+        Index(
+            "uq_prediction_first_score",
+            "admission_id",
+            "model_id",
+            unique=True,
+            postgresql_where=text("supersedes_id IS NULL"),
+        ),
+        UniqueConstraint("supersedes_id"),
+        UniqueConstraint("lab_result_id"),
         CheckConstraint("probability >= 0 AND probability <= 1", name="probability_range"),
         Index("ix_prediction_model_id_created_at", "model_id", "created_at"),
     )
 
     id: Mapped[UUIDPK]
-    admission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admission.id"))
+    admission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admission.id"), index=True)
     model_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("model_version.id"))
     mode: Mapped[PredictionMode] = mapped_column(pg_enum(PredictionMode, "prediction_mode"))
     probability: Mapped[Decimal] = mapped_column(Numeric(6, 5))
     feature_vector: Mapped[dict[str, Any]]
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prediction.id"))
+    lab_result_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("lab_result.id"))
     created_at: Mapped[CreatedAt]

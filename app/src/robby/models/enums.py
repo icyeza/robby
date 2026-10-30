@@ -77,6 +77,14 @@ class DeliveryMode(StrEnum):
     CESAREAN = "cesarean"
 
 
+class LabTest(StrEnum):
+    """Tests a clinician can request from the lab (blood pressure is bedside, not lab)."""
+
+    URINE_PROTEIN = "urine_protein"
+    BLOOD_GLUCOSE = "blood_glucose"
+    HIV_RAPID = "hiv_rapid"
+
+
 class ReferenceKind(StrEnum):
     VOGEL = "vogel"
     C_MODEL = "c_model"
