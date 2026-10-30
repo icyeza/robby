@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Cancel lab request{% endblock %}
+{% block body %}
+{% include "partials/_header.html" %}
+<main class="page narrow">
+  {% include "partials/_banner.html" %}
+  <div class="crumbs"><a href="/patients">Find patient</a> / <a href="/admissions/{{ admission.code }}">{{ admission.patient_name or admission.code }}</a> / Cancel lab request</div>
+  <h1>Cancel lab request</h1>
+  <p class="lede">{{ line.test }} · requested {{ line.requested_at | local_dt }} · {{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }}{% endif %}</p>
+
+  <form class="sec" method="post" action="/admissions/{{ admission.code }}/lab-requests/{{ line.request_id }}/cancel">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      {% if errors.get('_form') %}<div class="errbox top" role="alert"><b>⚠</b> {{ errors['_form'] }}</div>{% endif %}
+      <div class="f{% if errors.get('reason') %} conflict{% endif %}">
+        <label for="f-reason">Why is it cancelled?</label>
+        <input id="f-reason" name="reason" type="text" maxlength="{{ reason_max }}" value="{{ values.get('reason', '') }}" autocomplete="off"{% if errors.get('reason') %} aria-invalid="true" aria-describedby="f-reason-msg"{% endif %}>
+        {% if errors.get('reason') %}<div class="msg" id="f-reason-msg">{{ errors['reason'] }}</div>{% endif %}
+      </div>
+      <div class="notice">The request leaves the lab's list. It stays on record as cancelled, with this reason. The test can be requested again later.</div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Cancel the request</button><a class="btn-g" href="/admissions/{{ admission.code }}">Keep it</a></div>
+    </div>
+  </form>
+</main>
+{% endblock %}

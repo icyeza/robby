@@ -85,6 +85,7 @@ def test_navigation_matches_the_mockup_extension() -> None:
         Role.LAB_TECHNICIAN: [
             ("New admission", "/admissions/new"),
             ("Recent entries", "/admissions"),
+            ("Lab requests", "/lab-requests"),
         ],
         Role.CLINICIAN: [("Find patient", "/patients")],
         Role.FACILITY_ADMIN: [("Hospital report", "/audit"), ("Users", "/admin/users")],

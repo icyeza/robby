@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Record lab result{% endblock %}
+{% block body %}
+{% include "partials/_header.html" %}
+<main class="page narrow">
+  {% include "partials/_banner.html" %}
+  <div class="crumbs"><a href="/lab-requests">Lab requests</a> / {{ line.test }}</div>
+  <h1>{{ line.test }}</h1>
+  <p class="lede">{% if admission.patient_name %}{{ admission.patient_name }} ({{ admission.patient_number }}) · {% endif %}{{ admission.code }} · requested {{ line.requested_at | local_dt }}{% if line.urgent %} · <span class="st urgent">Urgent</span>{% endif %}</p>
+  {% if line.note %}<div class="notice">Note from the clinician: {{ line.note }}</div>{% endif %}
+
+  <form class="sec" method="post" action="/lab-requests/{{ line.request_id }}">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      {% if errors.get('_form') %}<div class="errbox top" role="alert"><b>⚠</b> {{ errors['_form'] }}</div>{% endif %}
+      {% if options %}
+      <div class="f seg-gap{% if errors.get('value') %} conflict{% endif %}">
+        <span class="label" id="l-value">Result</span>
+        <div class="seg" role="radiogroup" aria-labelledby="l-value">
+          {% for value, text in options %}<label><input type="radio" name="value" value="{{ value }}"{% if values.get('value') == value %} checked{% endif %}><span>{{ text }}</span></label>{% endfor %}
+        </div>
+        {% if errors.get('value') %}<div class="msg">{{ errors['value'] }}</div>{% endif %}
+      </div>
+      {% else %}
+      <div class="row">
+        <div class="f{% if errors.get('value') %} conflict{% endif %}">
+          <label for="f-value">Result (mmol/L)</label>
+          <input id="f-value" name="value" type="text" inputmode="decimal" value="{{ values.get('value', '') }}" autocomplete="off"{% if errors.get('value') %} aria-invalid="true" aria-describedby="f-value-msg"{% endif %}>
+          {% if errors.get('value') %}<div class="msg" id="f-value-msg">{{ errors['value'] }}</div>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="notice">Check the patient's name and number before saving. A result cannot be changed after saving.</div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Save result</button><a class="btn-g" href="/lab-requests">Back to the list</a></div>
+    </div>
+  </form>
+</main>
+{% endblock %}

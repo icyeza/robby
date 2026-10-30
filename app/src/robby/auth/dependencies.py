@@ -66,12 +66,26 @@ def current_session(request: Request, db: DbDep, settings: SettingsDep) -> Curre
     raise NotAuthenticated
 
 
-def require(*roles: Role) -> Callable[[CurrentUser], CurrentUser]:
-    """Dependency admitting the listed roles (any role when none are listed), after the forced
-    password change."""
-    allowed = frozenset(roles)
+def current_session_untouched(request: Request, db: DbDep, settings: SettingsDep) -> CurrentUser:
+    """current_session for a request the page sends by itself (polling): the idle timer is not
+    moved, so an unattended screen still signs out after the idle limit."""
+    resolved = resolve_session(
+        db, settings, request.cookies.get(SESSION_COOKIE), now=utcnow(), touch=False
+    )
+    if resolved.state is SessionState.VALID and resolved.session is not None:
+        return CurrentUser(resolved.session.user, resolved.session)
+    if resolved.state in (SessionState.IDLE, SessionState.ABSOLUTE):
+        raise SessionEnded(resolved.state.value)
+    raise NotAuthenticated
 
-    def dependency(current: Annotated[CurrentUser, Depends(current_session)]) -> CurrentUser:
+
+def require(*roles: Role, touch: bool = True) -> Callable[[CurrentUser], CurrentUser]:
+    """Dependency admitting the listed roles (any role when none are listed), after the forced
+    password change. touch=False: see current_session_untouched."""
+    allowed = frozenset(roles)
+    session_of = current_session if touch else current_session_untouched
+
+    def dependency(current: Annotated[CurrentUser, Depends(session_of)]) -> CurrentUser:
         if current.user.must_change_password:
             raise PasswordChangeRequired
         if allowed and current.user.role not in allowed:

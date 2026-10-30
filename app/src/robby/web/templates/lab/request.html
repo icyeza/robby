@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Request lab tests{% endblock %}
+{% block body %}
+{% include "partials/_header.html" %}
+<main class="page narrow">
+  {% include "partials/_banner.html" %}
+  <div class="crumbs"><a href="/patients">Find patient</a> / <a href="/admissions/{{ admission.code }}">{{ admission.patient_name or admission.code }}</a> / Lab tests</div>
+  <h1>Request lab tests</h1>
+  <p class="lede">{{ admission.code }}{% if admission.patient_name %} · {{ admission.patient_name }} ({{ admission.patient_number }}){% endif %} · admitted {{ admission.admitted_at | local_dt }}</p>
+
+  <form class="sec" method="post" action="/admissions/{{ admission.code }}/lab-requests">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      <fieldset class="f lab-tests{% if errors.get('test') %} conflict{% endif %}"{% if errors.get('test') %} aria-describedby="f-test-msg"{% endif %}>
+        <legend class="label">Tests</legend>
+        {% for value, name, waiting in tests %}
+        <label class="lab-test"><input type="checkbox" name="test" value="{{ value }}"{% if value in values.get('tests', []) %} checked{% endif %}{% if waiting %} disabled{% endif %}>{{ name }}{% if waiting %} <span class="muted">already requested, waiting for the lab</span>{% endif %}</label>
+        {% endfor %}
+        {% if errors.get('test') %}<div class="msg" id="f-test-msg">{{ errors['test'] }}</div>{% endif %}
+      </fieldset>
+      <div class="f{% if errors.get('note') %} conflict{% endif %}">
+        <label for="f-note">Note for the lab <span class="optional">(optional)</span></label>
+        <input id="f-note" name="note" type="text" maxlength="{{ note_max }}" value="{{ values.get('note', '') }}" autocomplete="off"{% if errors.get('note') %} aria-invalid="true" aria-describedby="f-note-msg"{% endif %}>
+        {% if errors.get('note') %}<div class="msg" id="f-note-msg">{{ errors['note'] }}</div>{% endif %}
+      </div>
+      <div class="f">
+        <label class="lab-test"><input type="checkbox" name="urgent" value="1"{% if values.get('urgent') %} checked{% endif %}>Urgent: the lab sees it at the top of its list</label>
+      </div>
+      <div class="notice">The lab technician sees the patient's name and number, the tests and this note. Blood pressure is measured at the bedside and is not requested here.</div>
+      <div class="actions tight"><button class="btn btn-p" type="submit">Send to the lab</button><a class="btn-g" href="/admissions/{{ admission.code }}">Cancel</a></div>
+    </div>
+  </form>
+</main>
+{% endblock %}

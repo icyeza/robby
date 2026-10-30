@@ -5,13 +5,14 @@ renders it and the template gets typed fields instead of a loose dict."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from robby.clinical import classify as cls
 from robby.clinical import labels, service
-from robby.models import Admission, DeliveryOutcome, ScreeningOmission
+from robby.models import Admission, DeliveryOutcome, LabResult, ScreeningOmission
 from robby.monitoring.readiness import is_high
 
 SAVED_AT_SHOWN = "%H:%M"
@@ -42,6 +43,7 @@ class ResultView:
     active_since: str | None = None
     not_given: list[str] = field(default_factory=list)  # optional inputs left blank
     model_active: bool = False  # no signal, but a model is active: scoring failed
+    rescored_at: datetime | None = None  # the signal was updated after this HIV result
 
 
 def details_view(admission: Admission) -> list[tuple[str, str]]:
@@ -113,6 +115,7 @@ def result_view(db: Session, admission: Admission, zone: ZoneInfo) -> ResultView
         return replace(view, model_active=service.has_active_model(db))
     prediction, model = predicted
     cut = service.readiness_cut_of(db, admission)
+    prompted = db.get(LabResult, prediction.lab_result_id) if prediction.lab_result_id else None
     vector = prediction.feature_vector
     return replace(
         view,
@@ -121,6 +124,7 @@ def result_view(db: Session, admission: Admission, zone: ZoneInfo) -> ResultView
         high=is_high(float(prediction.probability), cut),
         model_label=model.version_label,
         active_since=service.activated_at(db, model).astimezone(zone).strftime(ACTIVE_SINCE_SHOWN),
+        rescored_at=prompted.resulted_at if prompted else None,
         not_given=[
             labels.DETAIL_LABELS[name]
             for name, _, _ in labels.DETAIL_ORDER

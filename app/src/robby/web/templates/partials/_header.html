@@ -1,7 +1,7 @@
 <header class="top"><div class="top-in">
   <a class="mark" href="/"><span class="mark-tiles" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span>Robson Readiness</a>
 {% if who %}
-  <nav>{% for link in nav %}<a{% if link.active %} class="on" aria-current="page"{% endif %} href="{{ link.path }}">{{ link.label }}</a>{% endfor %}</nav>
+  <nav>{% for link in nav %}<a{% if link.active %} class="on" aria-current="page"{% endif %} href="{{ link.path }}">{{ link.label }}{% if link.badge %}<span class="nav-badge" hx-get="{{ link.badge }}" hx-trigger="load, every 30s" title="Open requests" aria-live="polite"></span>{% endif %}</a>{% endfor %}</nav>
   <div class="who"><b>{{ who.place }}</b>{{ who.role }} · <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="linkbtn" type="submit">Sign out</button></form></div>
 {% endif %}
 </div></header>

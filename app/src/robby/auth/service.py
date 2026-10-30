@@ -129,12 +129,13 @@ def authenticate(
 
 
 def resolve_session(
-    db: Session, settings: Settings, token: str | None, *, now: datetime
+    db: Session, settings: Settings, token: str | None, *, now: datetime, touch: bool = True
 ) -> ResolvedSession:
     """Find the session for a cookie token and say whether it is usable.
 
     A valid session's last_seen_at slides forward at most once a minute (bookkeeping only: no
-    event is logged for it)."""
+    event is logged for it). touch=False leaves it where it is: a request the page makes by
+    itself (the lab-request badge polls every 30 s) must not keep an idle session alive."""
     if not token:
         return ResolvedSession(SessionState.MISSING)
     row = db.scalar(select(UserSession).where(UserSession.token_hash == hash_token(token)))
@@ -144,7 +145,7 @@ def resolve_session(
         return ResolvedSession(SessionState.ABSOLUTE)
     if now - row.last_seen_at >= timedelta(minutes=settings.session_idle_minutes):
         return ResolvedSession(SessionState.IDLE)
-    if now - row.last_seen_at >= TOUCH_INTERVAL:
+    if touch and now - row.last_seen_at >= TOUCH_INTERVAL:
         row.last_seen_at = now
         db.flush()
     return ResolvedSession(SessionState.VALID, row)

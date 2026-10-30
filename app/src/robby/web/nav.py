@@ -13,6 +13,7 @@ class NavItem:
     label: str
     path: str
     also: tuple[str, ...] = ()  # other path prefixes that belong to this item
+    badge: str | None = None  # htmx fragment with a count, refreshed every 30 s
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class NavLink:
     label: str
     path: str
     active: bool
+    badge: str | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,7 @@ NAV: dict[Role, tuple[NavItem, ...]] = {
     Role.LAB_TECHNICIAN: (
         NavItem("New admission", "/admissions/new"),
         NavItem("Recent entries", "/admissions"),
+        NavItem("Lab requests", "/lab-requests", badge="/lab-requests/count"),
     ),
     Role.CLINICIAN: (NavItem("Find patient", "/patients", also=("/admissions",)),),
     Role.FACILITY_ADMIN: (
@@ -70,7 +73,7 @@ def nav_for(role: Role, current_path: str) -> list[NavLink]:
     lengths = {item.path: _match_length(current_path, item) for item in items}
     matching = [item for item in items if lengths[item.path]]
     active = max(matching, key=lambda item: lengths[item.path]) if matching else None
-    return [NavLink(item.label, item.path, item is active) for item in items]
+    return [NavLink(item.label, item.path, item is active, item.badge) for item in items]
 
 
 def who_for(user: AppUser) -> Who:

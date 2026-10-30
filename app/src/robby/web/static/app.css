@@ -106,3 +106,18 @@ form.inline{display:inline}
 .fetch-note{margin:14px 0 0}
 .fetch-note p{margin:8px 0 4px}
 .fetch-note ul{margin:0;padding-left:20px}
+
+/* ---- lab requests (robby/lab) ---- */
+nav a .nav-badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--brand);color:#fff;font-size:12px;font-weight:700}
+nav a .nav-badge:empty{display:none}
+.st.urgent{background:var(--error-bg);color:var(--error)}
+.st.cancelled{background:#fff;color:var(--ink-3);border:1px solid var(--line)}
+fieldset.lab-tests{border:none;margin:0 0 18px;padding:0}
+.lab-test{display:flex;align-items:center;gap:8px;font-weight:400;margin:6px 0;cursor:pointer}
+.lab-test input{width:16px;height:16px;accent-color:var(--brand)}
+.lab-lines{list-style:none;margin:0;padding:0}
+.lab-lines li{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line)}
+.lab-lines li:last-child{border-bottom:none}
+.lab-lines .what{font-weight:600}
+.lab-lines .push{margin-left:auto}
+.n-v.later{color:var(--ok);margin-top:4px}

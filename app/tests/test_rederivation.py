@@ -3,7 +3,9 @@
 Admissions are saved through the real form with a real packaged model (built from synthetic data,
 as in test_serving_contract). Every stored classification is then recomputed from the admission's
 stored Robson fields under the rule set it names, and every stored prediction from its stored
-feature vector under the model it names; both must reproduce the stored result exactly.
+feature vector under the model it names; both must reproduce the stored result exactly. That
+includes a prediction re-scored after an HIV result (robby.lab), whose feature vector must also
+be the one the form would have produced had the HIV status been entered at admission.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 import robson_serving
 from fastapi import FastAPI
@@ -26,9 +29,12 @@ from sqlalchemy.orm import Session
 from robby.clinical.classify import classify_inputs, robson_inputs
 from robby.clinical.scoring import ModelRuntime
 from robby.config import Settings, default_rule_set_path
+from robby.lab import service as lab
 from robby.models import (
     Admission,
+    AppUser,
     Classification,
+    LabTest,
     ModelState,
     ModelVersion,
     Prediction,
@@ -65,6 +71,79 @@ def packaged(tmp_path: Path) -> Path:
     write_artefact(out, model, schema, fields, reference_distributions(x, helpers.KINDS))
     write_golden(robson_serving.load(out), out)
     return out
+
+
+@pytest.fixture
+def packaged_with_hiv(tmp_path: Path) -> Path:
+    """The synthetic model with hiv_positive among its inputs, as readiness-v1.0 has it."""
+    helpers = _synthetic_helpers()  # a fresh module: patching it touches no other test
+    helpers.KINDS = {**helpers.KINDS, "hiv_positive": helpers.CATEGORICAL}
+    helpers.INPUT_SPECS = {**helpers.INPUT_SPECS, "hiv_positive": (helpers.CATEGORY, None)}
+    records = helpers.make_records(600, seed=3)
+    pattern = ["Yes", "No", "No", None, "No"]
+    records["hiv_positive"] = pd.Series(
+        [pattern[i % len(pattern)] for i in range(len(records))], dtype=object
+    )
+    model, x = helpers.fit_model(records)
+    schema = helpers.make_schema(model)
+    out = tmp_path / "synthetic-hiv-v0"
+    fields = helpers.manifest_fields(schema, "synthetic-hiv-v0")
+    write_artefact(out, model, schema, fields, reference_distributions(x, helpers.KINDS))
+    write_golden(robson_serving.load(out), out)
+    return out
+
+
+def _admit(client: TestClient, world: dict[str, Any], db: Session, **changes: str) -> Admission:
+    response = post_form(client, world, **changes)
+    assert response.status_code == 303, response.text
+    admission = db.scalar(select(Admission).where(Admission.code == saved_code(response)))
+    assert admission is not None
+    return admission
+
+
+def test_a_prediction_rescored_after_an_hiv_result_is_re_derived(
+    app: FastAPI,
+    client: TestClient,
+    db: Session,
+    settings: Settings,
+    packaged_with_hiv: Path,
+) -> None:
+    load_rule_set_file(db, default_rule_set_path())
+    facility = make_facility(db)
+    technician: AppUser = make_user(db, role=Role.LAB_TECHNICIAN, facility=facility)
+    clinician = make_user(db, role=Role.CLINICIAN, facility=facility)
+    row = sign_in_client(client, db, settings, technician)
+    model = make_model_version(db, state=ModelState.ACTIVE)
+    model.artefact_path = str(packaged_with_hiv)
+    db.commit()
+    runtime = ModelRuntime(packaged_with_hiv.parent)
+    app.state.model_runtime = runtime
+    world: dict[str, Any] = {"csrf": csrf_for(settings, row), "settings": settings}
+
+    told = _admit(client, world, db, patient_number="HIV-1", d_hiv_positive="Yes")
+    later = _admit(client, world, db, patient_number="HIV-2")
+    (request,) = lab.request_tests(
+        db, clinician, later, [LabTest.HIV_RAPID], note=None, urgent=False
+    )
+    recorded = lab.record_result(db, runtime, technician, request.id, "positive")
+    db.commit()
+    assert recorded.rescore == "ok" and recorded.prediction is not None
+
+    by_admission = {
+        p.admission_id: p
+        for p in db.scalars(select(Prediction).where(Prediction.supersedes_id.is_(None)))
+    }
+    entered, rescored = by_admission[told.id], recorded.prediction
+    assert rescored.supersedes_id == by_admission[later.id].id
+    assert rescored.feature_vector["hiv_positive"] == "Yes"
+    assert rescored.feature_vector == entered.feature_vector  # as the form would have scored it
+    assert rescored.probability == entered.probability
+
+    scorer = robson_serving.load(packaged_with_hiv)
+    for stored in db.scalars(select(Prediction)):
+        probability = scorer.predict(scorer.model_frame([stored.feature_vector]))[0]
+        again = Decimal(str(probability)).quantize(PLACES, rounding=ROUND_HALF_EVEN)
+        assert again == stored.probability
 
 
 @pytest.fixture

@@ -66,6 +66,7 @@
       <div class="frame"><b>This describes what usually happens here. It is not a judgement of what ought to happen.</b> Use it to plan theatre and staff readiness. It is not a recommendation for or against cesarean.</div>
       <dl class="facts">
         <dt>Model</dt><dd>{{ view.model_label }} · active since {{ view.active_since }}</dd>
+        {% if view.rescored_at %}<dt>Updated</dt><dd>After the HIV test result recorded {{ view.rescored_at | local_dt }}. The signal from admission stays on record.</dd>{% endif %}
         {% if view.not_given %}<dt>Inputs not given</dt><dd>{{ view.not_given[:4] | join(", ") }}{% if view.not_given | length > 4 %} and {{ view.not_given | length - 4 }} more{% endif %}</dd>{% endif %}
       </dl>
     </div>
@@ -96,8 +97,31 @@
   <div class="card-h"><span>Screening recorded</span></div>
   <div class="card-b kv3">
     <div><div class="n-k">Blood pressure</div>{% if view.screening.bp.reason %}<div class="n-v warn">Not measured · {{ view.screening.bp.reason }}</div>{% else %}<div class="n-v">{{ view.screening.bp.text }}</div>{% endif %}</div>
-    <div><div class="n-k">Proteinuria</div>{% if view.screening.protein.reason %}<div class="n-v warn">Not measured · {{ view.screening.protein.reason }}</div>{% else %}<div class="n-v">{{ view.screening.protein.text }}</div>{% endif %}</div>
-    <div><div class="n-k">Glucose</div>{% if view.screening.glucose.reason %}<div class="n-v warn">Not measured · {{ view.screening.glucose.reason }}</div>{% else %}<div class="n-v">{{ view.screening.glucose.text }}</div>{% endif %}</div>
+    <div><div class="n-k">Proteinuria</div>{% if view.screening.protein.reason %}<div class="n-v warn">Not measured · {{ view.screening.protein.reason }}</div>{% else %}<div class="n-v">{{ view.screening.protein.text }}</div>{% endif %}{% if lab.later.protein %}<div class="n-v later">Screening completed later: {{ lab.later.protein.text }} · {{ lab.later.protein.at | local_dt }}</div>{% endif %}</div>
+    <div><div class="n-k">Glucose</div>{% if view.screening.glucose.reason %}<div class="n-v warn">Not measured · {{ view.screening.glucose.reason }}</div>{% else %}<div class="n-v">{{ view.screening.glucose.text }}</div>{% endif %}{% if lab.later.glucose %}<div class="n-v later">Screening completed later: {{ lab.later.glucose.text }} · {{ lab.later.glucose.at | local_dt }}</div>{% endif %}</div>
+  </div>
+</section>
+
+<section class="card spaced">
+  <div class="card-h"><span>Lab tests</span></div>
+  <div class="card-b">
+    {% if lab.lines %}
+    <ul class="lab-lines">
+      {% for line in lab.lines %}
+      <li>
+        <span class="what">{{ line.test }}</span>
+        {% if line.status == 'requested' %}<span class="st awaiting">{{ line.status_text }}</span>{% elif line.status == 'resulted' %}<span class="st done">{{ line.status_text }}</span>{% else %}<span class="st cancelled">{{ line.status_text }}</span>{% endif %}
+        {% if line.urgent %}<span class="st urgent">Urgent</span>{% endif %}
+        <span class="muted">Requested {{ line.requested_at | local_dt }}{% if line.note %} · Note: {{ line.note }}{% endif %}</span>
+        {% if line.result %}<span>Result: <b>{{ line.result }}</b> <span class="muted">{{ line.closed_at | local_dt }}</span></span>{% endif %}
+        {% if line.reason %}<span class="muted">Cancelled {{ line.closed_at | local_dt }}: {{ line.reason }}</span>{% endif %}
+        {% if line.status == 'requested' and not view.replaced_by %}<a class="push btn-g" href="/admissions/{{ admission.code }}/lab-requests/{{ line.request_id }}/cancel">Cancel request</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No lab tests requested for this admission.</p>
+    {% endif %}
   </div>
 </section>
 
@@ -107,6 +131,7 @@
 
 <div class="actions">
   {% if not view.replaced_by and not view.outcome %}<a class="btn btn-p" href="/admissions/{{ admission.code }}/outcome">Record outcome</a>{% endif %}
+  {% if not view.replaced_by and lab.can_request %}<a class="btn btn-s" href="/admissions/{{ admission.code }}/lab-requests/new">Request lab tests</a>{% endif %}
   <a class="btn btn-s" href="/patients">Find another patient</a>
   <a class="btn-g" href="#" data-print>Print</a>
 </div>

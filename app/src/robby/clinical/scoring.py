@@ -157,11 +157,40 @@ class ModelRuntime:
 
 def score(model: ActiveModel, parsed: Parsed, facility: Facility) -> Score:
     """Probability and the exact feature row. Raises on anything the model refuses."""
+    return score_row(model, model.scorer.build_row(canonical(parsed, facility)))
+
+
+def score_row(model: ActiveModel, row: dict[str, Any]) -> Score:
+    """Probability of a feature row that is already built (a stored vector, re-scored)."""
     scorer = model.scorer
-    row = scorer.build_row(canonical(parsed, facility))
     probability = scorer.predict(scorer.model_frame([row]))[0]
     return Score(
         model.row.id,
         Decimal(str(probability)).quantize(Decimal("0.00001"), rounding=ROUND_HALF_EVEN),
         row,
     )
+
+
+def yes_no_level(model: ActiveModel, name: str, yes: bool) -> str | None:
+    """The model's own spelling of yes or no for the yes/no input `name` (e.g. "Yes"), as the
+    admission form submits it; None when the model does not read that input."""
+    for field in model.scorer.schema.inputs:
+        if field.name == name and field.levels is not None:
+            wanted = "yes" if yes else "no"
+            return next((level for level in field.levels if level.lower() == wanted), None)
+    return None
+
+
+def with_input(
+    model: ActiveModel, vector: Mapping[str, Any], name: str, value: Any
+) -> dict[str, Any]:
+    """`vector` (a stored feature row) with the input `name` set to `value`, spelled by the
+    scorer itself: the columns the scorer derives differently once `name` is given (the column
+    of that name, and any indicator built from it) are taken from its own row, the rest are kept
+    as stored. Raises on a value the model refuses."""
+    scorer = model.scorer
+    without = scorer.build_row({})
+    given = scorer.build_row({name: value})
+    row = dict(vector)
+    row.update({column: v for column, v in given.items() if without.get(column) != v})
+    return row

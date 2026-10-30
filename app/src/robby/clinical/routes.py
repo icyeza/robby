@@ -30,6 +30,7 @@ from robby.clinical.form import (
 )
 from robby.clinical.views import result_view
 from robby.errors import NotAllowed, NotFound
+from robby.lab import views as lab_views
 from robby.models import Admission, DeliveryMode, Role
 from robby.timeutil import utcnow
 from robby.web.csrf import CsrfChecked
@@ -369,7 +370,14 @@ async def import_upload(
 def result(request: Request, code: str, db: DbDep, current: Clinician) -> Response:
     admission = _get(db, current, code)
     view = result_view(db, admission, request.app.state.settings.zone)
-    return render(request, "clinical/result.html", current=current, admission=admission, view=view)
+    return render(
+        request,
+        "clinical/result.html",
+        current=current,
+        admission=admission,
+        view=view,
+        lab=lab_views.section(db, admission),
+    )
 
 
 def _current_or_conflict(
