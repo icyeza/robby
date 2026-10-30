@@ -87,6 +87,19 @@ GLUCOSE_UNITS: dict[str, float] = {"mmol/l": 1.0, "mg/dl": 1 / 18.016}
 GESTATION_UNITS: dict[str, float] = {"wk": 1.0, "weeks": 1.0, "d": 1 / 7, "days": 1 / 7}
 BP_UNITS = frozenset({"mm[hg]", "mmhg"})
 
+# Lab requests (robby.lab) as ServiceRequest.code and Observation.code: lab_test value ->
+# (system, code, display). ASSUMPTION: no LOINC code for "HIV rapid test" could be cited with
+# confidence (several exist, by method and specimen), so it is a placeholder in the project's
+# lab-test CodeSystem until the hospital's lab profile names the code it uses.
+LAB_SYSTEM = "https://icyeza.github.io/robby/fhir/CodeSystem/lab-test"
+LAB_TESTS: dict[str, tuple[str, str, str]] = {
+    "urine_protein": (LOINC, "20454-5", "Protein [Presence] in Urine by Test strip"),
+    "blood_glucose": (LOINC, "15074-8", "Glucose [Moles/volume] in Blood"),
+    "hiv_rapid": (LAB_SYSTEM, "hiv-rapid-test", "HIV rapid test (placeholder code)"),
+}
+# Observation statuses that are a result to record (preliminary, registered ... are not).
+RESULT_STATUSES = frozenset({"final", "amended", "corrected"})
+
 # Statuses that mean the resource does not count.
 IGNORED_STATUS = frozenset({"entered-in-error", "cancelled"})
 # Condition verification statuses: refuted records "No"; entered-in-error is ignored.

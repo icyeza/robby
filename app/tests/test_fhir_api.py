@@ -223,4 +223,11 @@ def test_metadata_is_a_capability_statement(client: TestClient) -> None:
     body = response.json()
     assert (body["resourceType"], body["fhirVersion"]) == ("CapabilityStatement", "4.0.1")
     kinds = {r["type"] for r in body["rest"][0]["resource"]}
-    assert kinds == {"Bundle", "Patient", "Encounter", "Observation", "Condition"}
+    assert kinds == {
+        "Bundle",
+        "Patient",
+        "Encounter",
+        "Observation",
+        "Condition",
+        "ServiceRequest",  # lab requests: tests/test_fhir_lab.py
+    }

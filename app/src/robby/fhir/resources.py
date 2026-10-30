@@ -106,9 +106,22 @@ def capability_statement(now: datetime) -> Json:
                 },
                 "resource": [
                     {"type": "Bundle", "interaction": [{"code": "create"}]},
+                    {
+                        "type": "ServiceRequest",
+                        "interaction": [{"code": "search-type"}],
+                        "searchParam": [{"name": "status", "type": "token"}],
+                        "documentation": "Open lab requests of the token's facility "
+                        "(status=active only).",
+                    },
+                    {
+                        "type": "Observation",
+                        "interaction": [{"code": "create"}],
+                        "documentation": "The result of one lab request: basedOn its "
+                        "ServiceRequest. Also accepted inside an admission Bundle.",
+                    },
                     *[
                         {"type": kind, "documentation": "Accepted inside a Bundle only."}
-                        for kind in ("Patient", "Encounter", "Observation", "Condition")
+                        for kind in ("Patient", "Encounter", "Condition")
                     ],
                 ],
             }

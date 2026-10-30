@@ -16,12 +16,13 @@ Bundle (JSON) --adapter.read_bundle--> template rows + where each value came fro
 
 | Module | What it does |
 |---|---|
-| `mapping.py` | The mapping as data: FHIR code -> template field, units, dataAbsentReason codes |
+| `mapping.py` | The mapping as data: FHIR code -> template field, units, dataAbsentReason codes, lab test codes |
 | `adapter.py` | Reads a Bundle: one admission per Encounter, every problem as an `Issue` on a FHIR element |
 | `intake.py` | Template table -> importer checks -> issues by element; saving, all or nothing |
 | `resources.py` | OperationOutcome, transaction-response Bundle, CapabilityStatement |
 | `client.py` | Pull mode: the hospital's FHIR server (`HospitalRecords` protocol, `FhirClient`) |
-| `routes.py` | `POST /api/v1/fhir/Bundle`, `GET /api/v1/fhir/metadata`, `POST /admissions/fetch` |
+| `lab.py` | Lab requests as ServiceRequest; a result Observation read and checked like the lab technician's form |
+| `routes.py` | `POST /api/v1/fhir/Bundle`, `GET /api/v1/fhir/metadata`, `GET /api/v1/fhir/ServiceRequest`, `POST /api/v1/fhir/Observation`, `POST /admissions/fetch` |
 
 ## What a Bundle must hold
 
@@ -116,6 +117,38 @@ so a Bundle can be sent twice. Events: `admissions.imported`, `api_import.reject
 `api_import.nothing_new`, with `channel: fhir`; no patient identifier in any payload.
 
 `GET /api/v1/fhir/metadata` returns a small CapabilityStatement (no token needed).
+
+## Lab requests: `GET /api/v1/fhir/ServiceRequest`, `POST /api/v1/fhir/Observation`
+
+The hospital's lab system can take the lab requests (see `robby/lab` and the app README) and send
+the results back, with the same bearer token (the token's lab technician gives the facility).
+
+- `GET /api/v1/fhir/ServiceRequest?status=active`: a `searchset` Bundle of the facility's open
+  requests, urgent first, then the oldest. Each `ServiceRequest` has `status` `active`, `intent`
+  `order`, `priority` `urgent` or `routine`, `code` (below), `subject.identifier` the patient
+  number (with `ROBBY_FHIR_PATIENT_ID_SYSTEM` as its system when set; never the name),
+  `encounter.identifier` the admission code, `authoredOn`, and the clinician's `note`. Only
+  `status=active` is supported (`400` otherwise).
+- `POST /api/v1/fhir/Observation` (`application/fhir+json`): one result. `basedOn` names the
+  request (`ServiceRequest/<id>`), `status` is `final` (or `amended`, `corrected`), `code`
+  is the request's code, and the value is read like an admission Bundle's (glucose
+  `valueQuantity` in `mmol/L` or `mg/dL`; dipstick `valueCodeableConcept` or `valueString`; HIV
+  `positive`, `negative` or `indeterminate` as a code, display, text or string) and then checked
+  exactly like the lab technician's form. Answers: `201` an Observation with the result's `id`
+  and what it answered (the value is not echoed); `422` an OperationOutcome naming the element;
+  `404` an unknown request or one of another facility; `409` already resulted or cancelled;
+  `400`, `401`, `415` as for the Bundle. An HIV result re-scores the readiness signal as from
+  the form; the event is the same `lab.resulted` (codes and test names only).
+
+| Test | `code` |
+|---|---|
+| Urine protein (dipstick) | LOINC `20454-5` Protein [Presence] in Urine by Test strip |
+| Blood glucose | LOINC `15074-8` Glucose [Moles/volume] in Blood |
+| HIV rapid test | `hiv-rapid-test` in `https://icyeza.github.io/robby/fhir/CodeSystem/lab-test` * |
+
+\* **Placeholder.** Several LOINC codes exist for HIV tests (by method and specimen) and none
+could be cited with confidence for "HIV rapid test", so none was invented; replace the line in
+`mapping.LAB_TESTS` with the code of the hospital's lab profile.
 
 ## Pull: "Fetch from hospital system"
 

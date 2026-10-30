@@ -571,6 +571,9 @@ and the Excel import. The codes understood, the units and the placeholder codes 
   system" next to the patient number. It pre-fills the form for review and never saves. If the
   hospital system is down, slow (`ROBBY_FHIR_TIMEOUT_SECONDS`) or answers an error, the form says
   so and works as usual (NFR7).
+- **Lab requests**: `GET /api/v1/fhir/ServiceRequest?status=active` lists the facility's open
+  lab requests and `POST /api/v1/fhir/Observation` (with `basedOn` the ServiceRequest) records a
+  result, checked like the lab technician's form (same token; codes in the FHIR README).
 
 Try it with the examples and the stand-in server (from `app/`):
 
