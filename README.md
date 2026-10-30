@@ -2,13 +2,6 @@
 
 **Automated Robson Ten-Group classification and cesarean readiness system for Rwandan maternity units**
 
-| | |
-|---|---|
-| Demonstration | Synthetic data only: `uv run robby-admin demo load`, then `sh app/scripts/demo.sh` ([Setup](#setup)); accounts under [Try it](#try-it) |
-| Walkthrough video | *link to be added* |
-| Technical report (PDF) | *link to be added* |
-| Repository | <https://github.com/icyeza/robby> |
-
 ## Overview
 
 At admission to a maternity ward, the system does six things:
