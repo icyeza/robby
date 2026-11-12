@@ -7,7 +7,8 @@
 | Walkthrough video | <https://vimeo.com/1241493666> |
 | Technical report (PDF) | <https://drive.google.com/file/d/11RPQAZPWRKz6p1VkCVT3I6MBe2sMFUs6/view?usp=sharing> |
 | Repository | <https://github.com/icyeza/robby> |
-| Demonstration | Synthetic data only: `uv run robby-admin demo load`, then `sh app/scripts/demo.sh` ([Setup](#setup)); accounts under [Try it](#try-it) |
+| Live application | <https://robsonreadiness.org> (synthetic admissions; test accounts under [Try it](#try-it)) |
+| Run locally | `uv run robby-admin demo load`, then `sh app/scripts/demo.sh` ([Setup](#setup)) |
 
 ## Overview
 
@@ -72,9 +73,10 @@ records were shared under a data-sharing agreement and are **not** in this repos
 
 ## Try it
 
-The live demonstration runs on synthetic admissions only, with a banner on every page saying so.
-Four demo hospitals each have their own accounts (`da` to `dd`), and the password for every account
-is `demo-password-123`.
+The live application at <https://robsonreadiness.org> is served the way a production instance would be, with no demonstration
+banner. Its database holds synthetic admissions only, and no real patient data has been loaded.
+Accounts cannot be created from the web: an administrator creates them. Four test hospitals each have
+their own accounts (`da` to `dd`), and the password for every account is `demo-password-123`.
 
 | Sign in as | To see |
 |---|---|
@@ -154,7 +156,7 @@ For the same example data as the live demonstration, run `uv run robby-admin dem
 
 ## Deployment
 
-The live demonstration runs on an Ubuntu 24.04 server, installed by
+The live application runs on an Ubuntu 24.04 server, installed by
 [`deploy/install.sh`](deploy/install.sh). The script is safe to run again: a later run updates the
 code, the environment and the schema. It sets up:
 
@@ -326,12 +328,12 @@ dropped silently.
 | NFR5 Data integrity | No update in place; tamper-evident history | Completed | Database triggers refuse UPDATE/DELETE on clinical rows; hash-chained event log (`robby-admin events verify`). Corrections stay in the schema, but the web pages no longer offer them |
 | NFR6 Security and privacy | HTTPS, RBAC, encrypted data and backups | Completed | Patient number and name encrypted at rest with AES-256-GCM, plus a blind index for search ([`crypto.py`](app/src/robby/crypto.py)); daily [backups](deploy/backup.sh) encrypted with age to a key kept off the server, restore tested, off-site copy pulled and verified; argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports |
 | NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([screenshot](docs/screenshots/fetch-timeout.png), [`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
-| NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live demonstration server |
-| NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not implemented** | Sessions not yet run: they need the ethics clearance |
+| NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live server at <https://robsonreadiness.org> |
+| NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not yet run** | Ethics clearance has now arrived; the sessions still have to be scheduled with clinicians |
 | Lab test requests (added on the supervisor's advice) | The clinician can obtain missing screening results and HIV status from the lab | Completed | [request](docs/screenshots/lab-request-new.png), [lab queue](docs/screenshots/lab-requests.png); an HIV result re-scores the readiness signal; also as FHIR ServiceRequest/Observation; [`lab/`](app/src/robby/lab/) |
 | New-patient requests to the lab | A clinician whose patient has no admission yet can ask the lab to enter it | Completed | From Find patient (number, optional name, note, urgent); the lab enters it from the same list as the tests, with the form filled in; the clinician sees it entered, with a link. Number and name encrypted at rest; [`admission_requests.py`](app/src/robby/lab/admission_requests.py), migration 0009 |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
-| Live pilot in a partner unit | Use in a real ward | **Not implemented** | Ethics clearance has not arrived. As the proposal provides, the system runs as a public demonstration instance on synthetic data instead |
+| Live pilot in a partner unit | Use in a real ward | **Not yet started** | Ethics clearance has now arrived, but no real patient data has been loaded. Until a unit agrees to a pilot, the system runs on synthetic data at <https://robsonreadiness.org> |
 
 Out of scope as planned: a wearable or physiological screening layer, and computer-vision extraction
 from antenatal cards or partographs.
@@ -387,7 +389,7 @@ PostgreSQL 16, and lint and type checks.
 | Cross-browser end to end | htmx and a strict CSP behave differently per browser | Chrome, Edge, Firefox pass at desktop and phone size | Missing favicon fixed; an abandoned request no longer logged as an error |
 | Performance (NFR1) | Save under 500 ms, report under 3 s | Save 149 ms, report 172 ms (p50); still within limits on 1 core | 1 core and 1 GB stated as the minimum server |
 | Stress (Locust) | Find where it breaks, and how | Collapsed at ~100 users before; after the fixes, no errors up to 90 | Pool sized, quick 503 "busy", password hashing capped |
-| Accessibility (axe-core) | Usability sessions wait on ethics clearance | 8 contrast failures, now 0 on 19 screens | Three colours darkened |
+| Accessibility (axe-core) | Usability sessions with clinicians not yet run | 8 contrast failures, now 0 on 19 screens | Three colours darkened |
 | Dependency audit (pip-audit) | Most common source of security holes | 11 vulnerable training-side packages, now 0 | Packages upgraded; audit runs in CI |
 | Model validation | A model must work at a hospital it never saw | Mean AUC 0.752, calibration slope 0.99, leave one hospital out | Selection rule committed before training |
 
@@ -499,7 +501,7 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
 
 ### 6. Accessibility and dependency audits
 
-- **Why.** Usability sessions with clinicians wait for ethics clearance. Meanwhile, automated
+- **Why.** Usability sessions with clinicians are still to be scheduled (ethics clearance has arrived). Meanwhile, automated
   accessibility rules catch problems any user would hit. Dependencies are the most common source
   of security holes.
 - **How.** [`a11y_check.py`](app/scripts/a11y_check.py) runs axe-core's WCAG 2.1 A/AA rules on 18
