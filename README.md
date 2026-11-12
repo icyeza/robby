@@ -346,7 +346,7 @@ every screen that shows it says so.
 ## Screens
 
 Every screen of the running application is in [`docs/screenshots/`](docs/screenshots/), taken from
-the demonstration server.
+the live server at <https://robsonreadiness.org>, with no demonstration banner.
 
 | Admission form: missing fields, the field that decides | Contradictory inputs |
 |---|---|
