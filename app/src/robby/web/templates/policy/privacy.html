@@ -37,7 +37,7 @@
   <p>The connection to the site uses HTTPS. The encryption key is held in the server's settings, not in the database. There is one key for all patients and no key rotation; losing the key makes the identifiers unreadable for everyone.</p>
 
   <h2>6. Records are never changed or deleted</h2>
-  <p>The database refuses any update or delete of admissions, screening omissions, classifications, predictions, outcomes, lab requests and results, policy acceptances, and of the event log. A correction is stored as a new record that points to the one it replaces, with a reason. Why: so that the audit of cesarean rates and of the model's accuracy can be trusted, and so that a change to history would be noticed.</p>
+  <p>The database refuses any update or delete of admissions, screening omissions, classifications, predictions, outcomes, lab requests and results, policy acceptances, and of the event log. The database is built to store a correction as a new record that points to the one it replaces, with a reason, but the pages do not offer corrections at present. <b>Planned.</b> Why: so that the audit of cesarean rates and of the model's accuracy can be trusted, and so that a change to history would be noticed.</p>
   <p>The event log is chained with hashes and can be checked for tampering by an administrator command. These protections are database rules. Someone with full control of the database server could switch them off; the hash chain would then reveal changes to the event log, but not changes to clinical records.</p>
 
   <h2>7. Backups</h2>
@@ -49,7 +49,7 @@
   <h2>9. Your rights, and how requests are handled today</h2>
   <ul>
     <li><b>Access:</b> a request goes to the contact below; a clinician at the woman's facility searches by patient number or name and reports to her what is held. There is no self-service access or export. <b>Planned.</b></li>
-    <li><b>Correction:</b> staff of the facility can record a corrected admission with a reason; the earlier version stays on file and is marked as replaced.</li>
+    <li><b>Correction:</b> the pages do not offer corrections at present, so a request goes to the contact below. A correction would be stored as a new record, with the earlier version kept and marked as replaced. <b>Planned.</b></li>
     <li><b>Erasure:</b> not supported. Records cannot be deleted. The only erasure available is destroying the encryption key, which makes all patients' names, numbers and lab values unreadable at once. Erasure of one patient is <b>planned</b>.</li>
     <li><b>Staff accounts:</b> an administrator can deactivate an account; the account's history stays in the event log.</li>
   </ul>

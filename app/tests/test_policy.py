@@ -26,6 +26,7 @@ def test_the_pages_are_public_and_show_their_version_and_date(client: TestClient
     assert f"Version {service.PRIVACY_VERSION} · 20 November 2026" in privacy.text
     assert f"Version {service.TERMS_VERSION} · 20 November 2026" in terms.text
     assert "<b>Erasure:</b> not supported" in privacy.text
+    assert "the pages do not offer corrections at present" in privacy.text
     assert "30 minutes without use and after 12 hours" in terms.text
 
 
