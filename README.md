@@ -329,7 +329,7 @@ dropped silently.
 | NFR6 Security and privacy | HTTPS, RBAC, encrypted data and backups | Completed | Patient number and name encrypted at rest with AES-256-GCM, plus a blind index for search ([`crypto.py`](app/src/robby/crypto.py)); daily [backups](deploy/backup.sh) encrypted with age to a key kept off the server, restore tested, off-site copy pulled and verified; argon2id, lockout, CSRF, strict CSP, session limits, server-side role checks, no identifiers in logs or exports |
 | NFR7 Graceful degradation | Reduced but usable results when something fails | Completed | No model: classification only ([API test](ML/tests/test_api.py)); scoring failure never blocks saving; record system unreachable: the form says so and stays usable ([screenshot](docs/screenshots/fetch-timeout.png), [`test_fhir_pull.py`](app/tests/test_fhir_pull.py)); network loss keeps the form |
 | NFR8 Deployability | One Python service under systemd behind a reverse proxy | Completed | [`deploy/`](deploy/); live server at <https://robsonreadiness.org> |
-| NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Not yet run** | Ethics clearance has now arrived; the sessions still have to be scheduled with clinicians |
+| NFR9 Usability | 7 of 8 clinicians complete an entry unaided | **Partial** | Usability sessions were held on 11–12 Nov 2026 with four clinicians (mean SUS 83.75); the results are in the final report. Fewer than the eight planned took part |
 | Lab test requests (added on the supervisor's advice) | The clinician can obtain missing screening results and HIV status from the lab | Completed | [request](docs/screenshots/lab-request-new.png), [lab queue](docs/screenshots/lab-requests.png); an HIV result re-scores the readiness signal; also as FHIR ServiceRequest/Observation; [`lab/`](app/src/robby/lab/) |
 | New-patient requests to the lab | A clinician whose patient has no admission yet can ask the lab to enter it | Completed | From Find patient (number, optional name, note, urgent); the lab enters it from the same list as the tests, with the form filled in; the clinician sees it entered, with a link. Number and name encrypted at rest; [`admission_requests.py`](app/src/robby/lab/admission_requests.py), migration 0009 |
 | Seven-algorithm comparison (stretch) | Fair comparison of model families | Exceeded | 8 families plus 4 baselines under one pre-registered selection rule |
@@ -389,7 +389,7 @@ PostgreSQL 16, and lint and type checks.
 | Cross-browser end to end | htmx and a strict CSP behave differently per browser | Chrome, Edge, Firefox pass at desktop and phone size | Missing favicon fixed; an abandoned request no longer logged as an error |
 | Performance (NFR1) | Save under 500 ms, report under 3 s | Save 149 ms, report 172 ms (p50); still within limits on 1 core | 1 core and 1 GB stated as the minimum server |
 | Stress (Locust) | Find where it breaks, and how | Collapsed at ~100 users before; after the fixes, no errors up to 90 | Pool sized, quick 503 "busy", password hashing capped |
-| Accessibility (axe-core) | Usability sessions with clinicians not yet run | 8 contrast failures, now 0 on 19 screens | Three colours darkened |
+| Accessibility (axe-core) | Automated rules catch problems any user would hit; usability sessions were held 11–12 Nov 2026 | 8 contrast failures, now 0 on 21 screens | Three colours darkened |
 | Dependency audit (pip-audit) | Most common source of security holes | 11 vulnerable training-side packages, now 0 | Packages upgraded; audit runs in CI |
 | Model validation | A model must work at a hospital it never saw | Mean AUC 0.752, calibration slope 0.99, leave one hospital out | Selection rule committed before training |
 
@@ -501,11 +501,11 @@ and Firefox 157 at desktop and phone size. Timings on smaller servers are in
 
 ### 6. Accessibility and dependency audits
 
-- **Why.** Usability sessions with clinicians are still to be scheduled (ethics clearance has arrived). Meanwhile, automated
-  accessibility rules catch problems any user would hit. Dependencies are the most common source
+- **Why.** Usability sessions with clinicians were held on 11–12 Nov 2026. Automated
+  accessibility rules catch problems any user would hit, including the ones a few sessions miss. Dependencies are the most common source
   of security holes.
-- **How.** [`a11y_check.py`](app/scripts/a11y_check.py) runs axe-core's WCAG 2.1 A/AA rules on 18
-  screens covering every role. pip-audit checks both lock files against the OSV database, in CI.
+- **How.** [`a11y_check.py`](app/scripts/a11y_check.py) runs axe-core's WCAG 2.1 A/AA rules on 21
+  screens covering every role and the public privacy and terms pages. pip-audit checks both lock files against the OSV database, in CI.
 - **Results and improvements.**
   - axe found one rule broken: colour contrast on 8 elements. After three colour changes
     (`d1035c4`) there are no violations.
@@ -591,3 +591,13 @@ classification and assessment endpoints of the ML API take 2.7 ms and 88 ms at p
     ([`fhir/mapping.py`](app/src/robby/fhir/mapping.py)).
 - **Checks.** ruff (pycodestyle, pyflakes, isort, bugbear, naming, simplify) and the ruff formatter
   run on both projects, and mypy with `disallow_untyped_defs`; all are clean.
+
+## Licence
+
+Copyright (c) 2026 Lorita Sesame Icyeza. All rights reserved. This is an academic submission
+(African Leadership University); no licence is granted except as stated in [`NOTICE`](NOTICE).
+Third-party components and their licences are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The Robson rule set is an adaptation of the WHO
+Robson Classification Implementation Manual (2017) and is licensed CC BY-NC-SA 3.0 IGO; WHO does
+not endorse it. The privacy notice and terms of use are served by the application at `/privacy`
+and `/terms`.

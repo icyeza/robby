@@ -17,8 +17,14 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+CREDIT_PREFIX = b"/* htmx 2.0.4,"
+
+
 def test_htmx_is_the_pinned_release() -> None:
-    assert sha256(STATIC / "htmx.min.js") == HTMX_SHA256
+    """Everything below the one-line credit comment is the unmodified release."""
+    data = (STATIC / "htmx.min.js").read_bytes()
+    assert data.startswith(CREDIT_PREFIX)
+    assert hashlib.sha256(data.split(b"\n", 1)[1]).hexdigest() == HTMX_SHA256
 
 
 def test_stylesheet_is_the_mockups_stylesheet_unchanged() -> None:

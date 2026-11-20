@@ -1,5 +1,17 @@
 # WHO Robson Ten-Group Classification, rule set v1.0.
-# Source: WHO Robson Classification Implementation Manual (2017).
+#
+# Adapted from: World Health Organization (2017). Robson Classification: Implementation Manual.
+# Geneva: World Health Organization. Licence of the original: CC BY-NC-SA 3.0 IGO.
+# This rule file is an adaptation of that manual and is licensed CC BY-NC-SA 3.0 IGO
+# (https://creativecommons.org/licenses/by-nc-sa/3.0/igo/): attribution, non-commercial use,
+# share-alike.
+# What was changed: (1) the criteria of the ten groups and their subgroups are written as
+# machine-readable conditions on named input fields; (2) group names are short labels, not the
+# manual's wording; (3) the consistency rule (nulliparous with a previous cesarean) and the
+# version label and checksum are additions of this project.
+# The World Health Organization does not endorse this adaptation, the software that uses it, or
+# its authors.
+#
 # Every condition must be verified against the manual (by hand) before freezing.
 # Edit the content, then re-stamp:  uv run python -m robson_engine.ruleset <this file>
 version_label: "robson-v1.0"

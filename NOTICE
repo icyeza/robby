@@ -1,0 +1,17 @@
+Robson Readiness
+Copyright (c) 2026 Lorita Sesame Icyeza. All rights reserved.
+
+This is an academic submission (African Leadership University). No licence is granted to the
+project's own code except as stated here.
+
+1. Third-party components keep their own licences. They are listed in THIRD_PARTY_NOTICES.md.
+   Nothing in LICENSE or this file changes those licences.
+
+2. The Robson rule set (ML/packages/robson_engine/src/robson_engine/rules/robson_v1.0.yaml) is an
+   adaptation of the WHO Robson Classification Implementation Manual (2017) and is licensed
+   CC BY-NC-SA 3.0 IGO (https://creativecommons.org/licenses/by-nc-sa/3.0/igo/): attribution,
+   non-commercial use, share-alike. The World Health Organization does not endorse it.
+   Anyone who copies or adapts that file must keep that licence and that notice.
+
+3. Patient data: no real patient data is in this repository. The research dataset used to train
+   the model is held under a data-sharing agreement and is not redistributed.
