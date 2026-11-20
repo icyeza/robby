@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
+from robby import events
 from robby.auth.dependencies import CurrentUser, DbDep, require
 from robby.clinical import classify as cls
 from robby.clinical import importer, labels, scoring, service, xlsx_template
@@ -438,6 +439,10 @@ async def import_upload(
 @router.get("/{code}")
 def result(request: Request, code: str, db: DbDep, current: Clinician) -> Response:
     admission = _get(db, current, code)
+    # Access log (Law 058/2021, Art 16): who opened which admission's result, in the event log.
+    # No identifiers in the payload: the entity is the admission, the actor is the clinician.
+    events.append(db, current.user, "record.viewed", entity=("admission", admission.id))
+    db.commit()
     view = result_view(db, admission, request.app.state.settings.zone)
     return render(
         request,

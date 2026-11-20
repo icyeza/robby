@@ -15,6 +15,7 @@ from robson_serving.schema import FeatureSchema
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from robby import events
 from robby.clinical.scoring import ModelRuntime
 from robby.config import Settings, default_rule_set_path
 from robby.models import (
@@ -173,6 +174,43 @@ def test_resolved_admission_is_saved_with_a_prediction(
         and "Group 5" not in page.text.split("Robson classification")[0]
     )
     assert "subgroup 5a" in page.text
+
+
+def test_the_signal_says_above_or_below_the_units_planning_level(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    activate_model(db)
+    code = saved_code(post_form(client, world))
+    as_clinician(client, db, world)
+    page = client.get(f"/admissions/{code}").text
+    assert "At or above this unit's planning level" in page
+    assert "(30 in 100)" in page and "Each facility sets its own level." in page
+    assert "about 71 had a cesarean" in page and "not a recommendation" in page
+    assert "Readiness: HIGH" not in page and "have theatre and staff ready" not in page
+    world["facility"].readiness_cut_percent = 90
+    db.commit()
+    page = client.get(f"/admissions/{code}").text
+    assert "Below this unit's planning level" in page and "(90 in 100)" in page
+
+
+def test_opening_a_result_page_is_logged_without_identifiers(
+    client: TestClient, world: dict[str, Any], db: Session
+) -> None:
+    code = saved_code(post_form(client, world))
+    admission = db.scalar(select(Admission).where(Admission.code == code))
+    assert admission is not None
+    as_clinician(client, db, world)
+    assert events_of(db, "record.viewed") == []
+    assert client.get(f"/admissions/{code}").status_code == 200
+    viewed = events_of(db, "record.viewed")
+    assert len(viewed) == 1
+    assert viewed[0].entity_type == "admission" and viewed[0].entity_id == admission.id
+    assert viewed[0].actor_id is not None and viewed[0].payload == {}
+    assert events.verify(db).ok
+    client.get(f"/admissions/{code}")
+    assert len(events_of(db, "record.viewed")) == 2
+    assert client.get("/admissions/NO-SUCH-CODE").status_code == 404
+    assert len(events_of(db, "record.viewed")) == 2
 
 
 def test_saving_without_a_model_keeps_the_classification(
