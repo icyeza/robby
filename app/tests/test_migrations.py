@@ -242,3 +242,20 @@ def test_0009_downgrade_removes_the_admission_request_tables() -> None:
     finally:
         engine.dispose()
         drop_database(url)
+
+
+def test_0010_downgrade_removes_the_policy_acceptance_table() -> None:
+    url = create_database(server_url_from_env())
+    raw = url.render_as_string(hide_password=False)
+    engine = create_engine(url)
+    try:
+        upgrade(raw)
+        downgrade(raw, "0009")
+        with engine.connect() as conn:
+            assert "policy_acceptance" not in inspect(conn).get_table_names()
+        upgrade(raw)
+        with engine.connect() as conn:
+            assert "policy_acceptance" in inspect(conn).get_table_names()
+    finally:
+        engine.dispose()
+        drop_database(url)

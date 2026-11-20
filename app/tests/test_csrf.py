@@ -5,7 +5,13 @@ import uuid
 import pytest
 from pydantic import SecretStr
 
-from robby.auth.dependencies import CurrentUser, Forbidden, PasswordChangeRequired, require
+from robby.auth.dependencies import (
+    CurrentUser,
+    Forbidden,
+    PasswordChangeRequired,
+    PolicyAcceptanceRequired,
+    require,
+)
 from robby.config import Settings
 from robby.models import AppUser, Role, UserSession
 from robby.web.csrf import check_login_token, new_login_token, session_csrf_token, tokens_match
@@ -54,21 +60,40 @@ def current(role: Role, must_change: bool = False) -> CurrentUser:
     return CurrentUser(user=user, session=UserSession())
 
 
+class FakeDb:
+    """Stands in for the request session: `scalar` is what the acceptance lookup returns."""
+
+    def __init__(self, accepted: bool = True) -> None:
+        self.accepted = accepted
+
+    def scalar(self, _statement: object) -> object:
+        return object() if self.accepted else None
+
+
 def test_require_admits_listed_roles() -> None:
     signed_in = current(Role.CLINICIAN)
-    assert require(Role.CLINICIAN, Role.FACILITY_ADMIN)(signed_in) is signed_in
+    admit = require(Role.CLINICIAN, Role.FACILITY_ADMIN)
+    assert admit(signed_in, FakeDb()) is signed_in  # type: ignore[arg-type]
 
 
 def test_require_refuses_other_roles() -> None:
     with pytest.raises(Forbidden):
-        require(Role.SYSTEM_ADMIN)(current(Role.CLINICIAN))
+        require(Role.SYSTEM_ADMIN)(current(Role.CLINICIAN), FakeDb())  # type: ignore[arg-type]
 
 
 def test_require_without_roles_admits_everyone() -> None:
     for role in Role:
-        require()(current(role))
+        require()(current(role), FakeDb())  # type: ignore[arg-type]
 
 
 def test_a_forced_password_change_comes_before_any_role_check() -> None:
     with pytest.raises(PasswordChangeRequired):
-        require(Role.SYSTEM_ADMIN)(current(Role.CLINICIAN, must_change=True))
+        require(Role.SYSTEM_ADMIN)(
+            current(Role.CLINICIAN, must_change=True),
+            FakeDb(),  # type: ignore[arg-type]
+        )
+
+
+def test_acceptance_of_the_policies_comes_before_the_password_change() -> None:
+    with pytest.raises(PolicyAcceptanceRequired):
+        require()(current(Role.CLINICIAN, must_change=True), FakeDb(accepted=False))  # type: ignore[arg-type]

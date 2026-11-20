@@ -31,7 +31,7 @@ TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
 BLOCKING = {"serious", "critical"}
 # (account, screens) per role; {code} is replaced by an admission code of that hospital.
 SCREENS: dict[str, list[str]] = {
-    "": ["/login"],
+    "": ["/login", "/privacy", "/terms"],
     "lab.da": ["/admissions/new", "/admissions", "/lab-requests"],
     "clinician.da": [
         "/patients",
@@ -64,6 +64,9 @@ def sign_in(page: Page, base: str, username: str) -> None:
         page.fill('[name="password"]', PASSWORD)
         page.click('button[type="submit"]')
         page.wait_for_load_state("networkidle")
+        if page.url.endswith("/accept-policies"):  # first sign-in of a demo account
+            page.click('form[action="/accept-policies"] button')
+            page.wait_for_load_state("networkidle")
 
 
 def an_admission_code(page: Page, base: str) -> str:

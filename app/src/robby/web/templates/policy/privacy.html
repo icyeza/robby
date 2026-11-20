@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Privacy notice{% endblock %}
+{% block content %}
+<div class="narrow policy">
+  <h1>Privacy notice</h1>
+  <p class="muted">Version {{ privacy_version }} · {{ privacy_date.day }} {{ privacy_date.strftime('%B %Y') }} · <a href="/terms">Terms of use</a></p>
+
+  <h2>1. Who this is for</h2>
+  <p>This notice is for people who sign in to Robson Readiness (maternity staff, facility and system administrators, model custodians and national reviewers). It also describes what the system holds about the women whose admissions staff enter.</p>
+
+  <h2>2. This instance holds synthetic data only</h2>
+  <p>The instance at robsonreadiness.org and any demonstration copy contain invented admissions. No real patient records have been loaded. Real patient data will be loaded only after the system is hosted in Rwanda or the Rwandan authority has authorised storage outside Rwanda under Article 50 of Law No. 058/2021. This is a condition the project sets for itself; the software does not enforce it. <b>Planned.</b></p>
+
+  <h2>3. What is collected, and why</h2>
+  <ul>
+    <li><b>About staff:</b> username, display name, role, facility, a hashed password, sign-in times and the count of failed attempts. For each sign-in session: a hash of the session token, start, last-seen and end times, the network address and the browser identifier. Purpose: to let the right people in and to show who did what.</li>
+    <li><b>About each admission:</b> patient number and name; age; number of previous births and previous cesareans; number of babies; presentation of the baby; weeks of pregnancy; whether labour began on its own; blood pressure, urine protein and glucose, or the reason a test was not measured; other optional inputs; later HIV and other lab results when requested; the delivery outcome. Purpose: to assign a WHO Robson group, to produce the readiness estimate, and to audit cesarean rates.</li>
+    <li><b>Our own records:</b> the Robson group, the readiness estimate and the model version used for each admission; an event log of who did what and when.</li>
+    <li><b>Cookies:</b> two. The session cookie keeps you signed in. A short-lived sign-in security cookie is set on the sign-in page, is used only to protect the sign-in form, and is deleted when you sign in.</li>
+    <li><b>Not collected:</b> no advertising or analytics services, no third-party scripts and no tracking cookies.</li>
+  </ul>
+
+  <h2>4. Who can see what</h2>
+  <ul>
+    <li><b>Lab technician:</b> enters admissions and lab requests and sees the recent entries and lab requests of their own facility, including patient name and number.</li>
+    <li><b>Clinician:</b> finds patients and sees results of their own facility only, including name, number, Robson group, estimate and lab results.</li>
+    <li><b>Facility administrator:</b> sees the hospital report (counts and rates) and the lists that come with it by admission code, manages users of their own facility, and uploads files of admissions for their own facility. No page shows them patient names. The pages shown today do not display patient numbers either.</li>
+    <li><b>National reviewer:</b> sees national and per-hospital totals; no patient names or numbers.</li>
+    <li><b>Model custodian:</b> sees model versions, monitoring figures and the approval log; no patient names or numbers.</li>
+    <li><b>System administrator:</b> manages facilities and all users; has no page for patient records.</li>
+  </ul>
+  <p>Access is checked on the server on every request, by role and by facility. Hiding a link is not the control.</p>
+
+  <h2>5. What is encrypted and what is not</h2>
+  <p>Patient number, patient name, lab result values, and free-text notes and reasons that may name a patient are encrypted in the database (AES-256-GCM). The patient number is also searchable through a keyed hash that differs between facilities. Passwords are stored as argon2id hashes.</p>
+  <p>Everything else about an admission is stored as ordinary database values: ages, counts, screening values (blood pressure, urine protein, glucose), the Robson group and the estimate. This includes the model inputs kept with each estimate: when the HIV status is a model input, it is stored there in plain form, unencrypted, even though the lab result value itself is encrypted.</p>
+  <p>The connection to the site uses HTTPS. The encryption key is held in the server's settings, not in the database. There is one key for all patients and no key rotation; losing the key makes the identifiers unreadable for everyone.</p>
+
+  <h2>6. Records are never changed or deleted</h2>
+  <p>The database refuses any update or delete of admissions, screening omissions, classifications, predictions, outcomes, lab requests and results, policy acceptances, and of the event log. A correction is stored as a new record that points to the one it replaces, with a reason. Why: so that the audit of cesarean rates and of the model's accuracy can be trusted, and so that a change to history would be noticed.</p>
+  <p>The event log is chained with hashes and can be checked for tampering by an administrator command. These protections are database rules. Someone with full control of the database server could switch them off; the hash chain would then reveal changes to the event log, but not changes to clinical records.</p>
+
+  <h2>7. Backups</h2>
+  <p>The database is backed up every day, encrypted before it is written to disk, and the server keeps 14 days of backups. The decryption key is not on the server. Copies are taken off the server by the project owner. Automatic push of copies to another site is <b>planned</b>.</p>
+
+  <h2>8. Where the data is hosted</h2>
+  <p>On a virtual private server rented from Contabo, outside Rwanda. See section 2.</p>
+
+  <h2>9. Your rights, and how requests are handled today</h2>
+  <ul>
+    <li><b>Access:</b> a request goes to the contact below; a clinician at the woman's facility searches by patient number or name and reports to her what is held. There is no self-service access or export. <b>Planned.</b></li>
+    <li><b>Correction:</b> staff of the facility can record a corrected admission with a reason; the earlier version stays on file and is marked as replaced.</li>
+    <li><b>Erasure:</b> not supported. Records cannot be deleted. The only erasure available is destroying the encryption key, which makes all patients' names, numbers and lab values unreadable at once. Erasure of one patient is <b>planned</b>.</li>
+    <li><b>Staff accounts:</b> an administrator can deactivate an account; the account's history stays in the event log.</li>
+  </ul>
+
+  <h2>10. Who looked at a record</h2>
+  <p>Opening a patient's result page adds a "record viewed" entry (who, which admission, when) to the event log. Other pages that show a patient (search results, recent entries, lab pages) are not recorded yet. <b>Planned.</b></p>
+
+  <h2>11. Limits of the readiness estimate</h2>
+  <p>The estimate comes from a statistical model trained on past hospital records. Across hospitals, its ability to rank women (AUC) ranged from 0.71 to 0.82, with a mean of 0.75; it was validated on four Kigali hospitals only. At a 50 in 100 threshold it would have caught 38 in 100 of the cesareans. Expect it to be less reliable at units unlike those. The page shows "about N in 100" and whether this is at or above, or below, the planning level the unit has set. It is a planning aid, not a clinical decision (see the <a href="/terms">Terms of use</a>). When the Robson group cannot be settled, no estimate is shown and the page names the missing inputs.</p>
+  <p>Model versions are approved, put into shadow use and monitored per facility and per Robson group. These figures come from the project README (Results), the technical report (section 6) and the final report (Table 5.4).</p>
+
+  <h2>12. How long records are kept</h2>
+  <p>Clinical records and the event log are kept without an end date; there is no retention schedule yet. <b>Planned.</b> Backups are kept for 14 days.</p>
+
+  <h2>13. Changes and contact</h2>
+  <p>When this notice changes, its version changes and each user is asked to accept the new version when they next sign in. Questions and requests: <a href="mailto:l.icyeza@alustudent.com">l.icyeza@alustudent.com</a>. Run by: Lorita Sesame Icyeza, African Leadership University capstone project. Ethics approval: ALU Research Ethics Committee, SEPT26-BSE-052.</p>
+</div>
+{% endblock %}

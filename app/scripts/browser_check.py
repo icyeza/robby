@@ -67,6 +67,9 @@ def sign_in(page: Page, base: str, username: str) -> None:
     page.fill('[name="password"]', PASSWORD)
     page.click('button[type="submit"]')
     page.wait_for_load_state("networkidle")
+    if page.url.endswith("/accept-policies"):  # first sign-in of a demo account
+        page.click('form[action="/accept-policies"] button')
+        page.wait_for_load_state("networkidle")
 
 
 def check(page: Page, base: str, name: str) -> dict[str, str]:

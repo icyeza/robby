@@ -12,6 +12,7 @@ from robby.auth.dependencies import (
     Forbidden,
     NotAuthenticated,
     PasswordChangeRequired,
+    PolicyAcceptanceRequired,
     SessionEnded,
 )
 from robby.config import Settings
@@ -109,6 +110,10 @@ async def _password_change_required(request: Request, exc: Exception) -> Respons
     return redirect(request, "/account/password")
 
 
+async def _policy_acceptance_required(request: Request, exc: Exception) -> Response:
+    return redirect(request, "/accept-policies")
+
+
 async def _forbidden(request: Request, exc: Exception) -> Response:
     return error_page(request, 403)
 
@@ -120,4 +125,5 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotAuthenticated, _not_authenticated)
     app.add_exception_handler(SessionEnded, _session_ended)
     app.add_exception_handler(PasswordChangeRequired, _password_change_required)
+    app.add_exception_handler(PolicyAcceptanceRequired, _policy_acceptance_required)
     app.add_exception_handler(Forbidden, _forbidden)

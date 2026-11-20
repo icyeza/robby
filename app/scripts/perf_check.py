@@ -107,6 +107,11 @@ class Client:
         status, _, _ = self.request("/login", {**form, "username": username, "password": PASSWORD})
         if status != 303:
             raise RuntimeError(f"sign-in as {username}: HTTP {status}")
+        step_status, html, _ = self.request("/accept-policies")  # first sign-in: accept policies
+        if step_status == 200:
+            parser = _Inputs()
+            parser.feed(html)
+            self.request("/accept-policies", parser.values)
         return self
 
 

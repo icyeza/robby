@@ -129,3 +129,11 @@ fieldset.lab-tests{border:none;margin:0 0 18px;padding:0}
 .tc-h .push{margin-left:auto}
 .tablecard.ask-card{margin-bottom:20px}
 .tc-empty{margin:0;padding:14px 20px}
+
+/* site footer and the policy pages */
+.site-foot{border-top:1px solid #e3dde0;margin-top:40px}
+.site-foot-in{max-width:1240px;margin:0 auto;padding:16px 24px;font-size:13px;color:var(--ink-3)}
+.site-foot a{color:var(--ink-3)}
+.policy h2{font-family:var(--serif);font-size:20px;font-weight:600;margin:28px 0 6px}
+.policy p,.policy li{line-height:1.6}
+.policy li{margin-bottom:6px}

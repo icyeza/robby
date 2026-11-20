@@ -12,7 +12,7 @@ from robby.config import Settings
 from robby.models import AppUser, Facility, Role
 from robby.timeutil import utcnow
 from tests.factories import DEFAULT_PASSWORD, make_facility, make_user
-from tests.webutil import csrf_for, log_in, sign_in_client
+from tests.webutil import csrf_for, form_token, log_in, sign_in_client
 
 SECRET = re.compile(r'<span class="secret">([a-z0-9-]+)</span>')
 
@@ -109,6 +109,10 @@ def test_a_new_account_chooses_its_password_at_first_sign_in(
     assert match is not None
     client.cookies.clear()
     assert log_in(client, "mw.first", match.group(1)).status_code == 303
+    assert client.get("/").headers["location"] == "/accept-policies"  # the policies come first
+    step = client.get("/accept-policies")
+    accepted = client.post("/accept-policies", data={"csrf_token": form_token(step.text)})
+    assert accepted.status_code == 303
     assert client.get("/").headers["location"] == "/account/password"
 
 

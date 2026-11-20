@@ -83,6 +83,9 @@ class DemoUser(HttpUser):
         self.client.post(
             "/login", {**form, "username": username, "password": PASSWORD}, name="/login [POST]"
         )
+        step = self.client.get("/accept-policies", name="/accept-policies", allow_redirects=False)
+        if step.status_code == 200:  # first sign-in of a demo account
+            self.client.post("/accept-policies", inputs(step.text), name="/accept-policies [POST]")
 
 
 class LabTechnician(DemoUser):

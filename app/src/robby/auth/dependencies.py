@@ -14,6 +14,7 @@ from robby.auth.service import SessionState, resolve_session
 from robby.config import Settings
 from robby.db import get_db
 from robby.models import AppUser, Role, UserSession
+from robby.policy.service import has_accepted
 from robby.timeutil import utcnow
 
 SESSION_COOKIE = "robby_session"
@@ -33,6 +34,10 @@ class SessionEnded(Exception):
 
 class PasswordChangeRequired(Exception):
     """The account must choose its own password before doing anything else."""
+
+
+class PolicyAcceptanceRequired(Exception):
+    """The user has not accepted the current privacy notice and terms of use."""
 
 
 class Forbidden(Exception):
@@ -79,13 +84,15 @@ def current_session_untouched(request: Request, db: DbDep, settings: SettingsDep
     raise NotAuthenticated
 
 
-def require(*roles: Role, touch: bool = True) -> Callable[[CurrentUser], CurrentUser]:
-    """Dependency admitting the listed roles (any role when none are listed), after the forced
-    password change. touch=False: see current_session_untouched."""
+def require(*roles: Role, touch: bool = True) -> Callable[[CurrentUser, Session], CurrentUser]:
+    """Dependency admitting the listed roles (any role when none are listed), after the policy
+    acceptance and the forced password change. touch=False: see current_session_untouched."""
     allowed = frozenset(roles)
     session_of = current_session if touch else current_session_untouched
 
-    def dependency(current: Annotated[CurrentUser, Depends(session_of)]) -> CurrentUser:
+    def dependency(current: Annotated[CurrentUser, Depends(session_of)], db: DbDep) -> CurrentUser:
+        if not has_accepted(db, current.user):
+            raise PolicyAcceptanceRequired
         if current.user.must_change_password:
             raise PasswordChangeRequired
         if allowed and current.user.role not in allowed:

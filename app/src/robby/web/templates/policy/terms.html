@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Terms of use{% endblock %}
+{% block content %}
+<div class="narrow policy">
+  <h1>Terms of use</h1>
+  <p class="muted">Version {{ terms_version }} · {{ terms_date.day }} {{ terms_date.strftime('%B %Y') }} · <a href="/privacy">Privacy notice</a></p>
+  <ol>
+    <li><b>Accounts.</b> Accounts are created only by an administrator: a facility administrator for their own facility, a system administrator for any. You cannot register yourself. On first sign-in you must choose your own password.</li>
+    <li><b>Acceptable use.</b> Use the system only for care and audit at your own facility.</li>
+    <li><b>No sharing.</b> Use only your own account. Do not share your username or password. Every action is recorded against the account that did it.</li>
+    <li><b>Shared computers.</b> Sign out when you leave a shared computer. A session ends after {{ idle_minutes }} minutes without use and after {{ absolute_hours }} hours in any case.</li>
+    <li><b>Lockout.</b> Five wrong passwords in a row lock the account for 15 minutes. Ask your facility administrator if you are locked out.</li>
+    <li><b>The readiness signal is a planning aid.</b> It tells you roughly how many of 100 women like this one had a cesarean in the training data, and whether that is at or above, or below, your unit's planning level, which each facility sets. It is not a diagnosis, a recommendation for or against cesarean, or a replacement for clinical judgement. The person caring for the woman decides.</li>
+    <li><b>Demonstration instance.</b> The instance at robsonreadiness.org holds synthetic data only. Do not enter real patient details.</li>
+    <li><b>Report exposure.</b> Report any suspected exposure of an account or data to <a href="mailto:l.icyeza@alustudent.com">l.icyeza@alustudent.com</a> at once.</li>
+    <li><b>Acceptance.</b> You are asked to accept the current Privacy notice and these Terms at first sign-in, and again when either changes. The acceptance is recorded with your account, the versions and the time, and cannot be changed afterwards.</li>
+    <li><b>Licence and attribution.</b> The software is copyright (c) 2026 Lorita Sesame Icyeza. All rights reserved. It is an academic submission (African Leadership University); no licence is granted except as stated in the NOTICE file. The Robson rule set is adapted from the WHO Robson Classification Implementation Manual (2017) and is licensed CC BY-NC-SA 3.0 IGO; WHO does not endorse it. Other third-party components are listed in THIRD_PARTY_NOTICES.md.</li>
+    <li><b>No warranty.</b> The software is provided as a student project, as is.</li>
+  </ol>
+</div>
+{% endblock %}

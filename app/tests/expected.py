@@ -39,6 +39,7 @@ EXPECTED_TABLES = {
     "admission_request",
     "admission_request_fulfilment",
     "admission_request_cancellation",
+    "policy_acceptance",
 }
 
 EXPECTED_ENUMS = {
@@ -68,4 +69,5 @@ IMMUTABLE_TABLES = (
     "admission_request",
     "admission_request_fulfilment",
     "admission_request_cancellation",
+    "policy_acceptance",
 )

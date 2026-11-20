@@ -37,6 +37,7 @@ from robby.models.lab import (
     LabRequest,
     LabResult,
 )
+from robby.models.policy import PolicyAcceptance
 from robby.models.references import ExportRecord, ReferenceSet, ReferenceValue
 from robby.models.registry import ModelTransition, ModelVersion, Prediction
 from robby.models.rules import RuleSet
@@ -71,6 +72,7 @@ __all__ = [
     "ModelVersion",
     "OmissionField",
     "OmissionReason",
+    "PolicyAcceptance",
     "Prediction",
     "PredictionMode",
     "ReconciledOutcome",

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% import "partials/_macros.html" as ui with context %}
+{% block title %}Privacy notice and terms{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>Before you continue</h1>
+  <p class="lede">Read the <a href="/privacy">Privacy notice</a> (version {{ privacy_version }}, {{ privacy_date.day }} {{ privacy_date.strftime('%B %Y') }}) and the <a href="/terms">Terms of use</a> (version {{ terms_version }}, {{ terms_date.day }} {{ terms_date.strftime('%B %Y') }}). The links open the pages; come back to this one to accept.</p>
+  <form class="sec" method="post" action="/accept-policies">
+    <div class="sec-b">
+      {{ ui.csrf_input() }}
+      <p>By pressing the button you accept both documents. Your acceptance is recorded with the versions and the time, and cannot be changed afterwards. You are asked again when either document changes.</p>
+      <div class="actions"><button class="btn btn-p" type="submit">I accept</button></div>
+    </div>
+  </form>
+</div>
+{% endblock %}

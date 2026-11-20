@@ -35,6 +35,7 @@ from robby.models import (
     ModelVersion,
     OmissionField,
     OmissionReason,
+    PolicyAcceptance,
     Prediction,
     PredictionMode,
     ReconciledOutcome,
@@ -42,6 +43,7 @@ from robby.models import (
     RuleSet,
     ScreeningOmission,
 )
+from robby.policy.service import PRIVACY_VERSION, TERMS_VERSION
 from robby.timeutil import utcnow
 
 DEFAULT_PASSWORD = "correct-horse-battery"
@@ -91,6 +93,7 @@ def make_user(
     password: str | None = None,
     must_change: bool = False,
     active: bool = True,
+    accepted: bool = True,
 ) -> AppUser:
     if role in FACILITY_ROLES and facility is None:
         facility = make_facility(db)
@@ -104,6 +107,16 @@ def make_user(
     )
     db.add(user)
     db.flush()
+    if accepted:
+        db.add(
+            PolicyAcceptance(
+                user_id=user.id,
+                privacy_version=PRIVACY_VERSION,
+                terms_version=TERMS_VERSION,
+                accepted_at=utcnow(),
+            )
+        )
+        db.flush()
     return user
 
 

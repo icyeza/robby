@@ -24,6 +24,7 @@ from robby.lab.routes import clinician_router as lab_clinician_router
 from robby.lab.routes import router as lab_router
 from robby.monitoring.reconcile import reconcile_loop
 from robby.monitoring.routes import router as monitoring_router
+from robby.policy.routes import router as policy_router
 from robby.registry.approval_log import router as approval_log_router
 from robby.registry.routes import router as models_router
 from robby.users.routes import router as users_router
@@ -64,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_error_handlers(app)
     install_security_headers(app)
     app.include_router(auth_router)
+    app.include_router(policy_router)
     app.include_router(facilities_router)
     app.include_router(users_router)
     app.include_router(fhir_form_router)  # before clinical_router: /admissions/fetch
