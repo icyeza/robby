@@ -51,7 +51,7 @@ At admission to a maternity ward, the system does six things:
 |---|---|---|
 | Lab technician | Enters admissions on the form; answers clinicians' lab requests | Name and number, own facility |
 | Clinician | Finds a patient, reads the classification and readiness signal, requests lab tests, records the outcome | Name and number, own facility |
-| Facility administrator | Hospital report, PDF, monthly export, Excel import, facility users | Patient number only, own facility |
+| Facility administrator | Hospital report, PDF, monthly export, Excel import, facility users | None shown (the report code reads patient numbers of its own facility, but no page displays them) |
 | National reviewer | National overview across facilities | Aggregates only |
 | Model custodian | Model registry and promotion, monitoring, approval log | None |
 | System administrator | Facilities and users | None |
